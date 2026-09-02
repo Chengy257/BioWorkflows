@@ -52,7 +52,8 @@ def extract_workflow_functions():
     if m:
         block_b = block_b[: len("def _group_regex(") + m.start() + 1]
 
-    ns = {"csv": csv, "os": os, "re": re, "WorkflowError": WorkflowError}
+    ns = {"csv": csv, "os": os, "re": re, "WorkflowError": WorkflowError,
+          "REPO_DIR": REPO}
     exec(compile(block_a + "\n\n" + block_b, "workflow.smk(extracted)", "exec"), ns)
     return ns
 
@@ -120,6 +121,9 @@ expect_error("同样本跨 seqtype 拒绝",
              [HEADER, ["a", "treat", "g1", "chip", "PE", "narrow"],
               ["a", "treat", "g2", "atac", "PE", "none"]], "不同 seqtype")
 expect_error("空表拒绝", [HEADER], "没有任何数据行")
+expect_error("样本名含逗号拒绝", [HEADER, ["a,b", "treat", "g", "chip", "PE", "narrow"]], "非法字符")
+expect_error("样本名含双下划线拒绝", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "非法字符")
+expect_error("分组名含空格拒绝", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "非法字符")
 
 print("== 3. 通配符约束正则 ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])

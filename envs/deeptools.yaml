@@ -2,6 +2,5 @@ name: deeptools
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
   - deeptools=3.5.1

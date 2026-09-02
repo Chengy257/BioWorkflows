@@ -28,6 +28,10 @@ ENVS = os.path.join(REPO_DIR, "envs")
 
 ASSAYS = ("chip", "cuttag", "atac", "faire")
 
+# 样本名/分组名仅允许字母数字._-：逗号会破坏峰列表拼接与 MACS2 多文件参数，
+# "__" 是 FRiP 输出的分隔符，空格/制表符会破坏 shell 展开。
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 # ---------------------------------------------------------------------
 # 样本表解析与校验
 # ---------------------------------------------------------------------
@@ -71,6 +75,12 @@ def load_sample_table(path):
 
             if not sid or not grp:
                 raise WorkflowError(f"样本表第 {lineno} 行：sample_id/group 不能为空")
+            for label, value in (("sample_id", sid), ("group", grp)):
+                if not _NAME_RE.match(value) or "__" in value:
+                    raise WorkflowError(
+                        f"样本表第 {lineno} 行：{label}={value!r} 含非法字符，"
+                        "仅允许字母数字与 . _ -（不以 - 开头，且不含连续下划线 __）"
+                    )
             if role not in ("treat", "control"):
                 raise WorkflowError(f"样本表第 {lineno} 行：role 必须是 treat 或 control，当前为 {role!r}")
             if seqtype not in ASSAYS:

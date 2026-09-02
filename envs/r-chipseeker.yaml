@@ -2,8 +2,8 @@ name: r-chipseeker
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
-  - r-base=4.2
+  # ChIPseeker 1.38 / GenomicFeatures 1.54 同属 Bioconductor 3.18，要求 R 4.3
+  - r-base=4.3
   - bioconductor-chipseeker=1.38.0
-  - bioconductor-genomicfeatures=1.52.0
+  - bioconductor-genomicfeatures=1.54.0

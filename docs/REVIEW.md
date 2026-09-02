@@ -117,4 +117,33 @@
 
 ## 六、结论
 
-流程的**分析设计是合理的**（QC → 比对 → 去重策略按 assay 区分 → 峰调用按 narrow/broad 与 assay 区分 → bigWig → 注释 → QC 汇总），但目前**只能跑通到比对一步**；峰调用链因 include 断裂、`${id}` 语法、shell/conda 块错位、CSV schema 矛盾、双重调用 bug 等问题处于不可用状态；可移植性方面几乎所有脚本都与 `/home/chengyu`、`/opt`、`/share` 路径耦合。建议按 `docs/IMPROVEMENT_PLAN.md` 的三个阶段推进，优先完成 Phase 1 的 P0 修复并用小样本实测跑通全链路。
+流程的**分析设计是合理的**（QC → 比对 → 去重策略按 assay 区分 → 峰调用按 narrow/broad 与 assay 区分 → bigWig → 注释 → QC 汇总），但重构前**只能跑通到比对一步**；峰调用链因 include 断裂、`${id}` 语法、shell/conda 块错位、CSV schema 矛盾、双重调用 bug 等问题处于不可用状态；可移植性方面几乎所有脚本都与 `/home/chengyu`、`/opt`、`/share` 路径耦合。
+
+---
+
+## 七、修复状态（2026-09-03，v0.2.0 重构完成）
+
+> 重构实施见 commit `e29c428` 及后续修复 commit；v0.1.0 原文件整体归档至 `legacy/`。修复经独立代码审查（fix-first 裁决）复核，审查提出的 3 项 P1 与全部 P2/P3 均已处理。
+
+| 问题 | 状态 | 修复方式 |
+|---|---|---|
+| §2.1 峰调用链未接入 DAG | ✅ 已修 | 统一入口 `workflow.smk`，rule all 全目标可达，按组并行规则 |
+| §2.2 rmDup.smk 整体不可用 | ✅ 已修 | 重写为 `rules/dedup.smk`（conda/shell 块归位、`{sample}` 通配符、threads int） |
+| §2.3 callpeak_*.smk 共性问题 | ✅ 已修 | 重写为 `rules/callpeak.smk`：删除空规则与双重调用，按 assay/peak_type 用互斥 wildcard_constraints 路由三规则 |
+| §2.4 样本表 schema 矛盾 | ✅ 已修 | 新 schema（sample_id/role/group/seqtype/layout/peak_type）+ 入口逐行校验（含行号报错） |
+| §2.5 get_samples() 解析错误 | ✅ 已修 | 重写 `load_sample_table()`（按 sample_id 去重、role 分组、混型校验），26 项单元测试覆盖 |
+| §2.6 `conda: "chip"` 非法 | ✅ 已修 | 拆分为 `envs/` 下 11 个 per-rule 环境文件 |
+| §2.7 main_run.sh 不可用 | ✅ 已修 | getopts 重写（-w/-s/-c/-j/-C/-p/-b/-l/-r/-n），dry-run 预检，不删 .snakemake |
+| §三 硬编码路径（16 处） | ✅ 已修 | 全部经 `workflow.basedir`/config 参数化；脚本去 `.libPaths`/私人路径 |
+| §四.1 文件重复 | ✅ 已修 | 根目录 `call_peak.sh` 删除，`scripts/` 为唯一真身并归档至 legacy |
+| §四.2 入口 90% 重复 | ✅ 已修 | 4 入口合并为 `workflow.smk` |
+| §四.3 命名不规范 | ✅ 已修 | `rules/upstream.smk`（修正拼写）等统一命名 |
+| §四.5 峰参数（-q 0.5 等） | ✅ 已修 | 阈值全部入 config，默认常规值 q=0.05/broad_cutoff=0.05；CUT&Tag 不去重按 Kaya-Okur 2019 落地 |
+| §四.7 产物命名断层 | ✅ 已修 | deeptools QC 规则化并使用 `{group}_FE.bw` 命名 |
+| §四.8 config 覆盖不全 | ✅ 已修 | 完整 schema + `config.template.yaml` + `config.local.yaml` 叠加机制 |
+| §五 LICENSE 缺失 | ✅ 已修 | MIT |
+| §五 测试/CI | ✅ 已修 | `tests/run_tests.py`（26 项）+ Makefile + GitHub Actions CI |
+
+**审查修复补充项**（独立审查 fix-first 发现）：r-chipseeker 环境 R 版本冲突（升级 r-base=4.3 + Bioc 3.18 对齐）；ATAC shift/extsize 在 BAMPE 下被静默忽略（改为 `peak.atac.mode` 双模式开关，默认 ENCODE ATAC v2 的 bampe）；bigwig 字典序排序与 chrom.sizes 顺序冲突（改 `bedtools sort -g`，chromsize 提为 input）；main_run.sh `-j/--cores` 同参数覆盖（按集群/本机模式拆分）；样本/分组名非法字符校验；envs 移除 defaults 频道。
+
+**遗留（不阻塞交付）**：服务器真实数据端到端实跑（含 MACS2 无对照 control_lambda.bdg 产出确认、conda 环境求解、CI 首跑）；DiffBind 差异分析（需 contrast 设计决策）；bowtie2 `.bt2l` 大基因组限制（已在 README 声明）。

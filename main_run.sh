@@ -85,15 +85,18 @@ if [[ -z "${extra_config:-}" && -f "config.local.yaml" ]]; then
 fi
 
 cmd=(snakemake -s "${smk}" --configfile "${config}"
-     --use-conda --keep-going
-     -j "${jobs}" --cores "${cores}")
+     --use-conda --keep-going)
 
 if [[ -n "${extra_config:-}" ]]; then
     cmd+=(--configfile "${extra_config}")
 fi
 
+# 注意：snakemake 中 -j 与 --cores 是同一参数（后者覆盖前者）。
+# 集群模式只限并发任务数（-j）；本机模式只限总核数（--cores）。
 if [[ -n "${cluster_cmd}" ]]; then
-    cmd+=(--cluster "${cluster_cmd}")
+    cmd+=(-j "${jobs}" --cluster "${cluster_cmd}")
+else
+    cmd+=(--cores "${cores}")
 fi
 if [[ -n "${conda_base}" ]]; then
     cmd+=(--conda-base-path "${conda_base}")

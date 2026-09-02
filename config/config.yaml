@@ -31,9 +31,11 @@ peak:
   keepdup: all           # 交给上游去重策略控制，MACS2 层面保留全部
   qvalue: 0.05           # narrow 峰 q 值阈值
   broad_cutoff: 0.05     # broad 峰 cutoff
-  atac:                  # ATAC/FAIRE 的 MACS2 偏移设置（MACS2 官方 ATAC 推荐）
-    shift: -100
-    extsize: 200
+  atac:
+    mode: bampe          # bampe=ENCODE ATAC v2 做法（按真实片段长度堆叠，默认）；
+                         # shifted=经典 Tn5 偏移配方（-f BAM --nomodel --shift -100 --extsize 200）
+    shift: -100          # 仅 mode=shifted 时生效
+    extsize: 200         # 仅 mode=shifted 时生效
 
 # ---------- QC ----------
 qc:

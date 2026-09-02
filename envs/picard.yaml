@@ -2,7 +2,6 @@ name: picard-samtools
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
   - picard=3.0.0
   - samtools=1.17

@@ -2,7 +2,6 @@ name: bigwig
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
   - macs2=2.2.7.1
   - bedtools=2.31.0

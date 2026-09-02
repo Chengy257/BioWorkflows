@@ -10,5 +10,7 @@
 | `callpeak_chip/atac/cuttag/faire.smk` | `rules/` | `rules/callpeak.smk`（按组并行规则） |
 | `chip_environment.yaml` | 根目录 | `envs/*.yaml`（per-rule 环境） |
 | `call_peak.sh`（根目录与 scripts/ 各一份） | — | `rules/callpeak.smk` |
-| `bdgcmp_macs2.sh` | `scripts/` | `rules/callpeak.smk` 中的 bigwig 规则 |
-| `run_deeptools_QC.sh` | `scripts/` | 计划 Phase 2 规则化 |
+| `bdgcmp_macs2.sh` | `scripts/` | `rules/callpeak.smk` 中的 bigwig 规则（排序改用 bedtools sort -g） |
+| `run_deeptools_QC.sh` | `scripts/` | `rules/qc_deeptools.smk`（全量规则化 + FRiP） |
+
+仍在 `scripts/` 维持的文件（不属于 legacy）：`annoPeak_batch.R`（已参数化重写）、`annoPeak_single.R`（已重写）、`run_ChIPQC.R`（已修复参数化）、`run_chipqc_DROMPAplus.sh`（已参数化）；`diffpeak_DiffBind.sh` / `run_DiffBind.R` 为待实现的空壳（需 contrast 设计决策）。

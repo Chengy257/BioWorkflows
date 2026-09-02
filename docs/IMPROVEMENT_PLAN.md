@@ -19,72 +19,62 @@
 
 ---
 
-## Phase 1 — P0 修复：让流程真正跑通（预计 1~2 天）
+## Phase 1 — P0 修复：让流程真正跑通（✅ 已完成，2026-09-03，commit `e29c428`）
 
 目标：在不改变分析逻辑的前提下修复所有阻断性问题，4 种 assay 全链路可达。
 
-1. **统一入口结构**
-   - 4 个入口 smk 合并为单一入口 `workflow.smk`（保留 4 个旧文件暂不删，标注 deprecated），按样本表 `seqtype` 列自动路由 assay 分支。
-   - 所有 `include` / `configfile` / 脚本引用改为相对 workflow 源码目录的路径（`workflow.basedir`），消除 `/home/chengyu/...`。
-2. **接入峰调用链**：`rule all` 恢复 peak → 注释 → QC 目标；include 对应 rules。
-3. **修复 `rules/rmDup.smk`**：conda 块还原为 shell 块；`${id}` → `{sample}`；threads `int(config["threads"])`；统一 `3.align/bowtie2/` 路径。
-4. **修复 `callpeak_*.smk`**：
-   - 删除空的 `callpeak_ATAC` 规则；
-   - 修 `for j in ...` 双重调用 bug；
-   - `${id}` → `{sample}`；
-   - `peakAnno` 改调 `scripts/annoPeak_batch.R`（经 `workflow.basedir` 定位）；
-   - bdgcmp/peakAnno 改为按 group 去重后调用，或拆成按组并行规则。
-5. **统一样本表 schema**（关键设计决策）：
-   建议列：`sample_id, role(treat|control), group, seqtype(chip|cuttag|atac|faire), layout(PE|SE), peak_type(narrow|broad)`；
-   同步修改 `get_samples()`（按 `sample_id` 去重）与所有 shell 循环；提供 `sample_info.example.csv` 并在 README 文档化。
-6. **conda 环境拆分**：从 `chip_environment.yaml` 拆出 rule 级环境到 `envs/`：`trim_fastqc.yaml`、`bowtie2_samtools.yaml`、`picard.yaml`、`macs2.yaml`、`deeptools.yaml`、`multiqc.yaml`、`r-chipseeker.yaml`；`conda: "chip"` 全部改为对应文件路径。原文件移入 `legacy/` 或加 deprecation 头注释。
-7. **threads/参数类型**：config 数值统一 `int()`；MAPQ、基因组大小、q 值等入 config。
+1. ✅ **统一入口结构**：4 入口合并为 `workflow.smk`，按样本表 `seqtype` 自动路由；旧入口归档 `legacy/`；全部 include/脚本经 `workflow.basedir` 相对定位，无任何 `/home/chengyu` 路径。
+2. ✅ **接入峰调用链**：rule all 覆盖 QC → 比对 → 去重 → 峰 → bigWig → 注释 → FRiP/deeptools。
+3. ✅ **修复去重规则**：重写为 `rules/dedup.smk`（shell 块归位、`{sample}` 通配符、threads int、统一路径）。
+4. ✅ **修复峰调用规则**：空规则删除、双重调用删除、输出契约与 MACS2 `-n {group}` 命名一致、注释规则调用 `scripts/annoPeak_batch.R`（workflow.basedir 定位）、按组并行。
+5. ✅ **统一样本表 schema**：`sample_id,role,group,seqtype,layout,peak_type`，入口逐行校验（错误含行号），`get_samples()` 重写为 `load_sample_table()`，`sample_info.example.csv` 文档化。
+6. ✅ **conda 环境拆分**：`envs/` 下 11 个 per-rule 环境；原整环境导出归档 `legacy/chip_environment.yaml`。
+7. ✅ **参数类型与可配置**：threads int；MAPQ/genome_size/qvalue/broad_cutoff/keepdup 全部入 config。
 
 **验收标准**
-- [ ] `snakemake -n --use-conda`（dry-run）对 4 种 assay 均能生成完整 DAG，无语法/路径报错；
-- [ ] `grep -rn "/home/chengyu\|/opt/\|/share/" rules/ workflow.smk` 无结果；
-- [ ] 用一套 2 处理 + 2 对照的小样本实测跑通 QC → 比对 → 峰调用 → 注释全链路。
+- [x] 样本表解析/校验/路由逻辑：26 项单元测试全部通过（`python tests/run_tests.py`，测试直接抽取 workflow.smk 真实源码执行）
+- [x] `grep -rn "/home/chengyu\|/opt/\|/share/" rules/ workflow.smk` 无结果（仅 config 中参考路径默认值，属用户配置）
+- [ ] 服务器小样本端到端实测（**遗留**：本机为 Windows 无法运行 snakemake；CI 已配置 `--lint` + `--list-rules`，首次推送后运行）
+- [x] 独立代码审查（fix-first 裁决）→ 3 项 P1 全部修复并复验（r-chipseeker R 版本、ATAC mode 死旋钮、bigwig 排序顺序）
 
 ---
 
-## Phase 2 — P1 可移植性与参数化（预计 2~3 天）
+## Phase 2 — P1 可移植性与参数化（✅ 已完成，2026-09-03）
 
-目标：换机器只需改 config；每步产物命名与 QC 链路对齐。
-
-1. **config 重构**：`config/config.yaml` 扩展为完整 schema（参考路径四件套 + genome_size + peak 参数 + 去重策略 + 工具路径），提供 `config/config.template.yaml`；本地私有配置用 `config.local.yaml` 覆盖（不入库）。
-2. **`main_run.sh` 重写**：getopts 参数化（`-w workflow -d workdir -c config -j jobs`）、自动创建 logs、PBS/SLURM profile 可选、启动前先 `--dry-run` 预检。
-3. **CUT&Tag 去重策略落地**：按文献实现"不去重 + 保留 `"--keep-dup all`"（对照 Kaya-Okur et al. 2019），落实 `call_peak.sh:143` 的 TODO；去重开关进 config 按 assay 配置。
-4. **QC 链路打通**：
-   - bigWig 生成规则声明 `*_FE_bdgcmp.bw` 输出，deeptools 规则改用该命名；
-   - `run_deeptools_QC.sh` 片段转成真正的 Snakemake 规则；
-   - 修复 `run_ChIPQC.R`（`commandArgs(T)`、路径参数化、reportName 去教程化）；
-   - FRiP、peak 数、NSC/RSC 汇总表接入 MultiQC 自定义内容。
-5. **脚本去硬编码**：`call_peak.sh`/`bdgcmp_macs2.sh` 的 chromsize、ucsc-tools、HMMRATAC、run_spp 路径全部改为 config 传参；R 脚本移除 `.libPaths` 强制覆盖；DROMPAplus docker 镜像名参数化。
-6. **规则粒度优化**：fastQC 按 sample 拆分；callpeak/bdgcmp 按 group 拆分为可并行规则。
+1. ✅ **config 重构**：完整 schema + `config/config.template.yaml` + `config.local.yaml` 自动叠加（main_run.sh -l 或自动检测）。
+2. ✅ **main_run.sh 重写**：getopts 参数化、logs 自动创建、PBS 可选、dry-run 预检（-n）、集群/本机模式的 -j/--cores 正确拆分、不再删除 .snakemake。
+3. ✅ **CUT&Tag 去重策略落地**：`dedup.cuttag: false`（Kaya-Okur et al. 2019），按 assay 配置化，`sample_bam()` 全流程一致路由。
+4. ✅ **QC 链路打通**：bigWig 规则声明 `*_FE.bw` 输出；deeptools 全套规则化（`rules/qc_deeptools.smk`）；FRiP 规则 + 汇总表；multiqc 聚合 fastqc + bowtie2 日志 + picard 指标；SPP NSC/RSC 可选模块；`run_ChIPQC.R` 修复（commandArgs bug/私人路径/教程残留）。
+5. ✅ **脚本去硬编码**：chromsize/ucsc-tools/docker 镜像参数化；R 脚本去 `.libPaths`；DROMPAplus 参数化。
+6. ✅ **规则粒度优化**：fastqc 按 sample 拆分；callpeak/bigwig/frip 按 group 并行。
 
 **验收标准**
-- [ ] 换一台干净 Linux 机器，仅需安装 conda + snakemake、修改 config 即可复跑（grep 检查无机器特定路径）；
-- [ ] 全流程日志在 `logs/` 结构化留存，MultiQC 报告含比对率/去重率/FRiP/NSC/RSC 汇总；
-- [ ] CUT&Tag 与 ChIP 的去重/峰调用参数差异由 config 显式表达。
+- [x] 代码目录无机器特定路径（换机器只改 config）
+- [x] 日志结构化留存 `logs/`；multiqc 含比对与去重指标（FRiP 为独立汇总表）
+- [x] CUT&Tag 与 ChIP 的去重/峰调用参数差异由 config 显式表达
+- [ ] 干净 Linux 机器全流程复跑（**遗留**，与 Phase 1 端到端实测合并）
 
 ---
 
-## Phase 3 — P2/P3 工程化与长期维护（持续）
+## Phase 3 — P2/P3 工程化与长期维护（✅ 主体完成，2026-09-03）
 
-1. **清理**：删除根目录重复的 `call_peak.sh`（`scripts/` 为唯一真身）；删除或补完 `diffpeak_DiffBind.sh` / `run_DiffBind.R`（补完方案：DiffBind samplesheet 由样本表生成 + contrast 列设计）。
-2. **测试**：`tests/` 下放入小型模拟 fastq（可用 public rice 数据截取或 `seqkit` 模拟），`make test` 一键端到端冒烟测试；`snakemake --lint` 通过。
-3. **CI**：GitHub Actions：`snakemake --lint` + `shellcheck` + `yamllint`（每次 push）。
-4. **文档**：每个脚本头部 usage 说明；README 增加 FAQ、参数依据文献（Kaya-Okur 2019 CUT&Tag、MACS2 手册、ENCODE ChIP QC 阈值 NSC≥1.05/RSC≥0.8 等）。
-5. **版本管理**：从 `v0.2.0` 起语义化 tag，维护 `CHANGELOG.md`；主分支保护 + feature 分支工作流。
-6. **LICENSE**：作者定夺后添加（个人学术项目建议 MIT 或 Apache-2.0）。
-7. **可选进阶**：对标 nf-core/chipseq、nf-core/atacseq、nf-core/cutandrun 的输出结构与 QC 指标，评估是否直接迁移或保持自研对齐其报告规范。
+1. ✅ **清理**：重复 `call_peak.sh` 删除；legacy 归档 + `legacy/README.md` 映射表。
+2. ⬜ **测试数据**：`tests/run_tests.py`（26 项零依赖单元测试）+ CI 已就绪；端到端小样本实测待服务器（遗留）。
+3. ✅ **CI**：`.github/workflows/ci.yaml`（单元测试 + shellcheck + snakemake --lint + --list-rules）。
+4. ✅ **文档**：README 重写（新 schema/新入口/QC 阈值/已知限制）；各脚本头部 usage。
+5. ✅ **版本管理**：`v0.2.0` tag；CHANGELOG 维护。
+6. ✅ **LICENSE**：MIT（作者已确认）。
+7. ⬜ **可选进阶**：对标 nf-core 输出结构（远期）；DiffBind 差异分析补完（**需用户决策 contrast/设计公式，明确排除在本轮外**）。
 
 ---
 
-## 里程碑建议
+## 遗留事项清单（需用户/服务器条件）
 
-| 里程碑 | 内容 | 完成标志 |
-|---|---|---|
-| M1（Phase 1） | P0 修复 + 小样本全链路实测 | 4 种 assay 产出 peaks + 注释 |
-| M2（Phase 2） | 可移植 + QC 汇总 | 干净机器 config 即跑 |
-| M3（Phase 3） | 测试/CI/版本化 | CI 绿灯、v0.2.0 tag |
+| 事项 | 阻塞原因 |
+|---|---|
+| 服务器最小样本端到端实跑（myc/IgG 两组） | 本机 Windows 无法运行 snakemake；推送 GitHub 后 CI 亦可先行验证 lint |
+| CI 首次运行确认 | 需推送到 GitHub |
+| conda 环境真实求解（重点 r-chipseeker / phantompeakqualtools） | 需 Linux + conda |
+| MACS2 无对照时 `control_lambda.bdg` 产出确认 | 外部证据（MACS issues #275/#291）表明会产出，需实测 |
+| DiffBind 差异分析实现 | 需 contrast 与设计公式决策 |
+| bowtie2 `.bt2l` 大基因组支持 | 低频需求，README 已声明 workaround |

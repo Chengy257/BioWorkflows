@@ -31,9 +31,10 @@ peak:
   keepdup: all        # MACS2 层面保留全部重复（去重交给上游 dedup 策略）
   qvalue: 0.05        # narrow 峰 q 值
   broad_cutoff: 0.05  # broad 峰 cutoff
-  atac:               # ATAC/FAIRE 偏移设置（MACS2 官方 ATAC 推荐）
-    shift: -100
-    extsize: 200
+  atac:               # ATAC/FAIRE 峰调用模式
+    mode: bampe       # bampe（ENCODE ATAC v2 默认）| shifted（经典 Tn5 偏移配方）
+    shift: -100       # 仅 shifted 模式生效
+    extsize: 200      # 仅 shifted 模式生效
 
 # ---------- QC 开关 ----------
 qc:
