@@ -1,0 +1,7 @@
+
+gtf: "/home/chengyu/references/osa/MSU_RAP_combined_CDS_240705.updated.gtf"
+gtf_PcGs: "/home/chengyu/references/osa/MSU_RAP_combined_CDS_PcGs_240705.updated.gtf"
+
+pfam_DB: "/home/chengyu/data/database/pfam/"
+nr_diamond_DB: "/home/chengyu/data/database/nr/diomand/nr.dmnd"
+

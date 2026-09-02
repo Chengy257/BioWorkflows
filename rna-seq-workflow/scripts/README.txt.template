@@ -1,0 +1,6 @@
+Gene expression normalized method using the TPM, Transcripts Per Kilobase of exon model per Million mapped reads.
+Gene structure model and annotation using RAP-DB 2023-03-15 release version.
+DESeq2 differential expression analysis DEGs threshold value: log2Foldchange > 1 / < -1 && FDR (adjusted p value) < 0.05, results in the *_DESeq2.output.tsv file.
+Samples pearson correlation and PCA analysis using DESeq2 normalized counts, PCA using the top 10000 genes.
+GO annotation data source from g:Profile website (https://biit.cs.ut.ee/gprofiler/gost), GO & KEGG enrichment analysis using clusterProfiler R package. Dotplot shows the top 10 significant terms, Network plot using the top 100 significant terms. All results in the `enrich` folder.
+All Files List:

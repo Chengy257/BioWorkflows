@@ -1,0 +1,21 @@
+## reference:
+### Oryza sativa, osa
+# index: "/home/chengyu/references/osa/index/STARv2.7.10b/RAP_230315_full/"
+bed: "/home/chengyu/references/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"
+genome: "/home/chengyu/references/osa/genome_Chr_only.fasta"
+# gtf: "/home/chengyu/references/osa/Oryza_sativa.IRGSP-1.0.56.Chr.gtf"
+# gtf: "/home/chengyu/references/osa/lncRNA/EnsemblGene_lncRNA_230108version_strandfilter_update_noMTPT.gtf"
+# gtf_lncRNA: "/home/chengyu/references/osa/lncRNA/EnsemblGene_lncRNA_230108version_strandfilter_update_noMTPT.gtf"
+
+### Human, hsa, GENCODE VERSION
+#genome: "/home/share/data/references/hsa/gencode/release44/GRCh38.p14.genome.fa"
+#gtf: "/home/share/data/references/hsa/gencode/release44/gencode.v44.annotation.gtf"
+
+## Global settings
+#threads: "12"
+FoldChange: "2"
+padj: "0.05"
+
+
+SampleListFile: "sample_info.csv"
+

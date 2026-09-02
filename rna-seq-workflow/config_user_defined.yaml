@@ -1,0 +1,5 @@
+
+SampleListFile: "sample_info.csv"
+threads: "12"
+gtf: "/home/chengyu/references/wild_rice/Ensembl_plant/release-57/Oryza_rufipogon.gff3"
+genome: "/home/chengyu/references/wild_rice/Ensembl_plant/release-57/Oryza_rufipogon.fa"
