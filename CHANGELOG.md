@@ -2,6 +2,32 @@
 
 本项目的全部显著变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.0] - 2026-09-03
+
+阶段 2（结构标准化与质量提升）完成，详见 `docs/优化路线图.md`。**注意：旧入口 `rna-seq-workflow/RNA-seq_*.smk` 自本版本起废弃**（保留弃用提示 stub），请改用 `run.sh` / `workflow/Snakefile`。
+
+### Added（新增）
+- `workflow/Snakefile` 唯一入口：`pipeline=upstream|deg|as|lncrna` 经 `RNASEQ_PIPELINE` 环境变量注入（解析期确定），项目配置经 `RNASEQ_CONFIG` 注入；未设置时使用仓库默认配置（供 --lint 与示例）。
+- `rules/` 模块化：`common`（辅助函数与 STAR 参数）/ `align`（trim/QC/STAR/链型）/ `quant`（定量合并）/ `deg` / `as` / `lncrna`；输出根目录 `results_dir` 可配置（默认 `results/`）。
+- 全流程 MultiQC 汇总（FastQC/Trim Galore/STAR/featureCounts）+ `workflow/multiqc_config.yaml`（P2-9）。
+- `software_versions.yaml`：每次运行自动记录环境定义、snakemake 版本与 git 提交（`collect_versions.py`）；DESeq2 输出附带 `sessionInfo.txt`（P2-9）。
+- `config/` 配置体系（P2-4/P1-11）：`config.yaml` 主配置模板（全键注释，lncRNA 嵌套段）、`species.yaml`（osa/hsa 物种资源预设映射）、`samples.csv` 模板。
+- `example/` 示例项目：配置模板 + 真实项目样本表（231107XTL 27 样本，自 `rna-seq-workflow/sample_info.csv` 迁出，P2-3）。
+- `run.sh` 移至仓库根目录。
+
+### Changed（变更）
+- 统一两套 trim 规则（P2-2）：原始 fastq 双命名约定（`.fastq.gz`/`.fq.gz`）精确探测在全管线通用；trim 统一运行 FastQC（修复 P1-1 MultiQC 空报告）；trim 报告重命名为以样本 id 为键的规范名并声明为规则输出（P1-6）。
+- STAR（P2-2）：直接输出 `BAM SortedByCoordinate`（P1-4）；索引改为文件级追踪（P1-5）；组装管线沿用组装优化参数、其余管线标准参数，均可经 `star_extra_args` 追加。
+- 图表修复（P1-8）：火山图动态坐标范围（不再截断）、`fontface`、显式颜色映射、空类别容错；PCA `ntop` 可配置（`pca_ntop`，默认 20000）。
+- 差异结果目录拼写修正：`Diff_Expr_Analysis_Reults` → `Diff_Expr_Analysis_Results`（`enrich.sh` 同步引用，P2-7/P2-8）。
+- 脚本稳定化命名（去日期/连字符后缀）：`run_deseq2.R`、`run_enrichment.R`、`run_gsea.R`、`run_deg_compare.R`、`run_featurecounts.R`。
+- KEGG 物种代码经 `species.yaml`（`kegg_organism`）传入富集脚本；`run_deg_compare.R` 输出位置改为随 results_dir。
+- lncRNA 管线线程、外部工具路径全部经 config（`lncrna` 段）读取（P1-7）；CPC2/CNCI/Pfam/NR 关键产物声明为规则输出（P1-6）。
+- `run_deseq2.R` 对照判定沿用 v0.2 的精确匹配；样本表 `group` 列按表头取值。
+
+### Removed（移除）
+- 旧四入口 Snakefile、旧规则文件（`rules/RNA-seq_*.smk`）、旧 `config_*.yaml`（被 `config/` 体系替代）、过期 DAG 图（阶段 3 CI 重新生成）；旧入口位置保留弃用提示 stub。
+
 ## [0.2.0] - 2026-09-03
 
 阶段 1（P0 修复）完成，详见 `docs/优化路线图.md`。
