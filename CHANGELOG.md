@@ -2,6 +2,23 @@
 
 本项目的全部显著变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.4.0] - 2026-09-03
+
+阶段 3（可持续性：测试、CI、文档随代码走）完成，详见 `docs/优化路线图.md`。三阶段改造计划至此全部落地。
+
+### Added（新增）
+- `tests/make_testdata.py`：确定性微型测试数据生成器（2 条 100kb 染色体、60 个模拟基因的参考/GTF/BED12/注释表，2 组 × 2 样本模拟 PE reads——含测序错误、10% 接头、5% 噪声 reads，以及预期差异基因 truth 表）；纯标准库实现，数据不入库、测试机即时生成（3.1）。
+- `tests/check_outputs.py`：端到端输出断言器——关键文件存在性、mapping_stat 对齐/数值校验（ID 完整、Total_Reads=输入读对数、比对率可解析）、count 矩阵形状、DEG 结果方向校验（对 truth 上/下调基因）、图表与 sessionInfo 产出（3.1）。
+- `tests/run_test.sh`：一键回归（生成数据 → dry-run → 端到端 → 断言 → DAG 再生成，`--pipeline`/`--reads`/`--keep` 可配）（3.1）。
+- `tests/lint.sh`：静态检查聚合——bash -n、shellcheck、Python 编译、R 解析、snakemake --lint（4 种 pipeline），缺工具自动跳过（3.2）。
+- `.github/workflows/ci.yml`：GitHub Actions CI（lint job + miniconda 端到端回归 job + DAG artifact）（3.2）。
+- `workflow/profile/slurm/`：SLURM 调度 profile（3.3）。
+- `CONTRIBUTING.md`：贡献指南——分支/提交信息规范、CHANGELOG 要求、文档同步 checklist、测试要求（3.4）。
+
+### Changed（变更）
+- `DEGgroupCompare.sh`：xargs 增加 `-r`，处理组不足 2 个（任务列表为空）时不再误执行。
+- `envs/enrich.yaml`：新增 `bioconductor-org.hs.eg.db`，species=hsa 的富集开箱即用。
+
 ## [0.3.0] - 2026-09-03
 
 阶段 2（结构标准化与质量提升）完成，详见 `docs/优化路线图.md`。**注意：旧入口 `rna-seq-workflow/RNA-seq_*.smk` 自本版本起废弃**（保留弃用提示 stub），请改用 `run.sh` / `workflow/Snakefile`。
