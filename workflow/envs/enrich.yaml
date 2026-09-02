@@ -9,6 +9,7 @@ dependencies:
   - bioconductor-clusterprofiler
   - bioconductor-enrichplot
   - bioconductor-apearl
+  - bioconductor-org.hs.eg.db   ## species=hsa 时 library(org.Hs.eg.db) 直接可用（osa 经本地 tarball 安装）
   - r-ggplot2
   - r-svglite
   - r-magrittr
