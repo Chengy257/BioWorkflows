@@ -1,41 +1,37 @@
 #!/usr/bin/env Rscript
-#########################################################################
-# File Name: run_ChIPQC.R
-# Author: ChengYu
-# Description: 
-# Created Time: Sat 02 Mar 2024 08:44:17 PM CST
-#########################################################################
-## Load libraries
-pkgs <- c('ChIPQC','GenomicFeatures')
-lapply(pkgs, function(x){
-   suppressMessages(library(x, character.only = T))})
+# =====================================================================
+# ChIPQC 质控报告（独立工具，不在主流程 DAG 中）
+# 用法: Rscript run_ChIPQC.R <samplesheet.csv> <gtf_file> <outdir> [report_name]
+#
+# samplesheet 列（ChIPQC 约定，参见 Bioconductor ChIPQC 文档）:
+#   SampleID, Tissue, Factor, Condition, Replicate,
+#   bamReads, ControlID, bamControl, Peaks, PeakCaller("bed"/"narrow"/"macs")
+# =====================================================================
 
-## Load sample data
-samples <- read.csv('~/chipseq/results/chip_qc/ChIPQC/samplesheet.csv')
+pkgs <- c("ChIPQC", "GenomicFeatures")
+lapply(pkgs, function(x) suppressMessages(library(x, character.only = TRUE)))
 
-# The sample sheet contains metadata information for our dataset. Each row represents a peak set (which in most cases is every ChIP sample) and several columns of required information, which allows us to easily load the associated data in one single command.
-# NOTE: The column headers have specific names that are expected by ChIPQC!!.
-# SampleID: Identifier string for sample
-# Tissue, Factor, Condition: Identifier strings for up to three different factors (You will need to have all columns listed. If you don't have infomation, then set values to NA)
-# Replicate: Replicate number of sample
-# bamReads: file path for BAM file containing aligned reads for ChIP sample
-# ControlID: an identifier string for the control sample
-# bamControl: file path for bam file containing aligned reads for control sample
-# Peaks: path for file containing peaks for sample
-# PeakCaller: Identifier string for peak caller used. Possible values include “raw”, “bed”, “narrow”, “macs”
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 3) {
+  stop("Usage: Rscript run_ChIPQC.R <samplesheet.csv> <gtf_file> <outdir> [report_name]")
+}
+samplesheet <- args[1]
+gtf_file    <- args[2]
+outdir      <- args[3]
+report_name <- ifelse(length(args) >= 4, args[4], "ChIPQC_report")
 
-Dir <- basename()
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
-gtf_file <- args[1]
-# gtf_file <- "/home/chengyu/references/osa/Oryza_sativa.IRGSP-1.0.56.Chr.gtf"
+samples <- read.csv(samplesheet)
+message("样本表: ", nrow(samples), " 行")
+
+# 峰路径与 BAM 相对工作目录解析（ChIPQC 以当前工作目录为基准）
 TxDb <- makeTxDbFromGFF(gtf_file)
 
-## Create ChIPQC object
-chipObj <- ChIPQC(samples, annotation=TxDb)
+chipObj <- ChIPQC(samples, annotation = TxDb, chromosomes = NULL)
+save(chipObj, file = file.path(outdir, "chipObj.RData"))
 
-## Save the chipObj to file
-save(chipObj, file="~/chipseq/results/chip_qc/ChIPQC/chipObj.RData")
+ChIPQCreport(chipObj, reportName = report_name,
+             reportFolder = file.path(outdir, paste0(report_name, "_report")))
 
-## Create ChIPQC report
-ChIPQCreport(chipObj, reportName="Nanog_and_Pou5f1", reportFolder="~/chipseq/results/chip_qc/ChIPQC/ChIPQCreport")
-
+message("ChIPQC 报告完成: ", outdir)

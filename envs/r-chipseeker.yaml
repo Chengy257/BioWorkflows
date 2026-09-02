@@ -1,0 +1,9 @@
+name: r-chipseeker
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - r-base=4.2
+  - bioconductor-chipseeker=1.38.0
+  - bioconductor-genomicfeatures=1.52.0

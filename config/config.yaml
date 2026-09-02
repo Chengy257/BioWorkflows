@@ -1,9 +1,42 @@
-gtf: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.gtf"
-bed: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"
-GENOME: "/share/data/reference/osa/genome_Chr_only.fasta"
-threads: "12"
-grouplist: "sample_info.csv"
-chromsize: "/share/data/reference/osa/chrom.sizes"
-# callpeak_pvalue: "0.05"
+# =====================================================================
+# chip_cuttag_atac_faire 全局配置
+# 所有路径支持绝对路径或相对数据工作目录的相对路径
+# =====================================================================
 
+# ---------- 参考基因组（示例为水稻 IRGSP-1.0，换物种请全部替换） ----------
+genome_fa: "/share/data/reference/osa/genome_Chr_only.fasta"   # bowtie2 建索引输入
+gtf: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.gtf"   # 峰注释用
+bed: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"   # 预留（deeptools 用）
+chromsize: "/share/data/reference/osa/chrom.sizes"             # bigWig 生成用
+genome_size: "3.7e8"   # MACS2 -g 有效基因组大小；水稻 IRGSP-1.0 约 3.7e8，换物种必改
 
+# ---------- 样本与资源 ----------
+grouplist: "sample_info.csv"   # 样本表；相对路径相对工作目录解析
+threads: 12                    # 单任务线程数
+
+# ---------- 比对 ----------
+bowtie2_extra: "--end-to-end --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700"
+min_mapq: 30   # 比对质量过滤阈值（ENCODE 常规值；原流程为 5）
+
+# ---------- 去重（按 assay 是否 picard 去重） ----------
+# CUT&Tag 文献推荐不去重（保留 PCR 重复，Kaya-Okur et al. 2019）
+dedup:
+  chip: true
+  cuttag: false
+  atac: true
+  faire: true
+
+# ---------- 峰调用（常规默认值，均可按项目调整） ----------
+peak:
+  keepdup: all           # 交给上游去重策略控制，MACS2 层面保留全部
+  qvalue: 0.05           # narrow 峰 q 值阈值
+  broad_cutoff: 0.05     # broad 峰 cutoff
+  atac:                  # ATAC/FAIRE 的 MACS2 偏移设置（MACS2 官方 ATAC 推荐）
+    shift: -100
+    extsize: 200
+
+# ---------- QC ----------
+qc:
+  nsc_rsc: false     # SPP 交叉相关 NSC/RSC（较耗时；需要 phantompeakqualtools）
+  frip: true         # FRiP（reads in peaks 占比，ENCODE 指标）
+  deeptools: true    # 相关性/PCA/指纹图/片段长/基因区信号 profile
