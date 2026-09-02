@@ -1,62 +1,56 @@
 #!/bin/bash
 #########################################################################
-# File Name: scripts/lncRNA_functions.sh
-# Author: ChengYu
-# Description: 
-# Created Time: Tue 12 Sep 2023 04:17:50 PM CST
+# lncRNA de novo 鉴定辅助函数（由 rules/RNA-seq_lncRNA_DenovoIdenti.smk、
+# rules/RNA-seq_upstream_AS.smk source 使用）。
+# 外部工具路径由调用方通过环境变量注入（配置来源见 config_lncRNA.yaml）:
+#   CPC2      CPC2.py 可执行文件
+#   CNCI_dir  CNCI 安装目录（含 CNCI.py，需 Python2 运行环境）
+#   PFAM_DB   Pfam-A hmmer 数据库目录
+# gffread / gffcompare / pfam_scan.pl 从 PATH 调用（见 envs/*.yaml）。
 #########################################################################
-## Description:
-## Define the functions using in lncRNA denovo identification pipeline
 
-CPC2=/home/chengyu/soft/CPC2_standalone-1.0.1/bin/CPC2.py
-CNCI_dir=/home/chengyu/soft/github_source/CNCI/
-PFAM_DB=/home/chengyu/data/database/pfam/
+die() { echo "[lncRNA_functions] ERROR: $*" >&2; exit 1; }
 
-########################
-# runStringtie() {
-#     # cat ${ID}|while read id;    
-#     # do  
-#     # stringtie -p ${threads} --rf -o ${DIR}/4.Assembly/${id}.gtf -G ${GTF_REF} ${DIR}/3.align/${id}_Aligned.sortedByCoord.out.bam 
-#     # echo "["`date +"%Y-%m-%d %H:%M.%S"`" Finished stringtie assembling of " ${id} " !]"
-#     # done
-#     stringtie --merge -p ${threads} -c 0 -F 0 -T 0 -o ${DIR}/4.Assembly/${NAME}_merged.gtf -G ${GTF_REF} `cat ${ID}|xargs -i ls ${DIR}/4.Assembly/{}.gtf|tr "\n" " "` 
-#     echo "["`date +"%Y-%m-%d %H:%M.%S"`" Assembling: Stringite program finished!]"
-# }
 ########################
 getFasta() {
-    ##  Usage: getFasta [input.gtf] [genome.fa]
-    gffread -w ${1%.*}.fa -g ${2} $1
+    ## Usage: getFasta [input.gtf] [genome.fa]  ->  生成 <input 去扩展名>.fa
+    gffread -w "${1%.*}.fa" -g "$2" "$1"
 }
+
 ########################
 runGFFcompare() {
-# Usage: runGFFcompare [REF gtf file] [gtf file] [genome fasta file]
-    gffcompare -T -r ${1} -o ${2}.compare ${2}
-    cat ${2}.compare.tracking |awk '$4=="u"{split($5,a,"|");print a[2]}'| \
-        sort -u > ${2}.compare.classcode_u.ID
-    cat ${2}.compare.annotated.gtf |fgrep -w -f ${2}.compare.classcode_u.ID > ${2}.compare.classcode_u.gtf
-    getFasta ${2}.compare.classcode_u.gtf ${3}
+    ## Usage: runGFFcompare [REF gtf] [gtf] [genome fasta]
+    ## 取 classcode "u"（参考注释中不存在的转录本）并提取序列
+    gffcompare -T -r "$1" -o "$2".compare "$2"
+    cat "$2".compare.tracking | awk '$4=="u"{split($5,a,"|");print a[2]}' | sort -u > "$2".compare.classcode_u.ID
+    cat "$2".compare.annotated.gtf | fgrep -w -f "$2".compare.classcode_u.ID > "$2".compare.classcode_u.gtf
+    getFasta "$2".compare.classcode_u.gtf "$3"
 }
+
 ########################
-runCPC2() { 
-    ## 
-    $CPC2 -i ${1} -o ${1}.CPC2.out
-    cat ${1}.CPC2.out.txt|awk '$8=="noncoding"{print $1}'|sort -u > ${1}.CPC2.noncodingID
-    }
+runCPC2() {
+    [ -n "${CPC2:-}" ] || die "未设置 CPC2 环境变量（来源: config_lncRNA.yaml 的 cpc2_bin）"
+    ## Usage: runCPC2 [input fasta]
+    "$CPC2" -i "$1" -o "$1".CPC2.out
+    cat "$1".CPC2.out.txt | awk '$8=="noncoding"{print $1}' | sort -u > "$1".CPC2.noncodingID
+}
+
 ########################
 runCNCI() {
-    ## Usage: runCNCI [input fasta,relative path] [threads]
-    DIR_OLD=`pwd`
-    cd ${CNCI_dir} 
-    ./CNCI.py -f ${DIR_OLD}/${1} -o ${DIR_OLD}/${1}.CNCI.tmp -m pl -p ${2}
-    # mv ${NAME}.CNCI.tmp/CNCI.index ${DIR_OLD}/${NAME}.CNCI.out.txt && rm -rf ${NAME}.CNCI.tmp 
-    cat ${DIR_OLD}/${1}.CNCI.tmp/CNCI.index|awk '$2=="noncoding"{print $1}'|sort -u >${DIR_OLD}/${1}.CNCI.noncodingID 
-    # rm ./*log 
-    cd ${DIR_OLD}
-    }
+    [ -n "${CNCI_dir:-}" ] || die "未设置 CNCI_dir 环境变量（来源: config_lncRNA.yaml 的 cnci_dir）"
+    ## Usage: runCNCI [input fasta,相对路径] [threads]
+    dir_old=$(pwd)
+    cd "$CNCI_dir" || die "CNCI 目录不存在: $CNCI_dir"
+    ./CNCI.py -f "$dir_old/$1" -o "$dir_old/$1.CNCI.tmp" -m pl -p "$2"
+    cat "$dir_old/$1".CNCI.tmp/CNCI.index | awk '$2=="noncoding"{print $1}' | sort -u > "$dir_old/$1".CNCI.noncodingID
+    cd "$dir_old"
+}
+
 ########################
 runPfam() {
-    pfam_scan.pl -translate -fasta $1 -dir ${PFAM_DB} -outfile ${NAME}.pfam_scan.out -as -cpu `echo 2*$threads|bc`
-    cat ${NAME}.pfam_scan.out|grep -v "^#"|grep -v '^\s*$'|awk '($13<1e-5){print $1}'|sed -e 's/\.[1-9]*$//g'|sort -u > tmp.pfam.hitID
-    }
-########################
-
+    [ -n "${PFAM_DB:-}" ] || die "未设置 PFAM_DB 环境变量（来源: config_lncRNA.yaml 的 pfam_DB）"
+    ## Usage: runPfam [input fasta] [threads]
+    pfam_scan.pl -translate -fasta "$1" -dir "$PFAM_DB" -outfile "$1".pfam_scan.out -as -cpu $((2 * $2))
+    cat "$1".pfam_scan.out | grep -v "^#" | grep -v '^[[:space:]]*$' | \
+        awk '($13<1e-5){print $1}' | sed -e 's/\.[1-9]*$//g' | sort -u > tmp.pfam.hitID
+}

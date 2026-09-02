@@ -1,12 +1,11 @@
-#!/usr/bin/R
+#!/usr/bin/env Rscript
 # Usage:
-#       Rscript runDESeq2.R [] [] [] .....
-#
-.libPaths("/home/chengyu/R/Rlib_4.2.3")
+#       Rscript runDESeq2_multiGroup_230705.R -c count.matrix.tsv -s sample_info.csv -o 5.DEG ...
+# 依赖环境见 envs/deseq2.yaml
 ###############
-# functions 
+# functions
 preprocess_data <- function(count_data,sample_info,is_batch){
-    if(is_batch){   # 
+    if(is_batch){   #
         colnames(sample_info) <-  c("id","group","batch")
         sample_info$group <- as.factor(sample_info$group)
         sample_info$batch <- as.factor(sample_info$batch)
@@ -18,8 +17,6 @@ preprocess_data <- function(count_data,sample_info,is_batch){
         sample_info <- sample_info[,1:2]
         colnames(sample_info) <-  c("id","group")
         sample_info$group <- as.factor(sample_info$group)
-        # sample_info$group <- relevel(sample_info$group,ref="control")
-        # sample_info$batch <- as.factor(sample_info$batch)
         dds <- DESeqDataSetFromMatrix(countData = count_data,
                                 colData = sample_info,
                                 design = ~ group)
@@ -39,24 +36,23 @@ runDEseq2 <- function(dds,sample_info,output_name,FDR,FoldChange){
         treat <- pairwise_combs[i,1]  # pair[1]
         ids <- c()
         result_group <- paste0(treat, "_vs_", ref)
-        if(grepl(control_name,ref)) {
+        ## 仅输出 处理组_vs_对照组 的比较（精确匹配，修复旧版 grepl 子串误配）
+        if(ref == control_name) {
             print(paste("[",date(),"] DESeq2: preprocess ",result_group,"...",sep=""))
-            # ref <- strsplit(gsub("^group_","",result_group),split="_vs_")[[1]][1]
-            # treat <- strsplit(gsub("^group_","",result_group),split="_vs_")[[1]][2]             
-            res_contrast <- results(dds, contrast = c("group",treat, ref)) 
+            res_contrast <- results(dds, contrast = c("group",treat, ref))
             ids <- sample_info$id[which(sample_info$group %in% c(ref,treat))]
             print(ids)
             out_norm_count <- norm_count[,ids]
             out <- as.data.frame(res_contrast);
-            out$FoldChange <- 2^(out$log2FoldChange);      
-            out <- cbind(out,out_norm_count); 
+            out$FoldChange <- 2^(out$log2FoldChange);
+            out <- cbind(out,out_norm_count);
             out$type <- NA ;
             out$type[which(out$padj <= FDR & out$FoldChange >= FoldChange)] <- "Up";
-            out$type[which(out$padj <= FDR & out$FoldChange <= (1/FoldChange))] <- "Down"; 
-            out$type[is.na(out$type)] <- "Unsig"; 
-            head(out)  
+            out$type[which(out$padj <= FDR & out$FoldChange <= (1/FoldChange))] <- "Down";
+            out$type[is.na(out$type)] <- "Unsig";
+            head(out)
             write.table(out,file=paste(output_name,result_group,"_DESeq2.output.tsv",sep=""),quote = F,row.names = T,col.names = T,sep = "\t");
-            system(paste("sed -i '1 s/^/gene_id\t/'",paste(output_name,result_group,"_DESeq2.output.tsv",sep="")))           
+            system(paste("sed -i '1 s/^/gene_id\t/'",paste(output_name,result_group,"_DESeq2.output.tsv",sep="")))
             group_contrast_plot(res_contrast,out,paste(output_name,result_group,sep=""))
         }
     }
@@ -70,7 +66,6 @@ sample_plots <- function(dds,output_name){
     # cluster
     hc <- hcluster(t(vstMat), method="pearson")
     # heatmap
-    #pdf(paste(output_name,"DESeq2.normalized.rlog.pearson.pdf",seq="_"), pointsize=10)
     pdf(paste(output_name,"DESeq2.normalized.vst.Pearson_heatmap.pdf",sep=""),height=14,width=12)
         heatmap.2(pearson_cor, Rowv=as.dendrogram(hc), symm=T, trace="none",col=hmcol, margins=c(12,12), main="Samples' pearson correlation");
     dev.off()
@@ -99,8 +94,7 @@ group_contrast_plot <- function(res,data,name){
 }
 # main function
 main <- function(count,sample,is_batch,Nthreads,output_name,FDR,FoldChange){
-    # 
-    #register(MulticoreParam(Nthreads));
+    #
     register(MulticoreParam(as.numeric(Nthreads)));
     print(paste("[",date(),"] Using ",Nthreads," threads.",sep=""))
     # dir
@@ -110,17 +104,13 @@ main <- function(count,sample,is_batch,Nthreads,output_name,FDR,FoldChange){
     } else {
         system(paste0("mkdir -p ",output_name))
     }
-    # dir.create(output_name)
     print(paste("[",date(),"] Preprocess data...",sep=""))
     count_data <- read.csv(count,header = T,row.names = 1,sep="\t") # read in raw count data
-    count_data <- count_data[rowSums(count_data)>0,]   ## remove un-expressed genes 
+    count_data <- count_data[rowSums(count_data)>0,]   ## remove un-expressed genes
     sample_info <- read.csv(sample,header = T,sep=",") ## read in sample info
-    # colnames(sample_info) <-  c("id","group","batch")
-    ## change - to _
-    # sample_info$id <- gsub("-","_",sample_info$id)
+    ## 兼容历史数据：id 中的 '-' 改为 '_'（与 count 矩阵列名一致；新项目样本表禁止 '-'）
     sample_info[,1] <- gsub("-","_",sample_info[,1])
-    # colnames(count_data) <- name
-    dds <- preprocess_data(count_data,sample_info,is_batch) 
+    dds <- preprocess_data(count_data,sample_info,is_batch)
     print(dds)
     #
     print(paste("[",date(),"] Running sample cluster & plot...",sep=""))
@@ -129,7 +119,6 @@ main <- function(count,sample,is_batch,Nthreads,output_name,FDR,FoldChange){
     print(paste("[",date(),"] Running DESeq2...",sep=""))
     runDEseq2(dds,sample_info,output_name,FDR,FoldChange)
     print(paste("[",date(),"] All done!",sep=""))
-    # system(paste("mv ./",output_name,"_*"," ","./",output_name,"/",sep=""))
 }
 
 ## call main function
@@ -140,7 +129,7 @@ spec <- matrix(c("count","c",2,"character","Input raw count matrix, [filename, t
                  "sample","s",2,"character","Input sample infomation matrix, [filename, comma separated csv file].",
                  "output","o",2,"character","Output filename prefix.",
                  "batch","b",1,"logical","If considering the batch effect, True or False, [optional, default is False].",
-                 "control_name","r",1,"character","The control samples same character.",
+                 "control_name","r",1,"character","The control group name in sample csv, [optional, default is control].",
                  "fdr","p",1,"numeric","DEGs adjusted pvalue threshold, [optional, default is 0.05].",
                  "foldchange","f",1,"numeric","DEGs foldchange threshold, [optional, default is 2].",
                  "threads","t",1,"numeric","Using CPU numbers, [optional, default is 1].",
@@ -148,7 +137,7 @@ spec <- matrix(c("count","c",2,"character","Input raw count matrix, [filename, t
                  byrow=T,ncol=5)
 opt <- getopt(spec = spec)
 print(opt)
-# check 
+# check
 if( !is.null(opt$help) || is.null(opt$count) || is.null(opt$sample)|| is.null(opt$output)){
     cat(paste(getopt(spec=spec, usage = T), "\n"))
     quit()
@@ -174,4 +163,4 @@ control_name <- as.character(opt$control_name)
 output_name <- trimws(as.character(opt$output), which = c("both", "left", "right"), whitespace = "[ \t\r\n]")
 
 # running main function
-main(count,sample,is_batch,Nthreads,output_name,FDR,FoldChange) 
+main(count,sample,is_batch,Nthreads,output_name,FDR,FoldChange)

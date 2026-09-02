@@ -1,36 +1,49 @@
-#!/usr/bin/python
-#########################################################################
-# File Name: getGroups.py
-# Author: ChengYu
-# Description: 
-# Created Time: Thu 20 Jul 2023 08:51:33 PM CST
-#########################################################################
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""按 sample_info.csv 生成 DEG 组间比较任务文件。
+
+用法:
+    python getGroups.py <sample_info.csv> <DEG_dir> [control_group]
+
+在 <DEG_dir> 中寻找 <处理组>_vs_<对照组>_{UP,DOWN,ALL}.DEGs.txt（由 enrich.sh 生成），
+为所有处理组两两组合写出任务文件：
+    6.DEGcompare/combination/<A>_<r1>_<B>_<r2>
+内容两行（路径 集合名），供 multi_enrich_GOKEGG.R 消费。
+分组列按表头名 "group" 取（不再取最后一列），对照组名可配置。
+"""
+import csv
+import os
 import sys
 
-infile = sys.argv[1]  ## input file sample_info.csv, list of sample IDs
-DEG_dir = sys.argv[2]  ## DEGs directory
-item = [] 
-with open(infile,'r') as it:
-	next(it)
-	for line in it:
-		line = line.strip().split(",")
-		if line[-1] not in item:
-			if line[-1] != "control":  ## 
-				item.append(line[-1])
-# print(item)
-# item = ["A", "B", "C", "D", "E"]  ## test
 
-for i in range(0,len(item),1):	
-	for j in range(i+1,len(item),1):
-		#print(i,j)
-		for regu1 in ["UP", "DOWN", "ALL"]:
-			for regu2 in ["UP", "DOWN", "ALL"]:
-				# print(item[i] , regu1, item[j] , regu2, sep = " ")	
-				out = "6.DEGcompare/combination/" + item[i] + "_" + regu1 + "_" + item[j] + "_" + regu2
-				with open(out,'w') as f:					
-					a = "".join([DEG_dir,item[i],"_vs_control_",regu1,".DEGs.txt"," ",item[i],"_",regu1])
-					b = "".join([DEG_dir,item[j],"_vs_control_",regu2,".DEGs.txt"," ",item[j],"_",regu2])
-					print(a,b,sep="\n",file = f)
-					# print(item[i],item[j])
-				f.close()
-				
+def main():
+    if len(sys.argv) < 3:
+        sys.exit(__doc__)
+    infile, deg_dir = sys.argv[1], sys.argv[2]
+    control = sys.argv[3] if len(sys.argv) > 3 else "control"
+
+    groups = []
+    with open(infile, newline="", encoding="utf-8-sig") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            g = (row.get("group") or "").strip()
+            if g and g not in groups and g != control:
+                groups.append(g)
+
+    os.makedirs("6.DEGcompare/combination", exist_ok=True)
+    for i in range(len(groups)):
+        for j in range(i + 1, len(groups)):
+            for r1 in ("UP", "DOWN", "ALL"):
+                for r2 in ("UP", "DOWN", "ALL"):
+                    out = os.path.join("6.DEGcompare", "combination",
+                                       f"{groups[i]}_{r1}_{groups[j]}_{r2}")
+                    with open(out, "w") as f:
+                        a = os.path.join(deg_dir, f"{groups[i]}_vs_{control}_{r1}.DEGs.txt")
+                        b = os.path.join(deg_dir, f"{groups[j]}_vs_{control}_{r2}.DEGs.txt")
+                        print(f"{a} {groups[i]}_{r1}", file=f)
+                        print(f"{b} {groups[j]}_{r2}", file=f)
+    print(f"[getGroups] {len(groups)} 处理组 -> {len(groups) * (len(groups) - 1) // 2} 组合")
+
+
+if __name__ == "__main__":
+    main()

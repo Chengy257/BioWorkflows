@@ -1,9 +1,11 @@
-#!/usr/bin/env Rscript 
-.libPaths("/home/chengyu/R/Rlib_4.2.3")
-.libPaths()
+#!/usr/bin/env Rscript
+## featureCounts 定量（Rsubread）+ FPKM/TPM 计算，输出 5 列表格
+## 依赖环境见 envs/quant.yaml；不再依赖个人 R 库路径
+suppressWarnings({
 pkgs <- c('argparser','Rsubread','limma','edgeR','getopt')
 lapply(pkgs, function(x){
    suppressMessages(library(x, character.only = T))})
+})
 
 spec <- matrix(c("bam","b",2,"character","Input bam file.",
 				"gtf","g",2,"character","Input gtf file.",
@@ -44,7 +46,6 @@ featureType <- opt$featureType
 #######################
 outStatsFilePath<- paste(outFilePref, '.log',sep='');
 outCountsFilePath<- paste(outFilePref,'.count',sep='');
-# fCountsList=featureCounts(bamFile,annot.ext=gtfFile,isGTFAnnotationFile=TRUE,nthreads=nthreads,isPairedEnd=TRUE)
 fCountsList=featureCounts(bamFile,annot.ext=gtfFile,isGTFAnnotationFile=TRUE,GTF.attrType=attribute,GTF.featureType=featureType,nthreads=nthreads,isPairedEnd=layout,strandSpecific=strand)
 dgeList=DGEList(counts=fCountsList$counts,genes=fCountsList$annotation)
 fpkm=rpkm(dgeList,dgeList$genes$Length)

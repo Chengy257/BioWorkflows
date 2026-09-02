@@ -1,7 +1,17 @@
+## =====================================================================
+## lncRNA de novo 鉴定附加配置（仅 RNA-seq_up_lncRNA.smk 加载；
+## 同名键覆盖 config_basic_defaulted.yaml）
+## =====================================================================
 
-gtf: "/home/chengyu/references/osa/MSU_RAP_combined_CDS_240705.updated.gtf"
-gtf_PcGs: "/home/chengyu/references/osa/MSU_RAP_combined_CDS_PcGs_240705.updated.gtf"
+## lncRNA 流程使用的参考注释（可与基础配置 gtf 不同，例如蛋白编码+非编码合并注释）
+gtf: "/path/to/reference/osa/MSU_RAP_combined_CDS.gtf"
+gtf_PcGs: "/path/to/reference/osa/MSU_RAP_combined_CDS_PcGs.gtf"
 
-pfam_DB: "/home/chengyu/data/database/pfam/"
-nr_diamond_DB: "/home/chengyu/data/database/nr/diomand/nr.dmnd"
+## 外部数据库与工具路径（首次运行前必须替换为集群真实路径）
+pfam_DB: "/path/to/database/pfam/"
+nr_diamond_DB: "/path/to/database/nr/nr.dmnd"
+cpc2_bin: "/path/to/software/CPC2_standalone-1.0.1/bin/CPC2.py"
+cnci_dir: "/path/to/software/CNCI/"
 
+## Pfam / Nr 搜索线程数
+lncrna_threads: 30

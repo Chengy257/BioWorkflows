@@ -1,7 +1,13 @@
-configfile: "/home/chengyu/workflows/snakemake/rna-seq-workflow/config_basic_defaulted.yaml"
-configfile: "/home/chengyu/workflows/snakemake/rna-seq-workflow/config_lncRNA.yaml"
+###############################################
+## 上游定量 + lncRNA de novo 鉴定 + lncRNA 表达定量
+## 运行：bash run.sh lncrna <project_dir> [config.yaml] [jobs]
+###############################################
+import os
 
-## function define: get sample IDs
+configfile: os.path.join(workflow.basedir, "config_basic_defaulted.yaml")
+configfile: os.path.join(workflow.basedir, "config_lncRNA.yaml")   ## 同名键覆盖基础配置
+
+
 def get_samples():
     ids = []
     with open(config["SampleListFile"], "r") as samples_list:
@@ -9,20 +15,19 @@ def get_samples():
         for line in samples_list:
             line = line.strip().split(",")
             ids.append(line[0])
-    samples_list.close()
     return ids
+
+
 SAMPLES = get_samples()
 
 rule results:
     input:
-        # "2.cleandata/fastqc/multiqc/multiqc_report.html",
         "4.expression/GeneExpression_TPM.xls",
-        # "2.cleandata/trim/fastqc/multiqc_report.html",
         "3.align/mapping_stat.xls",
-        expand("3.align/{sample}_Aligned.sortedByCoord.out.bam",sample=SAMPLES),
+        expand("3.align/{sample}_Aligned.sortedByCoord.out.bam", sample=SAMPLES),
         "4.LncRNA/4.5.Final_lncRNA/final_lncRNA.fa",
         "5.expression/lncRNA/GeneExpression_TPM.xls",
 
-include: "/home/chengyu/workflows/snakemake/rna-seq-workflow/rules/RNA-seq_upstream.smk"
-# include: "/home/chengyu/workflows/snakemake/rna-seq-workflow/RNA-seq_downstream.smk"
-include: "/home/chengyu/workflows/snakemake/rna-seq-workflow/rules/RNA-seq_lncRNA_DenovoIdenti.smk"
+
+include: os.path.join(workflow.basedir, "rules", "RNA-seq_upstream.smk")
+include: os.path.join(workflow.basedir, "rules", "RNA-seq_lncRNA_DenovoIdenti.smk")

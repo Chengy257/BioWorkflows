@@ -1,55 +1,58 @@
 #!/bin/bash
 #########################################################################
-# File Name: /home/chengyu/workflows/snakemake/rna-seq-workflow/scripts/enrich.sh
-# Author: ChengYu
-# Description: 
-# Created Time: Sat Jul  8 17:25:47 2023
+# DEG 功能富集：拆分 Up/Down/All DEGs → GO/KEGG 富集 + GSEA → DEGs 注释表
+# Usage: enrich.sh <DEG_dir> <species> <annotation_tsv> <orgdb_tarball>
+#   DEG_dir        runDESeq2 输出目录（含 Diff_Expr_Analysis_Reults/*_DESeq2.output.tsv）
+#   species        osa | hsa
+#   annotation_tsv 基因 id 功能注释表
+#   orgdb_tarball  osa 本地 OrgDb tarball（species=hsa 时忽略）
 #########################################################################
 
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-function enrich() {
-	mkdir -p $DIR/GO_KEGG_enrich $DIR/DEGs
-	ls $DIR/Diff_Expr_Analysis_Reults/*_DESeq2.output.tsv|while read id; 
-	do
-	## get DEGs
-		b_name=`basename $id`
-		prefix=${b_name%_*}	
-		cat $id |awk '$NF=="Up"{print $1}' > $DIR/DEGs/${prefix}_UP.DEGs.txt
-		cat $id |awk '$NF=="Down"{print $1}' > $DIR/DEGs/${prefix}_DOWN.DEGs.txt
-		cat $DIR/DEGs/${prefix}_UP.DEGs.txt $DIR/DEGs/${prefix}_DOWN.DEGs.txt > $DIR/DEGs/${prefix}_ALL.DEGs.txt
-
-	## get FoldChange
-		cat $id|cut -f1,3 > $DIR/DEGs/${prefix}_FoldChange.xls
-
-	## GO & KEGG enrich	
-		for i in UP DOWN ALL ;
-		do
-			mkdir -p $DIR/GO_KEGG_enrich/${prefix}/${i}
-			/usr/bin/Rscript /home/chengyu/workflows/snakemake/rna-seq-workflow/scripts/enrich_GO_KEGG_clusterProfiler_gProfilerGO.R $DIR/DEGs/${prefix}_${i}.DEGs.txt $DIR/GO_KEGG_enrich/$prefix/${i} 
-		done	
-	## svg 2 pdf
-		# ls ./enrich/$prefix/*/*pdf |xargs -i /usr/bin/rsvg-convert -f png -o {}.png {} 
-		# ls ./*pdf|xargs -i /usr/bin/rsvg-convert -f png -o {}.png {}
-	done
-	# DEGs annotation
-	cd $DIR/DEGs 
-	ls *.DEGs.txt|while read id ; 
-	do  
-		cat $annotation |fgrep -w -f $id > ${id}.annotation.tsv ;
-	done 	
-	cd -
-	ls $DIR/DEGs/*_FoldChange.xls > $DIR/DEGs/all_fc_filespath
-	## GSEA 
-	/usr/bin/Rscript /home/chengyu/workflows/snakemake/rna-seq-workflow/scripts/multiGSEA_gProfilerGO_231216.R $DIR/DEGs/all_fc_filespath $DIR/GSEA_enrich_GO osa
-}
-
-## main 
 DIR=$1
 spe=$2
-annotation=/home/chengyu/references/osa/rap/20230315/annotation_full.tsv
-# cd $DIR
-# rm -rf $DIR/enrich $DIR/DEGs && mkdir -p $DIR/enrich $DIR/DEGs
+annotation=$3
+orgdb_tar=$4
 
+function enrich() {
+	mkdir -p "$DIR/GO_KEGG_enrich" "$DIR/DEGs"
+	ls "$DIR"/Diff_Expr_Analysis_Reults/*_DESeq2.output.tsv | while read id;
+	do
+	## 拆分 DEGs
+		b_name=$(basename "$id")
+		prefix=${b_name%_*}
+		awk '$NF=="Up"{print $1}' "$id" > "$DIR/DEGs/${prefix}_UP.DEGs.txt"
+		awk '$NF=="Down"{print $1}' "$id" > "$DIR/DEGs/${prefix}_DOWN.DEGs.txt"
+		cat "$DIR/DEGs/${prefix}_UP.DEGs.txt" "$DIR/DEGs/${prefix}_DOWN.DEGs.txt" > "$DIR/DEGs/${prefix}_ALL.DEGs.txt"
+
+	## 提取 FoldChange（供 GSEA）
+		cut -f1,3 "$id" > "$DIR/DEGs/${prefix}_FoldChange.xls"
+
+	## GO & KEGG 富集
+		for i in UP DOWN ALL;
+		do
+			mkdir -p "$DIR/GO_KEGG_enrich/${prefix}/${i}"
+			Rscript "$SCRIPT_DIR/enrich_GO_KEGG_clusterProfiler_gProfilerGO.R" \
+				"$DIR/DEGs/${prefix}_${i}.DEGs.txt" "$DIR/GO_KEGG_enrich/$prefix/${i}" "$spe" "$orgdb_tar"
+		done
+	done
+
+	## DEGs 功能注释
+	(
+	cd "$DIR/DEGs"
+	ls *.DEGs.txt | while read f;
+	do
+		cat "$annotation" | fgrep -w -f "$f" > "${f}.annotation.tsv"
+	done
+	)
+	ls "$DIR"/DEGs/*_FoldChange.xls > "$DIR/DEGs/all_fc_filespath"
+
+	## GSEA（GO）
+	Rscript "$SCRIPT_DIR/multiGSEA_gProfilerGO_231216.R" "$DIR/DEGs/all_fc_filespath" "$DIR/GSEA_enrich_GO" "$spe" "$orgdb_tar"
+}
+
+## main
 enrich
-echo `date` ": All Done!" > $DIR/GO_KEGG_enrich/flag.log
-
+echo "$(date) : All Done!" > "$DIR/GO_KEGG_enrich/flag.log"
