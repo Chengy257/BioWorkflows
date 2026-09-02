@@ -1,0 +1,48 @@
+# ---- Snakemake 运行时 ----
+.snakemake/
+logs/
+*.log
+
+# ---- 分析产出目录（数据不属于版本库，只在运行目录生成） ----
+0.index/
+1.rawdata/
+2.cleandata/
+3.align/
+4.peak/
+5.QC*/
+6.motif/
+reference/
+
+# 高通量数据文件（万一放到仓库根目录也不入库）
+*.fastq
+*.fastq.gz
+*.fq.gz
+*.bam
+*.bam.bai
+*.bai
+*.bw
+*.bigwig
+*.bdg
+*.npz
+
+# ---- 本地私有配置（Phase 2 起采用 config.template.yaml + config.local.yaml 模式） ----
+config/config.local.yaml
+
+# ---- R ----
+.Rhistory
+.RData
+*.Rproj
+*.Rproj.user/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+
+# ---- 系统与编辑器 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/

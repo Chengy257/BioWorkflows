@@ -1,0 +1,19 @@
+# 统一换行符：本仓库的脚本均在 Linux 服务器上执行，必须保持 LF
+* text=auto
+*.sh   text eol=lf
+*.smk  text eol=lf
+*.R    text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.csv  text eol=lf
+*.tsv  text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+
+# 二进制文件不做事
+*.png  binary
+*.pdf  binary
+*.gz   binary
+*.bam  binary
+*.bai  binary
