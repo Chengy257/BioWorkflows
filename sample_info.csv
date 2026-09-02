@@ -1,0 +1,3 @@
+ids,seqtype,layout,group
+IgG,chip,PAIRED,myc_IgG
+myc,chip,PAIRED,myc_IgG

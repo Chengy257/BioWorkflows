@@ -1,0 +1,9 @@
+gtf: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.gtf"
+bed: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"
+GENOME: "/share/data/reference/osa/genome_Chr_only.fasta"
+threads: "12"
+grouplist: "sample_info.csv"
+chromsize: "/share/data/reference/osa/chrom.sizes"
+# callpeak_pvalue: "0.05"
+
+
