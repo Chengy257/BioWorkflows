@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 ## Usage:
-##   Rscript multiGSEA_gProfilerGO_231216.R <FoldChange文件列表> <输出目录前缀> <species: osa|hsa> <osa OrgDb tarball>
+##   Rscript run_gsea.R <FoldChange文件列表> <输出目录前缀> <species: osa|hsa> <osa OrgDb tarball>
 ## GSEA（gseGO）；物种与 OrgDb 路径由 enrich.sh 从 config 传入；依赖环境见 envs/enrich.yaml
 args <- commandArgs(T)
 pkgs <- c('clusterProfiler','ggplot2','enrichplot','dplyr')

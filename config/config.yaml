@@ -1,0 +1,45 @@
+## =====================================================================
+## rna-seq 工作流主配置（项目级配置模板）
+## 用法：复制本文件到项目目录修改，然后
+##   bash run.sh <pipeline> <project_dir> /path/to/config.yaml [jobs]
+##   （run.sh 经 RNASEQ_CONFIG 环境变量将配置注入 workflow/Snakefile）
+## 仓库内本文件同时是默认配置，供 --lint 与仓库内示例使用；
+## 注释掉的键回落到 config/species.yaml 中当前物种的预设。
+## =====================================================================
+
+## ---- 运行模式（run.sh 自动注入，一般无需在此修改）----
+pipeline: "upstream"            # upstream | deg | as | lncrna
+
+## ---- 输出与样本 ----
+results_dir: "results"          # 运行产物根目录（相对运行目录）
+SampleListFile: "config/samples.csv"   # 样本表（相对运行目录；项目内通常为 "samples.csv"）
+control_group: "control"        # 对照组组名
+threads: 12                     # 每任务线程数
+
+## ---- 差异分析 ----
+FoldChange: "2"                 # 倍数阈值（|log2FC| > 1）
+padj: "0.05"                    # 校正 p 值阈值
+pca_ntop: 20000                 # PCA 使用的变异基因数
+
+## ---- 物种与参考资源 ----
+## 选定 species 后，未在此显式给出的资源键回落到 config/species.yaml 预设；
+## 需要覆盖时取消注释并填写真实路径（优先于 species.yaml）
+species: "osa"                  # osa | hsa
+# bed: "/path/to/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"
+# genome: "/path/to/reference/osa/genome.fa"
+# gtf: "/path/to/reference/osa/annotation.gtf"
+# annotation_tsv: "/path/to/reference/osa/annotation_full.tsv"
+# orgdb_tarball: "/path/to/reference/osa/org.Osativa.eg.db_0.1.tar.gz"
+
+## ---- STAR ----
+star_extra_args: ""             # 追加的 STAR 参数（组装管线默认使用组装优化参数，见 workflow/rules/common.smk）
+
+## ---- lncRNA 管线（仅 pipeline=lncrna 使用）----
+lncrna:
+  gtf: ""                       # lncRNA 流程参考注释；留空使用顶层 gtf
+  gtf_PcGs: "/path/to/reference/osa/MSU_RAP_combined_CDS_PcGs.gtf"
+  pfam_DB: "/path/to/database/pfam/"
+  nr_diamond_DB: "/path/to/database/nr/nr.dmnd"
+  cpc2_bin: "/path/to/software/CPC2_standalone-1.0.1/bin/CPC2.py"
+  cnci_dir: "/path/to/software/CNCI/"
+  threads: 30                   # Pfam / NR 搜索线程

@@ -6,7 +6,7 @@
     python merge_featurecounts.py <定量目录>
 
 <定量目录>/ 下需有每样本的 <sample>.count 与 <sample>.log
-（由 scripts/run-featurecounts.R 产生；.count 5 列: id/effLength/counts/fpkm/tpm）。
+（由 scripts/run_featurecounts.R 产生；.count 5 列: id/effLength/counts/fpkm/tpm）。
 
 输出（写入同目录）:
     count.matrix.tsv            基因 × 样本 raw counts 矩阵（runDESeq2 输入）
@@ -14,8 +14,8 @@
     GeneExpression_FPKM.xls     基因 × 样本 FPKM 矩阵
     GeneCount_Assigned_logs.xls featureCounts 各状态（Assigned/Unassigned_*）统计
 
-替代原 featureCount.R_result_merge.sh（其依赖的 njoin.sh / transposition.sh
-不在仓库中），行为对齐原输出格式。
+替代原合并 shell 脚本（其依赖的 njoin.sh / transposition.sh 不在仓库中），
+行为对齐原输出格式。
 """
 import glob
 import os

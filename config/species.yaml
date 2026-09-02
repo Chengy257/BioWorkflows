@@ -1,0 +1,23 @@
+## =====================================================================
+## 物种资源预设映射（workflow/Snakefile 加载）
+## 顶层 species 键选中其一；资源键仅在项目配置未显式给出时生效。
+## 路径为占位符，实际部署时在项目配置中覆盖为集群真实路径。
+## =====================================================================
+
+osa:
+  label: "水稻 Oryza sativa (IRGSP-1.0 / RAP-DB)"
+  kegg_organism: "dosa"          # KEGG 物种代码（水稻 japonica）
+  bed: "/path/to/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"        # RSeQC infer_experiment 用
+  genome: "/path/to/reference/osa/genome.fa"
+  gtf: "/path/to/reference/osa/annotation.gtf"
+  annotation_tsv: "/path/to/reference/osa/annotation_full.tsv"           # 基因 id 功能注释表
+  orgdb_tarball: "/path/to/reference/osa/org.Osativa.eg.db_0.1.tar.gz"   # 本地 OrgDb 安装包
+
+hsa:
+  label: "人 Homo sapiens (GRCh38 / GENCODE)"
+  kegg_organism: "hsa"
+  bed: "/path/to/reference/hsa/genes.bed"
+  genome: "/path/to/reference/hsa/GRCh38.p14.genome.fa"
+  gtf: "/path/to/reference/hsa/gencode.v44.annotation.gtf"
+  annotation_tsv: "/path/to/reference/hsa/annotation_full.tsv"
+  orgdb_tarball: ""              # hsa 使用 conda 环境自带 org.Hs.eg.db，无需 tarball

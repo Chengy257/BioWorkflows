@@ -1,10 +1,9 @@
 #!/usr/bin/env Rscript
 ## Usage:
-##   Rscript multi_enrich_GOKEGG.R <组合任务文件> <species: osa|hsa> <osa OrgDb tarball>
+##   Rscript run_deg_compare.R <组合任务文件> <species: osa|hsa> <osa OrgDb tarball>
 ## 组合任务文件内容为两行："DEG文件路径 集合名"，由 getGroups.py 生成、DEGgroupCompare.sh 调度
 ## 依赖环境见 envs/enrich.yaml
 args <- commandArgs(T)
-.libPaths()
 pkgs <- c('clusterProfiler','ggplot2','aPEAR','svglite','VennDiagram','UpSetR','magrittr','dplyr')
 lapply(pkgs, function(x){
    suppressMessages(library(x, character.only = T))})
@@ -20,7 +19,8 @@ if (spe == "hsa") {
     keytype <- "ENSEMBL"
 } else {
     if (!require("org.Osativa.eg.db", quietly = TRUE)) {
-        if (is.na(orgdb_tar)) stop("osa 需要 OrgDb：请在 config 的 orgdb_tarball 中提供本地 tarball 路径")
+        if (is.na(orgdb_tar) || orgdb_tar == "")
+            stop("osa 需要 OrgDb：请在 config 的 orgdb_tarball 中提供本地 tarball 路径")
         install.packages(orgdb_tar, repos = NULL)
     }
     suppressMessages(library(org.Osativa.eg.db))
@@ -104,7 +104,8 @@ compare <- function(geneSets, name){
 
 ### main
 genelist <- read.table(args[1])
-name <- paste("6.DEGcompare/", basename(args[1]), sep = "")
+## 结果文件与组合任务文件同目录（不再硬编码 6.DEGcompare）
+name <- file.path(dirname(args[1]), basename(args[1]))
 geneSets <- getGeneSetList(genelist)
 list <- getIntersect(geneSets, name)
 compare(list, name)

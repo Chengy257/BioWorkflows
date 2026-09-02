@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 ## Usage:
-##   Rscript enrich_GO_KEGG_clusterProfiler_gProfilerGO.R <gene list> <output dir> <species: osa|hsa> <osa OrgDb tarball>
+##   Rscript run_enrichment.R <gene list> <output dir> <species: osa|hsa> <osa OrgDb tarball> <kegg organism code>
 ## 依赖环境见 envs/enrich.yaml；物种与 OrgDb 路径由 enrich.sh 从 config 传入
 args <- commandArgs(T)
 pkgs <- c('clusterProfiler','ggplot2','aPEAR','svglite','magrittr','dplyr')
@@ -11,6 +11,8 @@ spe <- "osa"
 if (length(args) >= 3) spe <- args[3]
 orgdb_tar <- NA
 if (length(args) >= 4) orgdb_tar <- args[4]
+kegg_org <- ifelse(spe == "hsa", "hsa", "dosa")   # 默认按物种推导，可被第 5 参数覆盖
+if (length(args) >= 5 && !is.na(args[5]) && args[5] != "") kegg_org <- args[5]
 
 if (spe == "hsa") {
     suppressMessages(library(org.Hs.eg.db))
@@ -18,7 +20,8 @@ if (spe == "hsa") {
     keytype <- "ENSEMBL"
 } else {
     if (!require("org.Osativa.eg.db", quietly = TRUE)) {
-        if (is.na(orgdb_tar)) stop("osa 需要 OrgDb：请在 config 的 orgdb_tarball 中提供本地 tarball 路径")
+        if (is.na(orgdb_tar) || orgdb_tar == "")
+            stop("osa 需要 OrgDb：请在 config 的 orgdb_tarball 中提供本地 tarball 路径")
         install.packages(orgdb_tar, repos = NULL)
     }
     suppressMessages(library(org.Osativa.eg.db))
@@ -40,7 +43,6 @@ R.utils::setOption("clusterProfiler.download.method", "auto")
 for (ont in c("MF", "BP", "CC", "KEGG")) {
     tryCatch({
         if (ont == "KEGG") {
-            kegg_org <- ifelse(spe == "hsa", "hsa", "dosa")
             if (spe == "hsa") {
                 eg <- bitr(genelist, fromType = "ENSEMBL", toType = "ENTREZID", OrgDb = orgdb)
                 ego <- enrichKEGG(eg$ENTREZID, organism = kegg_org, keyType = "kegg",

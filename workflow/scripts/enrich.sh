@@ -1,11 +1,12 @@
 #!/bin/bash
 #########################################################################
 # DEG 功能富集：拆分 Up/Down/All DEGs → GO/KEGG 富集 + GSEA → DEGs 注释表
-# Usage: enrich.sh <DEG_dir> <species> <annotation_tsv> <orgdb_tarball>
-#   DEG_dir        runDESeq2 输出目录（含 Diff_Expr_Analysis_Reults/*_DESeq2.output.tsv）
+# Usage: enrich.sh <DEG_dir> <species> <annotation_tsv> <orgdb_tarball> <kegg_organism>
+#   DEG_dir        runDESeq2 输出目录（含 Diff_Expr_Analysis_Results/*_DESeq2.output.tsv）
 #   species        osa | hsa
 #   annotation_tsv 基因 id 功能注释表
 #   orgdb_tarball  osa 本地 OrgDb tarball（species=hsa 时忽略）
+#   kegg_organism  KEGG 物种代码（osa→dosa，hsa→hsa）
 #########################################################################
 
 set -u
@@ -15,10 +16,11 @@ DIR=$1
 spe=$2
 annotation=$3
 orgdb_tar=$4
+kegg_org=$5
 
 function enrich() {
 	mkdir -p "$DIR/GO_KEGG_enrich" "$DIR/DEGs"
-	ls "$DIR"/Diff_Expr_Analysis_Reults/*_DESeq2.output.tsv | while read id;
+	ls "$DIR"/Diff_Expr_Analysis_Results/*_DESeq2.output.tsv | while read id;
 	do
 	## 拆分 DEGs
 		b_name=$(basename "$id")
@@ -34,8 +36,8 @@ function enrich() {
 		for i in UP DOWN ALL;
 		do
 			mkdir -p "$DIR/GO_KEGG_enrich/${prefix}/${i}"
-			Rscript "$SCRIPT_DIR/enrich_GO_KEGG_clusterProfiler_gProfilerGO.R" \
-				"$DIR/DEGs/${prefix}_${i}.DEGs.txt" "$DIR/GO_KEGG_enrich/$prefix/${i}" "$spe" "$orgdb_tar"
+			Rscript "$SCRIPT_DIR/run_enrichment.R" \
+				"$DIR/DEGs/${prefix}_${i}.DEGs.txt" "$DIR/GO_KEGG_enrich/$prefix/${i}" "$spe" "$orgdb_tar" "$kegg_org"
 		done
 	done
 
@@ -50,7 +52,7 @@ function enrich() {
 	ls "$DIR"/DEGs/*_FoldChange.xls > "$DIR/DEGs/all_fc_filespath"
 
 	## GSEA（GO）
-	Rscript "$SCRIPT_DIR/multiGSEA_gProfilerGO_231216.R" "$DIR/DEGs/all_fc_filespath" "$DIR/GSEA_enrich_GO" "$spe" "$orgdb_tar"
+	Rscript "$SCRIPT_DIR/run_gsea.R" "$DIR/DEGs/all_fc_filespath" "$DIR/GSEA_enrich_GO" "$spe" "$orgdb_tar"
 }
 
 ## main

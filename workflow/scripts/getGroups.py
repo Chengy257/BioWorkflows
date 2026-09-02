@@ -3,13 +3,13 @@
 """按 sample_info.csv 生成 DEG 组间比较任务文件。
 
 用法:
-    python getGroups.py <sample_info.csv> <DEG_dir> [control_group]
+    python getGroups.py <sample_info.csv> <DEG_dir> [control_group] [compare_dir]
 
 在 <DEG_dir> 中寻找 <处理组>_vs_<对照组>_{UP,DOWN,ALL}.DEGs.txt（由 enrich.sh 生成），
 为所有处理组两两组合写出任务文件：
-    6.DEGcompare/combination/<A>_<r1>_<B>_<r2>
-内容两行（路径 集合名），供 multi_enrich_GOKEGG.R 消费。
-分组列按表头名 "group" 取（不再取最后一列），对照组名可配置。
+    <compare_dir>/combination/<A>_<r1>_<B>_<r2>
+内容两行（DEG文件路径 集合名），供 run_deg_compare.R 消费。
+分组列按表头名 "group" 取，对照组名可配置（默认 control）。
 """
 import csv
 import os
@@ -21,6 +21,7 @@ def main():
         sys.exit(__doc__)
     infile, deg_dir = sys.argv[1], sys.argv[2]
     control = sys.argv[3] if len(sys.argv) > 3 else "control"
+    compare_dir = sys.argv[4] if len(sys.argv) > 4 else "6.DEGcompare"
 
     groups = []
     with open(infile, newline="", encoding="utf-8-sig") as fh:
@@ -30,12 +31,12 @@ def main():
             if g and g not in groups and g != control:
                 groups.append(g)
 
-    os.makedirs("6.DEGcompare/combination", exist_ok=True)
+    os.makedirs(os.path.join(compare_dir, "combination"), exist_ok=True)
     for i in range(len(groups)):
         for j in range(i + 1, len(groups)):
             for r1 in ("UP", "DOWN", "ALL"):
                 for r2 in ("UP", "DOWN", "ALL"):
-                    out = os.path.join("6.DEGcompare", "combination",
+                    out = os.path.join(compare_dir, "combination",
                                        f"{groups[i]}_{r1}_{groups[j]}_{r2}")
                     with open(out, "w") as f:
                         a = os.path.join(deg_dir, f"{groups[i]}_vs_{control}_{r1}.DEGs.txt")

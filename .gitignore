@@ -2,10 +2,13 @@
 .snakemake/
 *.snakemake*
 
-# ---- 流程运行产物（按目录编号约定） ----
+# ---- 运行产物根目录（results_dir 可配，默认 results） ----
+results/
+snakemake.logs.txt
+
+# ---- 项目内编号目录习惯（历史兼容，工作目录即项目目录时使用） ----
 logs/
 *.logs.txt
-snakemake.logs.txt
 0.index/
 1.rawdata/
 2.cleandata/
@@ -17,6 +20,11 @@ snakemake.logs.txt
 5.expression/
 6.DEGcompare/
 temp.*
+
+# ---- example 项目的本地数据与运行产物 ----
+example/1.rawdata/
+example/results/
+example/snakemake.logs.txt
 
 # ---- 标记/临时文件 ----
 *.flag
