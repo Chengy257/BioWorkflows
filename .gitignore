@@ -26,6 +26,10 @@ example/1.rawdata/
 example/results/
 example/snakemake.logs.txt
 
+# ---- tests 的本地生成物（确定性数据由 tests/make_testdata.py 即时生成） ----
+tests/data/
+tests/work/
+
 # ---- 标记/临时文件 ----
 *.flag
 flag.log

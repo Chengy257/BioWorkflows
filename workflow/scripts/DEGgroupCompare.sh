@@ -24,8 +24,8 @@ do
     echo "Rscript $SCRIPT_DIR/run_deg_compare.R $line" >> "$RD/6.DEGcompare/jobs"
 done
 
-## 并行执行（每行一条命令，-P 控制并发数）
-xargs -P "$cpu" -d '\n' -I CMD sh -c 'CMD' < "$RD/6.DEGcompare/jobs"
+## 并行执行（每行一条命令，-P 控制并发数；-r 处理组 <2 时任务列表为空的情况）
+xargs -r -P "$cpu" -d '\n' -I CMD sh -c 'CMD' < "$RD/6.DEGcompare/jobs"
 
 ## 交集基因功能注释
 mkdir -p "$RD/6.DEGcompare/intersetionGene_anno"
