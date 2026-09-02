@@ -125,7 +125,27 @@ expect_error("样本名含逗号拒绝", [HEADER, ["a,b", "treat", "g", "chip", 
 expect_error("样本名含双下划线拒绝", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "非法字符")
 expect_error("分组名含空格拒绝", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "非法字符")
 
-print("== 3. 通配符约束正则 ==")
+print("== 3. ATAC 峰调用模式白名单 ==")
+with open(os.path.join(REPO, "workflow.smk"), encoding="utf-8") as fh:
+    wf_src = fh.read()
+mode_block = wf_src[wf_src.index('if config["peak"]["atac"]["mode"]'):]
+mode_block = mode_block[:mode_block.index("\n# ---")]
+for bad in ["BAMPE", "bam", ""]:
+    ns = {"config": {"peak": {"atac": {"mode": bad}}}, "WorkflowError": WorkflowError}
+    try:
+        exec(compile(mode_block, "mode_check", "exec"), ns)
+        check(f"mode={bad!r} 拒绝", False, "未抛出 WorkflowError")
+    except WorkflowError:
+        check(f"mode={bad!r} 拒绝", True)
+for good in ["bampe", "shifted"]:
+    ns = {"config": {"peak": {"atac": {"mode": good}}}, "WorkflowError": WorkflowError}
+    try:
+        exec(compile(mode_block, "mode_check", "exec"), ns)
+        check(f"mode={good!r} 放行", True)
+    except WorkflowError as e:
+        check(f"mode={good!r} 放行", False, str(e))
+
+print("== 4. 通配符约束正则 ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
 check("regex: 精确匹配（含转义）",
       re.fullmatch(rx, "myc_vs_IgG") and re.fullmatch(rx, "atac.leaf"))
@@ -133,7 +153,7 @@ check("regex: 不匹配未列分组与变形",
       not re.fullmatch(rx, "other") and not re.fullmatch(rx, "atacXleaf"))
 check("regex: 空列表永不匹配", re.fullmatch(_group_regex([]), "anything") is None)
 
-print("== 4. config 与 envs 完整性 ==")
+print("== 5. config 与 envs 完整性 ==")
 try:
     import yaml  # noqa: F401
     HAS_YAML = True

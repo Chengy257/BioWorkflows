@@ -32,7 +32,7 @@
 7. ✅ **参数类型与可配置**：threads int；MAPQ/genome_size/qvalue/broad_cutoff/keepdup 全部入 config。
 
 **验收标准**
-- [x] 样本表解析/校验/路由逻辑：26 项单元测试全部通过（`python tests/run_tests.py`，测试直接抽取 workflow.smk 真实源码执行）
+- [x] 样本表解析/校验/路由逻辑：31 项单元测试全部通过（`python tests/run_tests.py`，测试直接抽取 workflow.smk 真实源码执行）
 - [x] `grep -rn "/home/chengyu\|/opt/\|/share/" rules/ workflow.smk` 无结果（仅 config 中参考路径默认值，属用户配置）
 - [ ] 服务器小样本端到端实测（**遗留**：本机为 Windows 无法运行 snakemake；CI 已配置 `--lint` + `--list-rules`，首次推送后运行）
 - [x] 独立代码审查（fix-first 裁决）→ 3 项 P1 全部修复并复验（r-chipseeker R 版本、ATAC mode 死旋钮、bigwig 排序顺序）
@@ -59,7 +59,7 @@
 ## Phase 3 — P2/P3 工程化与长期维护（✅ 主体完成，2026-09-03）
 
 1. ✅ **清理**：重复 `call_peak.sh` 删除；legacy 归档 + `legacy/README.md` 映射表。
-2. ⬜ **测试数据**：`tests/run_tests.py`（26 项零依赖单元测试）+ CI 已就绪；端到端小样本实测待服务器（遗留）。
+2. ⬜ **测试数据**：`tests/run_tests.py`（31 项零依赖单元测试）+ CI 已就绪；端到端小样本实测待服务器（遗留）。
 3. ✅ **CI**：`.github/workflows/ci.yaml`（单元测试 + shellcheck + snakemake --lint + --list-rules）。
 4. ✅ **文档**：README 重写（新 schema/新入口/QC 阈值/已知限制）；各脚本头部 usage。
 5. ✅ **版本管理**：`v0.2.0` tag；CHANGELOG 维护。

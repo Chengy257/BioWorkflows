@@ -102,8 +102,11 @@ if [[ -n "${conda_base}" ]]; then
     cmd+=(--conda-base-path "${conda_base}")
 fi
 
-echo "[INFO] 运行: ${cmd[*]}"
-"${cmd[@]}" ${dryrun}
+echo "[INFO] 运行: ${cmd[*]}${dryrun:+ --dry-run}"
+if [[ -n "${dryrun}" ]]; then
+    cmd+=("${dryrun}")
+fi
+"${cmd[@]}"
 
 # 集群模式下回收 PBS 输出日志（存在才移动）
 mv ./[a-zA-Z]*.o* ./logs/ 2>/dev/null || true

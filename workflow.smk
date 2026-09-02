@@ -132,6 +132,13 @@ SAMPLES, GROUPS, SEQTYPE_OF = load_sample_table(_resolve_sample_table(config["gr
 
 config["threads"] = int(config["threads"])
 
+# 峰调用模式白名单：mode 只接受 bampe / shifted，笔误静默落入 shifted 的风险需在解析期拦截
+if config["peak"]["atac"]["mode"] not in ("bampe", "shifted"):
+    raise WorkflowError(
+        "config peak.atac.mode 必须是 bampe 或 shifted，当前为 "
+        f"{config['peak']['atac']['mode']!r}"
+    )
+
 # ---------------------------------------------------------------------
 # 常用查询函数（各 rules/*.smk 共用）
 # ---------------------------------------------------------------------

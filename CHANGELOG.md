@@ -23,7 +23,7 @@
 - 阈值常规默认：narrow q=0.05、broad_cutoff=0.05、min_mapq=30（ENCODE 常规值），全部可配置
 - ATAC/FAIRE 峰调用双模式：`bampe`（默认，ENCODE ATAC v2 做法）| `shifted`（经典 Tn5 偏移配方）
 - `main_run.sh` 重写：getopts 参数化（含 dry-run 预检、PBS 可选、config.local 自动叠加、集群/本机 -j/--cores 正确拆分）
-- 测试与 CI：`tests/run_tests.py`（26 项零依赖单元测试，直接抽取 workflow.smk 真实源码执行）、Makefile（check/lint/dryrun）、GitHub Actions（测试 + shellcheck + snakemake --lint）
+- 测试与 CI：`tests/run_tests.py`（31 项零依赖单元测试，直接抽取 workflow.smk 真实源码执行）、Makefile（check/lint/dryrun）、GitHub Actions（测试 + shellcheck + snakemake --lint）
 - MIT LICENSE；`docs/REVIEW.md` 修复状态表；`legacy/README.md` 归档映射
 
 ### Fixed（对 v0.1.0 的全部 P0/P1，详见 docs/REVIEW.md §七）

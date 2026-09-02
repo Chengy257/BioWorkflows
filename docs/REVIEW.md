@@ -131,7 +131,7 @@
 | §2.2 rmDup.smk 整体不可用 | ✅ 已修 | 重写为 `rules/dedup.smk`（conda/shell 块归位、`{sample}` 通配符、threads int） |
 | §2.3 callpeak_*.smk 共性问题 | ✅ 已修 | 重写为 `rules/callpeak.smk`：删除空规则与双重调用，按 assay/peak_type 用互斥 wildcard_constraints 路由三规则 |
 | §2.4 样本表 schema 矛盾 | ✅ 已修 | 新 schema（sample_id/role/group/seqtype/layout/peak_type）+ 入口逐行校验（含行号报错） |
-| §2.5 get_samples() 解析错误 | ✅ 已修 | 重写 `load_sample_table()`（按 sample_id 去重、role 分组、混型校验），26 项单元测试覆盖 |
+| §2.5 get_samples() 解析错误 | ✅ 已修 | 重写 `load_sample_table()`（按 sample_id 去重、role 分组、混型校验），31 项单元测试覆盖 |
 | §2.6 `conda: "chip"` 非法 | ✅ 已修 | 拆分为 `envs/` 下 11 个 per-rule 环境文件 |
 | §2.7 main_run.sh 不可用 | ✅ 已修 | getopts 重写（-w/-s/-c/-j/-C/-p/-b/-l/-r/-n），dry-run 预检，不删 .snakemake |
 | §三 硬编码路径（16 处） | ✅ 已修 | 全部经 `workflow.basedir`/config 参数化；脚本去 `.libPaths`/私人路径 |
@@ -142,7 +142,7 @@
 | §四.7 产物命名断层 | ✅ 已修 | deeptools QC 规则化并使用 `{group}_FE.bw` 命名 |
 | §四.8 config 覆盖不全 | ✅ 已修 | 完整 schema + `config.template.yaml` + `config.local.yaml` 叠加机制 |
 | §五 LICENSE 缺失 | ✅ 已修 | MIT |
-| §五 测试/CI | ✅ 已修 | `tests/run_tests.py`（26 项）+ Makefile + GitHub Actions CI |
+| §五 测试/CI | ✅ 已修 | `tests/run_tests.py`（31 项）+ Makefile + GitHub Actions CI |
 
 **审查修复补充项**（独立审查 fix-first 发现）：r-chipseeker 环境 R 版本冲突（升级 r-base=4.3 + Bioc 3.18 对齐）；ATAC shift/extsize 在 BAMPE 下被静默忽略（改为 `peak.atac.mode` 双模式开关，默认 ENCODE ATAC v2 的 bampe）；bigwig 字典序排序与 chrom.sizes 顺序冲突（改 `bedtools sort -g`，chromsize 提为 input）；main_run.sh `-j/--cores` 同参数覆盖（按集群/本机模式拆分）；样本/分组名非法字符校验；envs 移除 defaults 频道。
 
