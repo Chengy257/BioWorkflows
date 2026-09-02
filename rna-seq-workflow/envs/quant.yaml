@@ -1,0 +1,13 @@
+## 定量环境 —— rules: featureCount_R, expression（lncRNA）
+## R 包不锁小版本，由 r-base=4.2.3 约束求解（Bioconductor 3.16 系列）
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.2.3
+  - bioconductor-rsubread
+  - bioconductor-edger
+  - bioconductor-limma
+  - r-argparser
+  - r-getopt

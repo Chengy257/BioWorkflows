@@ -1,0 +1,9 @@
+## 质控/裁剪环境 —— rules: trimAdapter_SE, trimAdapter_PE, multiQC_cleaned
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - fastqc=0.11.9
+  - trim-galore=0.6.10
+  - multiqc=1.21

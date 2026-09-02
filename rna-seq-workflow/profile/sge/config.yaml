@@ -1,0 +1,9 @@
+## SGE 集群调度 profile（snakemake >= 7）
+## run.sh 在检测到 qsub 时自动使用本 profile
+cluster: "qsub -V -N {rule} -l ncpus={threads} -j oe"
+jobs: 20
+use-conda: true
+keep-going: true
+rerun-incomplete: true
+latency-wait: 60
+printshellcmds: true
