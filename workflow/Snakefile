@@ -36,6 +36,7 @@ rule all:
         PEAK_TARGETS,
         BW_TARGETS,
         "4.peak/anno_result/Peakanno_PeakDistributions.pdf",
+        VERSION_TARGETS,
 
 
 # ---------------------------------------------------------------------
@@ -51,3 +52,6 @@ if config["qc"]["frip"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "frip.smk")
 if config["qc"]["deeptools"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "qc_deeptools.smk")
+
+# 运行元数据（软件版本记录），置于各模块之后
+include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

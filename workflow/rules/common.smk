@@ -261,3 +261,6 @@ if config["qc"]["deeptools"]:
         "5.QC_deeptools/fragmentsize.png",
         "5.QC_deeptools/profile_scaled.png",
     ]
+
+# 软件版本记录：由 meta.smk 的 software_versions 规则在 DAG 末尾生成，始终进入 rule all。
+VERSION_TARGETS = ["5.QC/software_versions.yaml"]
