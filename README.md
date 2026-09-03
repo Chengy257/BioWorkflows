@@ -11,7 +11,7 @@
 
 去重策略、峰参数、QC 开关均按 assay 在 `config/config.yaml` 中配置。默认示例参考基因组为水稻 *Oryza sativa*（IRGSP-1.0），更换物种只需修改参考文件路径与基因组大小。
 
-> ✅ **当前状态（v0.2.2）**：Phase 1~3 重构 + 运维审查 P1/P2 修复完成——单入口 + 全新规则 + per-rule conda 环境 + FRiP/deeptools QC + config 集中校验 + 集群健壮参数 + 41 项单元测试 + CI。已通过 bash 语法检查、假 snakemake 路由验证与独立代码审查（ship）。**尚未在服务器用真实数据完成端到端实跑**（见 [已知限制](#7-已知限制)）。
+> ✅ **当前状态（v0.3.0）**：Phase 1~3 重构 + 运维审查 P1/P2/P3 修复完成——单入口 + 全新规则 + per-rule conda 环境 + FRiP/deeptools QC + config 集中校验 + 集群健壮参数 + 45 项单元测试 + CI。已通过 bash 语法检查、假 snakemake 路由验证与独立代码审查（ship）。**尚未在服务器用真实数据完成端到端实跑**（见 [已知限制](#7-已知限制)）。
 
 ---
 
@@ -67,8 +67,9 @@ chip_cuttag_atac_faire/
 ├── config/config.yaml      # 默认配置；config.template.yaml 为覆盖模板
 ├── sample_info.example.csv # 样本表 schema 示例（四 assay 混型）
 ├── main_run.sh             # 启动脚本（本机/PBS 集群、config.local 叠加）
-├── tests/run_tests.py      # 零依赖单元测试（41 项）
+├── tests/run_tests.py      # 零依赖单元测试（45 项）
 ├── Makefile                # make check / lint / dryrun
+├── profiles/pbs/           # snakemake 7.x PBS profile（集群参数固化）
 ├── .github/workflows/ci.yaml  # CI：测试 + shellcheck + snakemake --lint
 ├── docs/                   # REVIEW.md 审查报告 / IMPROVEMENT_PLAN.md 优化计划
 └── legacy/                 # v0.1.0 原始实现归档（不可运行，仅参考）
@@ -119,6 +120,7 @@ atac_leaf_1,treat,atac_leaf,atac,PE,none
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `trim.quality/stringency/error_rate/extra` | 25 / 3 / 0.1 / "" | trim_galore 修剪参数（`extra` 可追加如 `--clip_r1 5`） |
+| `region_flank` | 3000 | 峰注释 flank/TSS 窗口与 deeptools 信号窗口上下游长度（bp） |
 | `min_mapq` | 30 | 比对质量过滤（ENCODE 常规值） |
 | `dedup.<assay>` | chip/atac/faire=true, cuttag=false | picard 去重按 assay 开关 |
 | `peak.qvalue` / `peak.broad_cutoff` | 0.05 / 0.05 | MACS2 峰阈值（常规默认） |
@@ -155,7 +157,7 @@ snakemake -s /path/to/repo/workflow.smk --configfile /path/to/repo/config/config
 
 | 结果 | 路径 |
 |---|---|
-| 质控汇总（fastqc+bowtie2+picard） | `2.cleandata/fastqc/multiqc/multiqc_report.html` |
+| 质控汇总（fastqc+bowtie2+picard+FRiP+NSC/RSC） | `2.cleandata/fastqc/multiqc/multiqc_report.html` |
 | 比对 BAM / 去重指标 | `3.align/bowtie2/{sample}_{sorted,rmdup}.bam`、`{sample}_dup_metrics.txt` |
 | 峰文件 / summits | `4.peak/{group}_peaks.{narrowPeak,broadPeak}`、`{group}_summits.bed` |
 | 信号轨道 bigWig | `4.peak/{group}_FE.bw` |

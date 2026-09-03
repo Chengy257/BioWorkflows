@@ -10,6 +10,7 @@ rule peak_annotation:
         script=os.path.join(REPO_DIR, "scripts", "annoPeak_batch.R"),
         peaklist=lambda wc: ",".join(group_peak_file(g) for g in GROUPS),
         outdir="4.peak/anno_result",
+        flank=config["region_flank"],
     threads: 1
     conda:
         os.path.join(ENVS, "r-chipseeker.yaml")
@@ -18,5 +19,5 @@ rule peak_annotation:
     shell:
         """
         mkdir -p 4.peak/anno_result logs
-        Rscript {params.script} {input.gtf} {params.peaklist} {params.outdir} > {log} 2>&1
+        Rscript {params.script} {input.gtf} {params.peaklist} {params.outdir} {params.flank} > {log} 2>&1
         """

@@ -4,12 +4,27 @@
 
 ## [Unreleased]
 
-### 待办（见 docs/IMPROVEMENT_PLAN.md 遗留清单 + 运维审查 P3 批次）
+### 待办
 
 - 服务器最小样本端到端实跑（CI 首跑 + conda 环境求解 + MACS2 无对照 control_lambda 确认）
 - DiffBind 差异分析补完（需 contrast/设计公式决策）
 - bowtie2 `.bt2l` 大基因组索引支持
-- 运维审查 P3 批次：deeptools/注释分析窗口参数统一、FRiP/NSC 注入 multiqc、ucsc 工具锁版、SPP pdf 副产物声明、profile/ 集群配置目录
+- snakemake 8.x 的 executor-plugin 风格 profile（`snakemake-executor-plugin-cluster-generic`）
+
+## [0.3.0] - 2026-09-03
+
+### Added（运维审查 P3 批次）
+
+- **FRiP / NSC-RSC 注入 MultiQC 报告**：frip_summary 与新增 spp_summary 规则产出 `_mqc.tsv` 自定义表（custom content），multiqc 汇总规则自动纳入——QC 指标（fastqc + bowtie2 + picard + FRiP + NSC/RSC）集中单报告；qc 开关闭合与条件 include 联动
+- **分析窗口参数统一**：新 `region_flank`（默认 3000）一键控制 ChIPseeker flank/TSS 窗口与 deeptools computeMatrix 上下游长度（原先三处硬编码）；`annoPeak_batch.R` 新增第四参数
+- **`profiles/pbs/`**：snakemake 7.x PBS profile（集群参数固化入库：`{rule}` 任务名、`{threads}` 核数、latency-wait/rerun-incomplete 默认值）；8.x 用户继续用 main_run.sh（版本自动适配），README 注明迁移方向
+- 测试新增 4 项（region_flank 校验 ×2 + **mqc shell 规则体实测** ×2——按 snakemake 同款解析链 `ast.literal_eval` 解码 + format 渲染 + bash 实际执行并断言产物格式），共 **45 项**全部通过
+
+### Changed
+
+- SPP 规则移除 `-savp`（pdf 副产物文件名依输入 BAM 派生且落 cwd，不可声明管理；全部指标已含于 `-out` 文本）
+- `envs/bigwig.yaml`：ucsc-bedclip/bedgraphtobigwig 锁 bioconda 构建号 482（消除无语义版本的漂移风险）
+- `envs/trim-galore.yaml`：移除冗余的显式 `cutadapt=4.4` 钉（由 trim-galore 依赖自行拉动，双钉增加求解冲突面）
 
 ## [0.2.2] - 2026-09-03
 
@@ -19,7 +34,7 @@
 - **共享 conda 环境目录**：新 `-e DIR`（`--conda-prefix`），多项目复用同一套环境；新 `-E` 预建模式（`--conda-create-envs-only`），PBS 计算节点无外网时先在登录节点建环境
 - **trim_galore 参数配置化**：新 `trim.quality/stringency/error_rate/extra` 四键（原硬编码 `-q 25 --stringency 3 -e 0.1`），template 同步
 - **config 集中校验**（`workflow.smk` `validate_config`）：必需键/子键/类型/取值范围一次汇总报出（含 threads 非整数的友好报错）；参考文件缺失仅警告不中断（保证 --lint/dry-run 在无参考文件的机器可解析）
-- 测试新增 10 项（validate_config 真实源码提取执行），共 **41 项**全部通过
+- 测试新增 10 项（validate_config 真实源码提取执行），共 **45 项**全部通过
 
 ### Changed
 

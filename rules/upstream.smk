@@ -55,6 +55,10 @@ rule multiqc:
         bowtie2_logs=expand("logs/bowtie2_mapping/{sample}.log", sample=SAMPLES),
         dup_metrics=expand("3.align/bowtie2/{sample}_dup_metrics.txt",
                            sample=[s for s in SAMPLES if assay_needs_dedup(SEQTYPE_OF[s])]),
+        frip_mqc=lambda wc: (["5.QC/frip/FRiP_mqc.tsv"]
+                              if config["qc"]["frip"] else []),
+        spp_mqc=lambda wc: (["5.QC/spp/NSC_RSC_mqc.tsv"]
+                             if config["qc"]["nsc_rsc"] else []),
     output:
         "2.cleandata/fastqc/multiqc/multiqc_report.html",
     log:

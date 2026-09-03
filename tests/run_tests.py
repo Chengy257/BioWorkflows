@@ -166,6 +166,7 @@ GOOD_CFG = {
     "bed": "/nonexistent/genes.bed", "chromsize": "/nonexistent/chrom.sizes",
     "genome_size": "3.7e8", "grouplist": "sample_info.csv",
     "threads": 12, "bowtie2_extra": "--very-sensitive", "min_mapq": 30,
+    "region_flank": 3000,
     "dedup": {"chip": True, "cuttag": False, "atac": True, "faire": True},
     "peak": {"keepdup": "all", "qvalue": 0.05, "broad_cutoff": 0.05,
              "atac": {"mode": "bampe", "shift": -100, "extsize": 200}},
@@ -197,6 +198,10 @@ vc_case("qc 开关非布尔报错",
         lambda c: c["qc"].__setitem__("frip", "yes"), ["qc.frip"])
 vc_case("min_mapq 负数报错",
         lambda c: c.__setitem__("min_mapq", -1), ["min_mapq"])
+vc_case("region_flank 缺键报错",
+        lambda c: c.pop("region_flank"), ["缺少必需配置键: region_flank"])
+vc_case("region_flank 非整数报错",
+        lambda c: c.__setitem__("region_flank", "3000"), ["region_flank"])
 vc_case("peak.qvalue 超区间报错",
         lambda c: c["peak"].__setitem__("qvalue", 5), ["peak.qvalue"])
 vc_case("trim.quality 负数报错",
@@ -221,7 +226,93 @@ check("regex: 不匹配未列分组与变形",
       not re.fullmatch(rx, "other") and not re.fullmatch(rx, "atacXleaf"))
 check("regex: 空列表永不匹配", re.fullmatch(_group_regex([]), "anything") is None)
 
-print("== 6. config 与 envs 完整性 ==")
+print("== 6. mqc shell 规则体实测（snakemake 同款 format 渲染 + bash 执行） ==")
+import subprocess  # noqa: E402
+
+
+def render_rule_body(smk_path, rule_name, fmt, literals=None):
+    """提取 rule 的 shell 体并渲染，模拟 snakemake 的解析链：
+    ① shell 体按 Python 字面量语义解码（ast.literal_eval，等价于 snakemake
+    对源码字符串的转义/续行处理，且对工作区 CRLF 检出免疫）；
+    ② 具名输出/点号 token 先字面替换（snakemake 特有语法）；
+    ③ 其余按 str.format 语义渲染（{{}} 折叠为 {}）。"""
+    with open(smk_path, encoding="utf-8") as fh:
+        src = fh.read()
+    m = re.search(rf'^rule {rule_name}:.*?shell:\n\s*"""\n(.*?)"""',
+                  src, re.S | re.M)
+    if not m:
+        return None
+    raw = m.group(1)
+    try:
+        import ast
+        body = ast.literal_eval('"""' + raw + '"""')
+    except (SyntaxError, ValueError):
+        body = raw.replace("\r\n", "\n").replace("\r", "\n")
+    for token, value in (literals or {}).items():
+        body = body.replace("{" + token + "}", value)
+    return body.format(**fmt)
+
+
+def run_bash(body, cwd):
+    # bash -c 直接执行命令体，避免 Windows 路径在 MSYS bash 下的转换问题
+    return subprocess.run(["bash", "-c", "set -eo pipefail\n" + body], cwd=cwd,
+                          capture_output=True, text=True, timeout=60)
+
+
+tmp = tempfile.mkdtemp(prefix="mqc_")
+os.makedirs(os.path.join(tmp, "5.QC", "frip"), exist_ok=True)
+os.makedirs(os.path.join(tmp, "5.QC", "spp"), exist_ok=True)
+
+# --- frip_summary ---
+for name, sample, group in [("a", "myc", "myc_vs_IgG"), ("b", "IgG", "myc_vs_IgG")]:
+    with open(os.path.join(tmp, "5.QC", "frip", f"{name}.tsv"), "w",
+              newline="\n") as fh:
+        fh.write("sample\tgroup\ttotal_reads\treads_in_peaks\tFRiP\n")
+        fh.write(f"{sample}\t{group}\t1000\t50\t0.0500\n")
+body = render_rule_body(
+    os.path.join(REPO, "rules", "frip.smk"), "frip_summary",
+    {"input": "5.QC/frip/a.tsv 5.QC/frip/b.tsv",
+     "log": "frip_summary.log"},
+    literals={"output.tsv": "5.QC/frip/FRiP_summary.tsv",
+              "output.mqc": "5.QC/frip/FRiP_mqc.tsv"})
+r = run_bash(body, tmp)
+mqc = os.path.join(tmp, "5.QC", "frip", "FRiP_mqc.tsv")
+ok = (r.returncode == 0 and os.path.exists(mqc)
+      and "# id: 'frip_table'" in open(mqc, encoding="utf-8").read()
+      and open(mqc, encoding="utf-8").read().count("sample\tgroup") == 1
+      and "myc\t" in open(mqc, encoding="utf-8").read())
+check("frip_summary mqc：渲染+执行+格式正确", ok,
+      f"rc={r.returncode} stderr={r.stderr[:200]}")
+
+# --- spp_summary ---
+for s in ["s1", "s2"]:
+    with open(os.path.join(tmp, "5.QC", "spp", f"{s}_fragment_len.txt"), "w",
+              newline="\n") as fh:
+        fh.write("150\n")
+    with open(os.path.join(tmp, "5.QC", "spp", f"{s}_NSC.txt"), "w",
+              newline="\n") as fh:
+        fh.write("1.15\n")
+    with open(os.path.join(tmp, "5.QC", "spp", f"{s}_RSC.txt"), "w",
+              newline="\n") as fh:
+        fh.write("0.95\n")
+body = render_rule_body(
+    os.path.join(REPO, "rules", "spp_qc.smk"), "spp_summary",
+    {"output": "5.QC/spp/NSC_RSC_mqc.tsv", "log": "spp_summary.log"},
+    literals={"params.samples": "s1 s2"})
+r = run_bash(body, tmp)
+mqc = os.path.join(tmp, "5.QC", "spp", "NSC_RSC_mqc.tsv")
+content = open(mqc, encoding="utf-8").read() if os.path.exists(mqc) else ""
+ok = (r.returncode == 0
+      and "# id: 'nsc_rsc_table'" in content
+      and "sample\tfragment_length\tNSC\tRSC" in content
+      and "s1\t150\t1.15\t0.95" in content and "s2\t" in content)
+check("spp_summary mqc：渲染+执行+格式正确", ok,
+      f"rc={r.returncode} stderr={r.stderr[:200]}")
+
+import shutil  # noqa: E402
+shutil.rmtree(tmp, ignore_errors=True)
+
+print("== 7. config 与 envs 完整性 ==")
 try:
     import yaml  # noqa: F401
     HAS_YAML = True
@@ -234,7 +325,7 @@ if HAS_YAML:
         cfg = yaml.safe_load(fh)
     required_top = ["genome_fa", "gtf", "bed", "chromsize", "genome_size",
                     "grouplist", "threads", "bowtie2_extra", "min_mapq",
-                    "dedup", "peak", "qc", "trim"]
+                    "region_flank", "dedup", "peak", "qc", "trim"]
     check("config: 顶层键齐全", all(k in cfg for k in required_top),
           str([k for k in required_top if k not in cfg]))
     try:

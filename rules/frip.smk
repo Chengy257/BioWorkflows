@@ -35,15 +35,25 @@ rule frip_summary:
     input:
         FRIP_TSVS,
     output:
-        "5.QC/frip/FRiP_summary.tsv",
+        tsv="5.QC/frip/FRiP_summary.tsv",
+        mqc="5.QC/frip/FRiP_mqc.tsv",
     log:
         "logs/frip/summary.log",
     shell:
         """
         header_written=0
-        : > {output}
+        : > {output.tsv}
         for f in {input}; do
-            if [ $header_written -eq 0 ]; then head -n1 "$f" >> {output}; header_written=1; fi
-            tail -n +2 "$f" >> {output}
+            if [ $header_written -eq 0 ]; then head -n1 "$f" >> {output.tsv}; header_written=1; fi
+            tail -n +2 "$f" >> {output.tsv}
         done
+        # MultiQC 自定义表（custom content，_mqc.tsv 约定格式）
+        {{
+            echo "# id: 'frip_table'"
+            echo "# section_name: 'FRiP (fraction of reads in peaks)'"
+            echo "# format: 'tsv'"
+            echo "# plot_type: 'table'"
+            echo "# pconfig: {{'id': 'frip_table', 'title': 'FRiP'}}"
+            cat {output.tsv}
+        }} > {output.mqc} 2> {log}
         """

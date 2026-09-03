@@ -151,7 +151,7 @@ def validate_config(cfg):
     errors, warnings = [], []
     required = ("genome_fa", "gtf", "bed", "chromsize", "genome_size",
                 "grouplist", "threads", "bowtie2_extra", "min_mapq",
-                "dedup", "peak", "qc", "trim")
+                "region_flank", "dedup", "peak", "qc", "trim")
     for key in required:
         if key not in cfg:
             errors.append(f"缺少必需配置键: {key}")
@@ -168,7 +168,7 @@ def validate_config(cfg):
             v = cfg["qc"].get(key)
             if not isinstance(v, bool):
                 errors.append(f"qc.{key} 必须是 true/false，当前为 {v!r}")
-    for key in ("min_mapq",):
+    for key in ("min_mapq", "region_flank"):
         v = cfg.get(key)
         if isinstance(v, bool) or not isinstance(v, int) or v < 0:
             errors.append(f"{key} 必须是 >= 0 的整数，当前为 {v!r}")
@@ -264,7 +264,7 @@ BW_TARGETS = [f"4.peak/{g}_FE.bw" for g in GROUPS]
 
 QC_TARGETS = ["2.cleandata/fastqc/multiqc/multiqc_report.html"]
 if config["qc"]["nsc_rsc"]:
-    QC_TARGETS += [f"5.QC/spp/{s}_NSC.txt" for s in SAMPLES]
+    QC_TARGETS += ["5.QC/spp/NSC_RSC_mqc.tsv"]
 if config["qc"]["frip"]:
     QC_TARGETS += ["5.QC/frip/FRiP_summary.tsv"]
 if config["qc"]["deeptools"]:

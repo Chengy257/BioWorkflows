@@ -5,5 +5,6 @@ channels:
 dependencies:
   - macs2=2.2.7.1
   - bedtools=2.31.0
-  - ucsc-bedclip
-  - ucsc-bedgraphtobigwig
+  # ucsc 工具无语义版本，锁 bioconda 统一构建号（当前批次 482）
+  - ucsc-bedclip=482
+  - ucsc-bedgraphtobigwig=482

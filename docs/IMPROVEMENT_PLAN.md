@@ -56,15 +56,21 @@
 
 ---
 
-## Phase 3 — P2/P3 工程化与长期维护（✅ 主体完成，2026-09-03）
+## Phase 3 — P2/P3 工程化与长期维护（✅ 主体完成，2026-09-03；运维审查 P3 批次见 v0.3.0）
 
 1. ✅ **清理**：重复 `call_peak.sh` 删除；legacy 归档 + `legacy/README.md` 映射表。
-2. ⬜ **测试数据**：`tests/run_tests.py`（41 项零依赖单元测试）+ CI 已就绪；端到端小样本实测待服务器（遗留）。
+2. ⬜ **测试数据**：`tests/run_tests.py`（45 项零依赖单元测试，含 mqc shell 规则体实测）+ CI 已就绪；端到端小样本实测待服务器（遗留）。
 3. ✅ **CI**：`.github/workflows/ci.yaml`（单元测试 + shellcheck + snakemake --lint + --list-rules）。
 4. ✅ **文档**：README 重写（新 schema/新入口/QC 阈值/已知限制）；各脚本头部 usage。
-5. ✅ **版本管理**：`v0.2.0` tag；CHANGELOG 维护。
+5. ✅ **版本管理**：`v0.2.0`~`v0.3.0` tag；CHANGELOG 维护。
 6. ✅ **LICENSE**：MIT（作者已确认）。
 7. ⬜ **可选进阶**：对标 nf-core 输出结构（远期）；DiffBind 差异分析补完（**需用户决策 contrast/设计公式，明确排除在本轮外**）。
+
+### 运维审查批次落地记录
+
+- ✅ P1（v0.2.1）：`ncpus={threads}` 模板、snakemake 7/8 conda flag 自动路由、README 版本矩阵
+- ✅ P2（v0.2.2）：`--rerun-incomplete`/`--latency-wait`（-t）、`-e` 共享环境目录 + `-E` 预建、callpeak threads=1、trim 参数入 config、validate_config 集中校验
+- ✅ P3（v0.3.0）：FRiP/NSC-RSC 注入 multiqc（_mqc.tsv 自定义表）、region_flank 三处窗口统一、SPP 去 -savp、bigwig env ucsc 锁 482、trim env 去 cutadapt 冗余钉、profiles/pbs（7.x）
 
 ---
 

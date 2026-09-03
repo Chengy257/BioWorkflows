@@ -114,10 +114,12 @@ rule deeptools_profile:
     threads: config["threads"]
     conda:
         os.path.join(ENVS, "deeptools.yaml")
+    params:
+        flank=config["region_flank"],
     shell:
         """
         computeMatrix scale-regions -R {input.bed} -S {input.bws} \
-            -b 3000 -a 3000 -o {output.matrix} -p {threads} > {log} 2>&1
+            -b {params.flank} -a {params.flank} -o {output.matrix} -p {threads} > {log} 2>&1
         plotProfile -m {output.matrix} -out {output.profile} \
             --plotTitle "Mean signal over genes" >> {log} 2>&1
         plotHeatmap -m {output.matrix} -out {output.heatmap} >> {log} 2>&1

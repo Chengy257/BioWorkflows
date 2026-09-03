@@ -44,6 +44,9 @@ peak:
     shift: -100          # 仅 mode=shifted 时生效
     extsize: 200         # 仅 mode=shifted 时生效
 
+# ---------- 注释与信号窗口 ----------
+region_flank: 3000   # 峰注释 flank 距离与 deeptools 信号窗口上下游长度（bp）
+
 # ---------- QC ----------
 qc:
   nsc_rsc: false     # SPP 交叉相关 NSC/RSC（较耗时；需要 phantompeakqualtools）
