@@ -88,7 +88,7 @@ HEADER = ["sample_id", "role", "group", "seqtype", "layout", "peak_type"]
 # ---------------------------------------------------------------------
 print("== 1. 样本表解析（真实示例文件） ==")
 samples, groups, seqtype_of = load_sample_table(
-    os.path.join(REPO, "sample_info.example.csv"))
+    os.path.join(REPO, "config", "samples.csv"))
 check("example: 样本数 8 且去重保序",
       samples == ["myc", "IgG", "H3K27me3_rep1", "IgG_cuta",
                   "atac_leaf_1", "atac_leaf_2", "faire_root", "Input_faire"],

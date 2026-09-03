@@ -65,11 +65,11 @@ chip_cuttag_atac_faire/
 ├── envs/                   # per-rule conda 环境（--use-conda 自动创建）
 ├── scripts/                # 峰注释 R 脚本 + 独立 QC 工具（ChIPQC/DROMPAplus）
 ├── config/config.yaml      # 默认配置；config.template.yaml 为覆盖模板
-├── sample_info.example.csv # 样本表 schema 示例（四 assay 混型）
+├── config/samples.csv       # 样本表模板（四 assay 混型 schema）
 ├── main_run.sh             # 启动脚本（本机/PBS 集群、config.local 叠加）
 ├── tests/run_tests.py      # 零依赖单元测试（45 项）
 ├── Makefile                # make check / lint / dryrun
-├── profiles/pbs/           # snakemake 7.x PBS profile（集群参数固化）
+├── workflow/profile/        # default/pbs profile（Phase 3 扩为四套）
 ├── .github/workflows/ci.yaml  # CI：测试 + shellcheck + snakemake --lint
 ├── docs/                   # REVIEW.md 审查报告 / IMPROVEMENT_PLAN.md 优化计划
 └── legacy/                 # v0.1.0 原始实现归档（不可运行，仅参考）
@@ -96,7 +96,7 @@ fastq 放入工作目录 `1.rawdata/`，命名 `{sample}_1.fq.gz` / `{sample}_2.
 
 ### 4.2 编写样本表
 
-复制 `sample_info.example.csv` 修改（列固定，逐行校验、错误信息含行号）：
+复制 `config/samples.csv` 修改（列固定，逐行校验、错误信息含行号）：
 
 ```csv
 sample_id,role,group,seqtype,layout,peak_type
