@@ -11,7 +11,8 @@
 #   -c FILE    配置文件（默认仓库内 config/config.yaml）
 #   -j N       集群并发任务数（默认 3）
 #   -C N       本机总核数（默认 18）
-#   -p CMD     集群提交命令（PBS 示例: "qsub -V -N chipseq -l ncpus=6 -j oe"）
+#   -p CMD     集群提交命令（PBS 示例: "qsub -V -N chipseq -l ncpus={threads} -j oe"）
+#              {threads} 由 snakemake 按每个任务实际线程数填充，与 config threads 自动对齐；
 #              不传 -p 则在本机直接运行（无集群）
 #   -b PATH    conda base 路径（传给 --conda-base-path，如 /opt/anaconda3）
 #   -l FILE    额外配置文件（如 config.local.yaml，后加载者覆盖前者的键；
@@ -84,8 +85,26 @@ if [[ -z "${extra_config:-}" && -f "config.local.yaml" ]]; then
     echo "[INFO] 检测到 config.local.yaml，将叠加覆盖默认配置"
 fi
 
-cmd=(snakemake -s "${smk}" --configfile "${config}"
-     --use-conda --keep-going)
+# snakemake 版本探测：8+ 的 conda 部署 flag 是 --software-deployment-method conda
+# （--use-conda 在 8.x 为弃用别名，9.x 可能移除）；7.x 使用 --use-conda
+smk_version="$(snakemake --version 2>/dev/null | head -1 || true)"
+if [[ -z "${smk_version}" ]]; then
+    echo "[ERROR] 未找到 snakemake 命令，请先安装（参考版本 7.32.4；8.x 亦可，脚本自动适配 flag）" >&2
+    exit 1
+fi
+if ! [[ "${smk_version}" =~ ^[0-9]+ ]]; then
+    echo "[ERROR] 无法解析 snakemake 版本号: ${smk_version}" >&2
+    exit 1
+fi
+smk_major="${smk_version%%.*}"
+
+cmd=(snakemake -s "${smk}" --configfile "${config}" --keep-going)
+
+if (( smk_major >= 8 )); then
+    cmd+=(--software-deployment-method conda)
+else
+    cmd+=(--use-conda)
+fi
 
 if [[ -n "${extra_config:-}" ]]; then
     cmd+=(--configfile "${extra_config}")

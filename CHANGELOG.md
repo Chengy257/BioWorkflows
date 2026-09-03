@@ -4,11 +4,19 @@
 
 ## [Unreleased]
 
-### 待办（见 docs/IMPROVEMENT_PLAN.md 遗留清单）
+### 待办（见 docs/IMPROVEMENT_PLAN.md 遗留清单 + 运维审查 P2 批次）
 
 - 服务器最小样本端到端实跑（CI 首跑 + conda 环境求解 + MACS2 无对照 control_lambda 确认）
 - DiffBind 差异分析补完（需 contrast/设计公式决策）
 - bowtie2 `.bt2l` 大基因组索引支持
+- 运维审查 P2 批次：--conda-prefix 共享环境目录、--latency-wait/--rerun-incomplete、callpeak threads=1、trim 参数入 config、config 集中校验
+
+## [0.2.1] - 2026-09-03
+
+### Fixed（运维审查 2 项 P1）
+
+- **PBS 资源参数与流程线程数脱钩**：`main_run.sh`/README 的集群提交示例改为 `-l ncpus={threads}`——snakemake 按每个任务实际线程数格式化 cluster 串，与 config `threads` 自动对齐（原示例固定 `ncpus=6` 与默认 `threads: 12` 矛盾，导致超订）
+- **snakemake 版本矩阵不明确**：`main_run.sh` 启动时探测 snakemake 主版本——≥8 自动使用 `--software-deployment-method conda`（`--use-conda` 在 8.x 已弃用），7.x 继续用 `--use-conda`；未安装/版本不可解析时给出明确报错。README 新增版本支持矩阵（7.32.4 参考版本 / 8.x 自动适配 / <7 与 ≥9 未验证），方式二手动命令同步加注
 
 ## [0.2.0] - 2026-09-03
 

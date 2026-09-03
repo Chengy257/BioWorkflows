@@ -76,8 +76,15 @@ chip_cuttag_atac_faire/
 
 ## 3. 环境要求
 
-- Linux + [Snakemake](https://snakemake.readthedocs.io/) ≥ 7（CI 用 8.x 验证）+ conda/mamba
-- 其余工具（trim_galore、fastqc、multiqc、bowtie2、samtools、picard、macs2、bedtools、deeptools、R/ChIPseeker 等）由 `--use-conda` 按 `envs/*.yaml` 自动创建，无需手动安装
+- Linux + conda/mamba + Snakemake，版本矩阵：
+
+| snakemake 版本 | 支持情况 | 说明 |
+|---|---|---|
+| **7.32.4** | ✅ 参考版本 | 流程 conda 部署 flag（`--use-conda`）以此为准；服务器首次部署推荐 |
+| **8.x** | ✅ 自动适配 | `main_run.sh` 自动切换为 `--software-deployment-method conda`（`--use-conda` 在 8.x 已弃用）；CI 用 8.x 验证 `--lint`/解析 |
+| <7 或 ≥9 | ⛔ 未验证 | 9.x 可能移除弃用别名，需实测 |
+
+- 其余工具（trim_galore、fastqc、multiqc、bowtie2、samtools、picard、macs2、bedtools、deeptools、R/ChIPseeker 等）由 conda 按 `envs/*.yaml` 自动创建，无需手动安装
 - 可选：PBS 集群（`main_run.sh -p`）；Docker（DROMPAplus 独立工具）
 
 ## 4. 快速开始
@@ -120,18 +127,20 @@ atac_leaf_1,treat,atac_leaf,atac,PE,none
 ### 4.4 启动
 
 ```bash
-# 方式一：启动脚本（推荐）
+# 方式一：启动脚本（推荐；snakemake 7/8 的 conda flag 自动适配）
 bash main_run.sh -w /path/to/workdir            # 本机运行
 bash main_run.sh -w /path/to/workdir -n         # dry-run 预检 DAG
 bash main_run.sh -w /path/to/workdir \
-    -p "qsub -V -N chipseq -l ncpus=6 -j oe" \
+    -p "qsub -V -N chipseq -l ncpus={threads} -j oe" \
     -b /opt/anaconda3 -j 3                      # PBS 集群
 
-# 方式二：直接 snakemake
+# 方式二：直接 snakemake（注意：snakemake 8 需改为 --software-deployment-method conda）
 cd /path/to/workdir
 snakemake -s /path/to/repo/workflow.smk --configfile /path/to/repo/config/config.yaml \
     --use-conda --cores 18 -k
 ```
+
+> 集群示例中的 `{threads}` 由 snakemake 按每个任务的实际线程数填充（与 `config.yaml` 的 `threads` 及各规则的 threads 声明自动对齐），请勿写成固定数字，否则 PBS 申请核数会与任务实际占用脱钩。
 
 ### 4.5 查看结果
 
