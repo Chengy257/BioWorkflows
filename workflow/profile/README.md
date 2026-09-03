@@ -1,9 +1,14 @@
 # workflow/profile/
 
-Snakemake 运行 profile（把集群参数固化进版本库）。
+Snakemake 运行 profile（把集群参数固化进版本库）。调度方式通过 `--profile workflow/profile/<name>` 选择；auto 探测规则见 `run.sh --help`（v0.4.0）。
 
-| profile | 适用 | 说明 |
+| profile | 调度器 | cluster 串要点 |
 |---|---|---|
-| `pbs/` | snakemake **7.x** | PBS/qsub；`--profile workflow/profile/pbs` 使用；任务名取 `{rule}`、核数取 `{threads}`（与各规则声明自动对齐）；日志直接落入 `logs/` |
+| `default/` | 本机/独立服务器 | 无 cluster 串，`--cores 8` 本地直接执行；`latency-wait: 90` |
+| `pbs/` | PBS (Torque)，snakemake **7.x** 经典接口 | `qsub -V -N {rule} -l select=1:ncpus={threads}:mem={resources.mem_mb}mb -l walltime={resources.runtime_sec} -j oe`；walltime 用秒避免 `[[HH:]MM:]SS` 歧义 |
+| `sge/` | SGE，snakemake **7.x** 经典接口 | `qsub -V -N {rule} -l ncpus={threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime_sec} -j oe` |
+| `slurm/` | SLURM，snakemake **7.x** 经典接口 | `sbatch --parsable -J {rule} -c {threads} --mem={resources.mem_mb}M --time={resources.runtime_min} -o slurm-{rule}-%j.out` |
 
-snakemake 8.x 改用 executor 插件体系（`--cluster` 语义移除），8.x 用户请使用仓库根目录的 `main_run.sh -p "qsub ..."`（已做 7/8 版本自动适配）。如后续需要在 8.x 上使用 profile，可安装 `snakemake-executor-plugin-cluster-generic` 后新增对应 profile。
+cluster 串中的资源占位符（`{threads}` / `{resources.mem_mb}` / `{resources.runtime_sec}` / `{resources.runtime_min}`）由 snakemake 运行期从各规则的 resources 声明自动填充。
+
+snakemake 8.x 改用 executor 插件体系（`--cluster` 语义移除）；版本自动探测与适配规则见 `run.sh --help`（v0.4.0）。

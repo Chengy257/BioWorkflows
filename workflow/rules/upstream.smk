@@ -60,10 +60,12 @@ rule multiqc:
     log:
         "logs/multiqc.log",
     threads: 1
+    params:
+        mqc_config=os.path.join(WORKFLOW_DIR, "multiqc_config.yaml"),
     shell:
         """
         mkdir -p 2.cleandata/fastqc/multiqc
-        multiqc --force -o 2.cleandata/fastqc/multiqc {input} > {log} 2>&1
+        multiqc --force -o 2.cleandata/fastqc/multiqc -c {params.mqc_config} {input} > {log} 2>&1
         """
 
 
