@@ -1,0 +1,31 @@
+# 统一软件/运行时配置。
+# 复制到项目目录为 software.yaml 并仅覆盖差异项。
+
+environment:
+  type: system                  # system | conda
+  conda_prefix: ""              # HPC 推荐，如 /share/conda/envs/chip-cuttag-atac-faire
+  conda_name: ""                # conda_prefix 的替代
+  strict: true
+
+r:
+  rscript: "Rscript"            # 命令名或绝对路径
+  version: ""                   # 可选，如 "4.3"
+  version_check: major_minor    # major_minor | exact | warn | off
+  lib_paths: []                 # 可选 R 库目录（复用服务器已有 ChIPseeker 等时填）
+  lib_mode: prepend             # prepend | append | replace
+  package_sources: {}           # 可选 包名 -> 本地 tarball 路径（仅用于安装提示）
+
+# 常规工具自动从主环境/PATH 解析；仅覆盖差异项。
+tools:
+  trim_galore: "trim_galore"
+  bowtie2: "bowtie2"
+  samtools: "samtools"
+  picard: "picard"              # picard.jar 完整路径亦可
+  macs2: "macs2"
+  bedtools: "bedtools"
+  deeptools: "deeptools"
+  spp: "spp.R"                  # phantompeakqualtools 的 R 入口
+
+paths: {}
+
+databases: {}
