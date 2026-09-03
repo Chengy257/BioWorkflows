@@ -260,5 +260,5 @@ if config["qc"]["deeptools"]:
         "5.QC_deeptools/profile_scaled.png",
     ]
 
-# 软件版本记录：由 meta.smk 的 software_versions 规则在 DAG 末尾生成，始终进入 rule all。
+# 软件版本记录：由 meta.smk 的 software_versions 规则生成（无 input 依赖，随 DAG 自由调度），始终进入 rule all。
 VERSION_TARGETS = ["5.QC/software_versions.yaml"]

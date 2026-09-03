@@ -31,8 +31,8 @@ DEFAULT_TOOLS = {
     "picard": "picard",
     "macs2": "macs2",
     "bedtools": "bedtools",
-    "deeptools": "deeptools",
-    "spp": "spp.R",
+    "deeptools": "bamCoverage",
+    "spp": "run_spp.R",
 }
 
 # chip 流程无 pipeline 划分，preflight 统一检查这一组工具；

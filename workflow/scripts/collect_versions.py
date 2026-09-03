@@ -40,7 +40,7 @@ def resolved_tool(name):
     value = os.environ.get(key, "")
     if value:
         return value
-    defaults = {"python": "python3", "rscript": "Rscript", "spp": "spp.R"}
+    defaults = {"python": "python3", "rscript": "Rscript", "spp": "run_spp.R"}
     cmd = defaults.get(name, name)
     return shutil.which(cmd) or cmd
 

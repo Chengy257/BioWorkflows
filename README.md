@@ -81,9 +81,9 @@ chip_cuttag_atac_faire/
 
 | snakemake 版本 | 支持情况 | 说明 |
 |---|---|---|
-| **7.32.4** | ✅ 参考版本 | 流程 conda 部署 flag（`--use-conda`）以此为准；服务器首次部署推荐 |
-| **8.x** | ✅ 自动适配 | `main_run.sh` 自动切换为 `--software-deployment-method conda`（`--use-conda` 在 8.x 已弃用）；CI 用 8.x 验证 `--lint`/解析 |
-| <7 或 ≥9 | ⛔ 未验证 | 9.x 可能移除弃用别名，需实测 |
+| **7.32.4** | ✅ 参考版本 | workflow/environment.yaml 钉版版本；服务器统一环境以此创建 |
+| **8.x** | ⚠️ 未验证 | 统一环境下仅解析/lint 级验证；集群提交语义有变化（--cluster→executor 插件），实跑前先测 |
+| <7 或 ≥9 | ⛔ 未验证 | 需实测 |
 
 - 其余工具（trim_galore、fastqc、multiqc、bowtie2、samtools、picard、macs2、bedtools、deeptools、R/ChIPseeker 等）按上方过渡说明统一安装，无需逐个手动部署
 - 可选：PBS 集群（`main_run.sh -p`）；Docker（DROMPAplus 独立工具）
@@ -132,20 +132,16 @@ config 在流程解析期集中校验（`workflow/rules/common.smk` 的 `validat
 ### 4.4 启动
 
 ```bash
-# 方式一：启动脚本（推荐；snakemake 7/8 的 conda flag 自动适配）
+# 方式一：启动脚本（推荐；需已进入统一环境）
 bash main_run.sh -w /path/to/workdir            # 本机运行
 bash main_run.sh -w /path/to/workdir -n         # dry-run 预检 DAG
 bash main_run.sh -w /path/to/workdir \
-    -p "qsub -V -N chipseq -l ncpus={threads} -j oe" \
-    -e /shared/conda_envs -b /opt/anaconda3 -j 3 -t 120   # PBS 集群
+    -p "qsub -V -N chipseq -l ncpus={threads} -j oe" -j 3 -t 120   # PBS 集群
 
-# PBS 计算节点无外网时：先在登录节点预建环境，再正式投递
-bash main_run.sh -w /path/to/workdir -e /shared/conda_envs -E
-
-# 方式二：直接 snakemake（注意：snakemake 8 需改为 --software-deployment-method conda）
+# 方式二：直接 snakemake（需已在统一环境中，无 conda 部署 flag）
 cd /path/to/workdir
 snakemake -s /path/to/repo/workflow/Snakefile --configfile /path/to/repo/config/config.yaml \
-    --use-conda --cores 18 -k
+    --cores 18 -k
 ```
 
 集群使用要点：

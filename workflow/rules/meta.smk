@@ -9,11 +9,12 @@ rule software_versions:
         software_config=os.environ.get("CHIP_SOFTWARE_CONFIG",
                                        os.path.join(BASE_DIR, "config", "software.yaml")),
         workflow_dir=WORKFLOW_DIR,
+        python=os.environ.get("CHIP_PYTHON", "python3"),
     threads: 1
     resources:
         mem_mb=1024,
         runtime_min=10,
         runtime_sec=600,
     shell:
-        "python3 {params.script} --software-config {params.software_config} "
+        "{params.python} {params.script} --software-config {params.software_config} "
         "--workflow {params.workflow_dir} --out {output} >> {log} 2>&1"

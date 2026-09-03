@@ -23,8 +23,8 @@ tools:
   picard: "picard"              # picard.jar 完整路径亦可
   macs2: "macs2"
   bedtools: "bedtools"
-  deeptools: "deeptools"
-  spp: "spp.R"                  # phantompeakqualtools 的 R 入口
+  deeptools: "bamCoverage"     # deeptools 工具组以 bamCoverage 为代表二进制（包本身无 deeptools 可执行文件）
+  spp: "run_spp.R"              # phantompeakqualtools 的 R 入口（bioconda 包内命令名）
 
 paths: {}
 
