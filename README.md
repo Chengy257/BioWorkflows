@@ -1,6 +1,6 @@
 # chip_cuttag_atac_faire
 
-基于 **Snakemake** 的植物表观组学一站式分析流程，单入口 `workflow.smk` 同时支持四种数据类型（可混型项目）：
+基于 **Snakemake** 的植物表观组学一站式分析流程，单入口 `workflow/Snakefile` 同时支持四种数据类型（可混型项目）：
 
 | Assay | 典型用途 | 峰调用策略 | 去重策略 |
 |---|---|---|---|
@@ -53,7 +53,7 @@ workdir/
 
 ```
 chip_cuttag_atac_faire/
-├── workflow.smk            # 唯一入口：样本表解析/校验 + assay 自动路由 + rule all
+├── workflow/               # 标准布局：Snakefile + rules/ + scripts/ + profile/
 ├── rules/
 │   ├── upstream.smk        # trim_galore、fastqc、multiqc、bowtie2 index/比对
 │   ├── dedup.smk           # picard MarkDuplicates（按 assay 开关）
@@ -127,7 +127,7 @@ atac_leaf_1,treat,atac_leaf,atac,PE,none
 | `peak.atac.mode` | `bampe` | ENCODE ATAC v2 做法；`shifted` 为经典 Tn5 偏移配方（-100/200） |
 | `qc.frip` / `qc.deeptools` / `qc.nsc_rsc` | true/true/false | QC 模块开关 |
 
-config 在流程解析期集中校验（`workflow.smk` 的 `validate_config`）：必需键、子键、类型与取值范围**一次汇总报出**；参考文件缺失仅打印警告不中断（dry-run/lint 场景参考文件常不在本机）。
+config 在流程解析期集中校验（`workflow/rules/common.smk` 的 `validate_config`）：必需键、子键、类型与取值范围**一次汇总报出**；参考文件缺失仅打印警告不中断（dry-run/lint 场景参考文件常不在本机）。
 
 ### 4.4 启动
 
@@ -144,7 +144,7 @@ bash main_run.sh -w /path/to/workdir -e /shared/conda_envs -E
 
 # 方式二：直接 snakemake（注意：snakemake 8 需改为 --software-deployment-method conda）
 cd /path/to/workdir
-snakemake -s /path/to/repo/workflow.smk --configfile /path/to/repo/config/config.yaml \
+snakemake -s /path/to/repo/workflow/Snakefile --configfile /path/to/repo/config/config.yaml \
     --use-conda --cores 18 -k
 ```
 

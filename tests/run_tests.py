@@ -2,7 +2,7 @@
 """零依赖测试：样本表解析、路由辅助函数、config/envs 完整性。
 
 运行: python tests/run_tests.py（在仓库根目录）
-- 从 workflow.smk 提取【真实源码】执行（非副本），保证测试与实现一致
+- 从 workflow/rules/common.smk 提取【真实源码】执行（非副本），保证测试与实现一致
 - pyyaml 可选：缺失时跳过 yaml 检查（CI 中会安装）
 """
 import csv
@@ -24,14 +24,14 @@ def check(name, cond, detail=""):
 
 
 # ---------------------------------------------------------------------
-# 从 workflow.smk 提取被测函数（真实源码）
+# 从 workflow/rules/common.smk 提取被测函数（真实源码）
 # ---------------------------------------------------------------------
 class WorkflowError(Exception):
     """snakemake.exceptions.WorkflowError 的替身（签名兼容：单 str 参数）"""
 
 
 def extract_workflow_functions():
-    with open(os.path.join(REPO, "workflow.smk"), encoding="utf-8") as fh:
+    with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
         src = fh.read()
 
     def segment(start_marker, end_markers):
@@ -53,8 +53,8 @@ def extract_workflow_functions():
         block_b = block_b[: len("def _group_regex(") + m.start() + 1]
 
     ns = {"csv": csv, "os": os, "re": re, "WorkflowError": WorkflowError,
-          "REPO_DIR": REPO}
-    exec(compile(block_a + "\n\n" + block_b, "workflow.smk(extracted)", "exec"), ns)
+          "BASE_DIR": REPO}
+    exec(compile(block_a + "\n\n" + block_b, "common.smk(extracted)", "exec"), ns)
     return ns
 
 
@@ -126,7 +126,7 @@ expect_error("样本名含双下划线拒绝", [HEADER, ["a__b", "treat", "g", "
 expect_error("分组名含空格拒绝", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "非法字符")
 
 print("== 3. ATAC 峰调用模式白名单 ==")
-with open(os.path.join(REPO, "workflow.smk"), encoding="utf-8") as fh:
+with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
     wf_src = fh.read()
 mode_block = wf_src[wf_src.index('if config["peak"]["atac"]["mode"]'):]
 _end = mode_block.find("\ndef validate_config(")
@@ -154,7 +154,7 @@ _end = vc_block.find("\nvalidate_config(config)")
 if _end == -1:
     _end = vc_block.find("\n# ---")
 vc_block = vc_block[:_end]
-vc_ns = {"WorkflowError": WorkflowError, "os": os, "REPO_DIR": REPO,
+vc_ns = {"WorkflowError": WorkflowError, "os": os, "BASE_DIR": REPO,
          "ASSAYS": ("chip", "cuttag", "atac", "faire")}
 exec(compile(vc_block, "validate_config(extracted)", "exec"), vc_ns)
 validate_config = vc_ns["validate_config"]
@@ -270,7 +270,7 @@ for name, sample, group in [("a", "myc", "myc_vs_IgG"), ("b", "IgG", "myc_vs_IgG
         fh.write("sample\tgroup\ttotal_reads\treads_in_peaks\tFRiP\n")
         fh.write(f"{sample}\t{group}\t1000\t50\t0.0500\n")
 body = render_rule_body(
-    os.path.join(REPO, "rules", "frip.smk"), "frip_summary",
+    os.path.join(REPO, "workflow", "rules", "frip.smk"), "frip_summary",
     {"input": "5.QC/frip/a.tsv 5.QC/frip/b.tsv",
      "log": "frip_summary.log"},
     literals={"output.tsv": "5.QC/frip/FRiP_summary.tsv",
@@ -296,7 +296,7 @@ for s in ["s1", "s2"]:
               newline="\n") as fh:
         fh.write("0.95\n")
 body = render_rule_body(
-    os.path.join(REPO, "rules", "spp_qc.smk"), "spp_summary",
+    os.path.join(REPO, "workflow", "rules", "spp_qc.smk"), "spp_summary",
     {"output": "5.QC/spp/NSC_RSC_mqc.tsv", "log": "spp_summary.log"},
     literals={"params.samples": "s1 s2"})
 r = run_bash(body, tmp)

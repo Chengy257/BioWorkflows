@@ -1,0 +1,53 @@
+# =====================================================================
+# chip_cuttag_atac_faire —— 统一入口 Snakefile
+#
+# ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq 一体化 Snakemake 流程
+# 根据 samples.csv 的 seqtype 列自动路由，支持混型项目。
+#
+# 推荐启动方式（见 run.sh --help）:
+#   bash run.sh -P /path/to/workdir -c config.yaml --profile pbs
+# 直接调用 Snakemake 亦支持:
+#   CHIP_CONFIG=/path/to/config.yaml snakemake -s workflow/Snakefile -j 10
+# 详见 README.md
+# =====================================================================
+import os
+
+BASE_DIR = os.path.dirname(workflow.basedir)   # 仓库根目录
+WORKFLOW_DIR = workflow.basedir                # workflow/ 目录
+
+# CHIP_CONFIG 由 run.sh 注入项目级配置；缺省回落仓库默认配置
+configfile: os.environ.get("CHIP_CONFIG", os.path.join(BASE_DIR, "config", "config.yaml"))
+
+# 所有 shell 以 bash -eo pipefail 执行：任何一步失败立即中断，管道错误可捕获。
+# 不加 set -u：conda 激活脚本在 -u 下会因未绑定变量报错。
+shell.executable("/bin/bash")
+shell.prefix("set -eo pipefail; ")
+
+# ---------------------------------------------------------------------
+# 共享定义：样本表解析、config 校验、规则查询函数、目标汇总
+# ---------------------------------------------------------------------
+include: os.path.join(WORKFLOW_DIR, "rules", "common.smk")
+
+
+rule all:
+    input:
+        QC_TARGETS,
+        BAM_TARGETS,
+        PEAK_TARGETS,
+        BW_TARGETS,
+        "4.peak/anno_result/Peakanno_PeakDistributions.pdf",
+
+
+# ---------------------------------------------------------------------
+# 各模块规则
+# ---------------------------------------------------------------------
+include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "dedup.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "annotation.smk")
+if config["qc"]["nsc_rsc"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "spp_qc.smk")
+if config["qc"]["frip"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "frip.smk")
+if config["qc"]["deeptools"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "qc_deeptools.smk")

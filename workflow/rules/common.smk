@@ -1,30 +1,15 @@
-# =====================================================================
-# chip_cuttag_atac_faire —— 统一入口 Snakefile
-#
-# ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq 一体化 Snakemake 流程
-# 根据 sample_info.csv 的 seqtype 列自动路由，支持混型项目。
-#
-# 用法（在数据工作目录运行）：
-#   snakemake -s /path/to/repo/workflow.smk --configfile /path/to/repo/config/config.yaml \
-#       --use-conda --cores 18 -j 3 -k
-# 详见 README.md
-# =====================================================================
-
+# ---------------------------------------------------------------------
+# 共享定义：路径常量、样本表解析、config 校验、规则查询函数、目标汇总
+# 由 Snakefile 第一个 include；各 rules/*.smk 直接使用这里定义的名字。
+# BASE_DIR / WORKFLOW_DIR 由 Snakefile 定义，此处不重复声明。
+# ---------------------------------------------------------------------
 import csv
 import os
 import re
 
 from snakemake.exceptions import WorkflowError
 
-configfile: os.path.join(workflow.basedir, "config", "config.yaml")
-
-# 所有 shell 以 bash -eo pipefail 执行：任何一步失败立即中断，管道错误可捕获。
-# 不加 set -u：conda 激活脚本在 -u 下会因未绑定变量报错。
-shell.executable("/bin/bash")
-shell.prefix("set -eo pipefail; ")
-
-REPO_DIR = workflow.basedir
-ENVS = os.path.join(REPO_DIR, "envs")
+ENVS = os.path.join(BASE_DIR, "envs")
 
 ASSAYS = ("chip", "cuttag", "atac", "faire")
 
@@ -45,7 +30,7 @@ def _resolve_sample_table(path):
         return p
     if os.path.exists(p):
         return os.path.abspath(p)
-    return os.path.join(REPO_DIR, p)
+    return os.path.join(BASE_DIR, p)
 
 
 def load_sample_table(path):
@@ -63,7 +48,7 @@ def load_sample_table(path):
         if missing:
             raise WorkflowError(
                 f"样本表 {path} 缺少列: {missing}；"
-                f"必须包含 {list(REQUIRED_COLUMNS)}，参见 sample_info.example.csv"
+                f"必须包含 {list(REQUIRED_COLUMNS)}，参见 config/samples.csv"
             )
         for lineno, row in enumerate(reader, start=2):
             sid = (row["sample_id"] or "").strip()
@@ -189,7 +174,7 @@ def validate_config(cfg):
         try:
             er = float(t.get("error_rate"))
             if not 0 < er <= 1:
-                errors.append(f"trim.error_rate 必须在 (0, 1] 区间，当前为 {er!r}")
+                errors.append(f"trim.error_rate 必须在 (0, 1] 区间，当前为 {t.get('error_rate')!r}")
         except (TypeError, ValueError):
             errors.append(f"trim.error_rate 必须是数值，当前为 {t.get('error_rate')!r}")
         if not isinstance(t.get("extra", ""), str):
@@ -201,7 +186,7 @@ def validate_config(cfg):
     for key in ("genome_fa", "gtf", "bed", "chromsize"):
         p = str(cfg[key])
         if not os.path.isabs(p) and not os.path.exists(p):
-            p = os.path.join(REPO_DIR, p)
+            p = os.path.join(BASE_DIR, p)
         if not os.path.exists(p):
             warnings.append(f"参考文件不存在（运行前请确认）: {key} = {cfg[key]}")
     for w in warnings:
@@ -276,27 +261,3 @@ if config["qc"]["deeptools"]:
         "5.QC_deeptools/fragmentsize.png",
         "5.QC_deeptools/profile_scaled.png",
     ]
-
-
-rule all:
-    input:
-        QC_TARGETS,
-        BAM_TARGETS,
-        PEAK_TARGETS,
-        BW_TARGETS,
-        "4.peak/anno_result/Peakanno_PeakDistributions.pdf",
-
-
-# ---------------------------------------------------------------------
-# 各模块规则
-# ---------------------------------------------------------------------
-include: os.path.join(REPO_DIR, "rules", "upstream.smk")
-include: os.path.join(REPO_DIR, "rules", "dedup.smk")
-include: os.path.join(REPO_DIR, "rules", "callpeak.smk")
-include: os.path.join(REPO_DIR, "rules", "annotation.smk")
-if config["qc"]["nsc_rsc"]:
-    include: os.path.join(REPO_DIR, "rules", "spp_qc.smk")
-if config["qc"]["frip"]:
-    include: os.path.join(REPO_DIR, "rules", "frip.smk")
-if config["qc"]["deeptools"]:
-    include: os.path.join(REPO_DIR, "rules", "qc_deeptools.smk")

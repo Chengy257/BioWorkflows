@@ -26,11 +26,11 @@ jobs:
       - name: shellcheck 静态检查
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck main_run.sh scripts/*.sh
+          shellcheck main_run.sh workflow/scripts/*.sh
 
       - name: snakemake --lint
         run: make lint SNAKEMAKE="snakemake"
 
       - name: snakemake 解析冒烟（--list-rules）
         run: |
-          snakemake -s workflow.smk --configfile config/config.yaml --list-rules
+          snakemake -s workflow/Snakefile --configfile config/config.yaml --list-rules

@@ -47,3 +47,4 @@ desktop.ini
 .idea/
 .vscode/
 .glm-conductor/
+.venv

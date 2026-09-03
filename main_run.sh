@@ -7,7 +7,7 @@
 #
 # 选项:
 #   -w DIR     数据工作目录（必选，含 1.rawdata/ 与 sample_info.csv）
-#   -s FILE    入口 Snakefile（默认仓库内 workflow.smk）
+#   -s FILE    入口 Snakefile（默认仓库内 workflow/Snakefile）
 #   -c FILE    配置文件（默认仓库内 config/config.yaml）
 #   -j N       集群并发任务数（默认 3）
 #   -C N       本机总核数（默认 18）
@@ -30,7 +30,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 workdir=""
-smk="${REPO_DIR}/workflow.smk"
+smk="${REPO_DIR}/workflow/Snakefile"
 config="${REPO_DIR}/config/config.yaml"
 jobs=3
 cores=18

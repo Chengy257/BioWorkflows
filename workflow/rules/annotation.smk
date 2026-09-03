@@ -7,7 +7,7 @@ rule peak_annotation:
     output:
         pdf="4.peak/anno_result/Peakanno_PeakDistributions.pdf",
     params:
-        script=os.path.join(REPO_DIR, "scripts", "annoPeak_batch.R"),
+        script=os.path.join(WORKFLOW_DIR, "scripts", "annoPeak_batch.R"),
         peaklist=lambda wc: ",".join(group_peak_file(g) for g in GROUPS),
         outdir="4.peak/anno_result",
         flank=config["region_flank"],

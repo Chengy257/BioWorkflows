@@ -7,7 +7,7 @@
 PYTHON ?= python3
 SNAKEMAKE ?= snakemake
 
-SHELL_SCRIPTS := main_run.sh $(wildcard scripts/*.sh)
+SHELL_SCRIPTS := main_run.sh $(wildcard workflow/scripts/*.sh)
 
 .PHONY: check lint dryrun test
 
@@ -16,10 +16,10 @@ check:
 	@for f in $(SHELL_SCRIPTS); do bash -n $$f && echo "  PASS  bash -n $$f" || exit 1; done
 
 lint:
-	$(SNAKEMAKE) --lint -s workflow.smk --configfile config/config.yaml
+	$(SNAKEMAKE) --lint -s workflow/Snakefile --configfile config/config.yaml
 
 dryrun:
-	$(SNAKEMAKE) -n -s workflow.smk --configfile config/config.yaml \
+	$(SNAKEMAKE) -n -s workflow/Snakefile --configfile config/config.yaml \
 		--use-conda --cores 4
 
 test: check lint
