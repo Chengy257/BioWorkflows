@@ -11,7 +11,7 @@
 
 去重策略、峰参数、QC 开关均按 assay 在 `config/config.yaml` 中配置。默认示例参考基因组为水稻 *Oryza sativa*（IRGSP-1.0），更换物种只需修改参考文件路径与基因组大小。
 
-> ✅ **当前状态（v0.2.0）**：Phase 1~3 重构完成——单入口 + 全新规则 + per-rule conda 环境 + FRiP/deeptools QC + 单元测试 + CI。已通过 31 项单元测试、bash 语法检查与独立代码审查（3 项 P1 已修复）。**尚未在服务器用真实数据完成端到端实跑**（见 [已知限制](#7-已知限制)）。
+> ✅ **当前状态（v0.2.2）**：Phase 1~3 重构 + 运维审查 P1/P2 修复完成——单入口 + 全新规则 + per-rule conda 环境 + FRiP/deeptools QC + config 集中校验 + 集群健壮参数 + 41 项单元测试 + CI。已通过 bash 语法检查、假 snakemake 路由验证与独立代码审查（ship）。**尚未在服务器用真实数据完成端到端实跑**（见 [已知限制](#7-已知限制)）。
 
 ---
 
@@ -67,7 +67,7 @@ chip_cuttag_atac_faire/
 ├── config/config.yaml      # 默认配置；config.template.yaml 为覆盖模板
 ├── sample_info.example.csv # 样本表 schema 示例（四 assay 混型）
 ├── main_run.sh             # 启动脚本（本机/PBS 集群、config.local 叠加）
-├── tests/run_tests.py      # 零依赖单元测试（31 项）
+├── tests/run_tests.py      # 零依赖单元测试（41 项）
 ├── Makefile                # make check / lint / dryrun
 ├── .github/workflows/ci.yaml  # CI：测试 + shellcheck + snakemake --lint
 ├── docs/                   # REVIEW.md 审查报告 / IMPROVEMENT_PLAN.md 优化计划
@@ -118,11 +118,14 @@ atac_leaf_1,treat,atac_leaf,atac,PE,none
 
 | 键 | 默认 | 说明 |
 |---|---|---|
+| `trim.quality/stringency/error_rate/extra` | 25 / 3 / 0.1 / "" | trim_galore 修剪参数（`extra` 可追加如 `--clip_r1 5`） |
 | `min_mapq` | 30 | 比对质量过滤（ENCODE 常规值） |
 | `dedup.<assay>` | chip/atac/faire=true, cuttag=false | picard 去重按 assay 开关 |
 | `peak.qvalue` / `peak.broad_cutoff` | 0.05 / 0.05 | MACS2 峰阈值（常规默认） |
 | `peak.atac.mode` | `bampe` | ENCODE ATAC v2 做法；`shifted` 为经典 Tn5 偏移配方（-100/200） |
 | `qc.frip` / `qc.deeptools` / `qc.nsc_rsc` | true/true/false | QC 模块开关 |
+
+config 在流程解析期集中校验（`workflow.smk` 的 `validate_config`）：必需键、子键、类型与取值范围**一次汇总报出**；参考文件缺失仅打印警告不中断（dry-run/lint 场景参考文件常不在本机）。
 
 ### 4.4 启动
 
@@ -132,7 +135,10 @@ bash main_run.sh -w /path/to/workdir            # 本机运行
 bash main_run.sh -w /path/to/workdir -n         # dry-run 预检 DAG
 bash main_run.sh -w /path/to/workdir \
     -p "qsub -V -N chipseq -l ncpus={threads} -j oe" \
-    -b /opt/anaconda3 -j 3                      # PBS 集群
+    -e /shared/conda_envs -b /opt/anaconda3 -j 3 -t 120   # PBS 集群
+
+# PBS 计算节点无外网时：先在登录节点预建环境，再正式投递
+bash main_run.sh -w /path/to/workdir -e /shared/conda_envs -E
 
 # 方式二：直接 snakemake（注意：snakemake 8 需改为 --software-deployment-method conda）
 cd /path/to/workdir
@@ -140,7 +146,10 @@ snakemake -s /path/to/repo/workflow.smk --configfile /path/to/repo/config/config
     --use-conda --cores 18 -k
 ```
 
-> 集群示例中的 `{threads}` 由 snakemake 按每个任务的实际线程数填充（与 `config.yaml` 的 `threads` 及各规则的 threads 声明自动对齐），请勿写成固定数字，否则 PBS 申请核数会与任务实际占用脱钩。
+集群使用要点：
+- `{threads}` 由 snakemake 按每个任务的实际线程数填充（与 `config.yaml` 的 `threads` 及各规则声明自动对齐），请勿写固定数字；
+- `-e` 指定共享 conda 环境目录（`--conda-prefix`），多个项目复用同一套环境，避免每个工作目录重建约数 GB 的 11 个环境；
+- 默认已开启 `--rerun-incomplete` 与 `--latency-wait 90`（`-t` 可调），覆盖 PBS + 共享文件系统的断点重跑与输出可见性延迟两类常见假失败。
 
 ### 4.5 查看结果
 

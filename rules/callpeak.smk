@@ -24,7 +24,7 @@ rule callpeak_narrow:
         qvalue=config["peak"]["qvalue"],
     log:
         "logs/callpeak/{group}_narrow.log",
-    threads: config["threads"]
+    threads: 1  # MACS2 为单线程程序，按实际占用申请资源
     conda:
         os.path.join(ENVS, "macs2.yaml")
     shell:
@@ -57,7 +57,7 @@ rule callpeak_broad:
         broad_cutoff=config["peak"]["broad_cutoff"],
     log:
         "logs/callpeak/{group}_broad.log",
-    threads: config["threads"]
+    threads: 1  # MACS2 为单线程程序，按实际占用申请资源
     conda:
         os.path.join(ENVS, "macs2.yaml")
     shell:
@@ -98,7 +98,7 @@ rule callpeak_atac:
         qvalue=config["peak"]["qvalue"],
     log:
         "logs/callpeak/{group}_atac_faire.log",
-    threads: config["threads"]
+    threads: 1  # MACS2 为单线程程序，按实际占用申请资源
     conda:
         os.path.join(ENVS, "macs2.yaml")
     shell:

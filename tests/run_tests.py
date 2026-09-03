@@ -129,7 +129,10 @@ print("== 3. ATAC 峰调用模式白名单 ==")
 with open(os.path.join(REPO, "workflow.smk"), encoding="utf-8") as fh:
     wf_src = fh.read()
 mode_block = wf_src[wf_src.index('if config["peak"]["atac"]["mode"]'):]
-mode_block = mode_block[:mode_block.index("\n# ---")]
+_end = mode_block.find("\ndef validate_config(")
+if _end == -1:
+    _end = mode_block.find("\n# ---")
+mode_block = mode_block[:_end]
 for bad in ["BAMPE", "bam", ""]:
     ns = {"config": {"peak": {"atac": {"mode": bad}}}, "WorkflowError": WorkflowError}
     try:
@@ -145,7 +148,72 @@ for good in ["bampe", "shifted"]:
     except WorkflowError as e:
         check(f"mode={good!r} 放行", False, str(e))
 
-print("== 4. 通配符约束正则 ==")
+print("== 4. config 集中校验（validate_config，真实源码提取） ==")
+vc_block = wf_src[wf_src.index("def validate_config("):]
+_end = vc_block.find("\nvalidate_config(config)")
+if _end == -1:
+    _end = vc_block.find("\n# ---")
+vc_block = vc_block[:_end]
+vc_ns = {"WorkflowError": WorkflowError, "os": os, "REPO_DIR": REPO,
+         "ASSAYS": ("chip", "cuttag", "atac", "faire")}
+exec(compile(vc_block, "validate_config(extracted)", "exec"), vc_ns)
+validate_config = vc_ns["validate_config"]
+
+import copy  # noqa: E402
+
+GOOD_CFG = {
+    "genome_fa": "/nonexistent/genome.fa", "gtf": "/nonexistent/genes.gtf",
+    "bed": "/nonexistent/genes.bed", "chromsize": "/nonexistent/chrom.sizes",
+    "genome_size": "3.7e8", "grouplist": "sample_info.csv",
+    "threads": 12, "bowtie2_extra": "--very-sensitive", "min_mapq": 30,
+    "dedup": {"chip": True, "cuttag": False, "atac": True, "faire": True},
+    "peak": {"keepdup": "all", "qvalue": 0.05, "broad_cutoff": 0.05,
+             "atac": {"mode": "bampe", "shift": -100, "extsize": 200}},
+    "qc": {"nsc_rsc": False, "frip": True, "deeptools": True},
+    "trim": {"quality": 25, "stringency": 3, "error_rate": 0.1, "extra": ""},
+}
+
+
+def vc_case(name, mutate, needles, expect_error=True):
+    cfg = copy.deepcopy(GOOD_CFG)
+    mutate(cfg)
+    try:
+        validate_config(cfg)
+        check(name, not expect_error, "未按预期抛出 WorkflowError")
+    except WorkflowError as e:
+        if expect_error:
+            check(name, all(n in str(e) for n in needles),
+                  f"报错缺少 {needles}: {e}")
+        else:
+            check(name, False, f"不应报错: {e}")
+
+
+vc_case("合法完整 config 放行（参考文件缺失仅警告）",
+        lambda c: None, [], expect_error=False)
+vc_case("缺 trim 键报错", lambda c: c.pop("trim"), ["缺少必需配置键: trim"])
+vc_case("dedup 非布尔报错",
+        lambda c: c["dedup"].__setitem__("chip", 1), ["dedup.chip"])
+vc_case("qc 开关非布尔报错",
+        lambda c: c["qc"].__setitem__("frip", "yes"), ["qc.frip"])
+vc_case("min_mapq 负数报错",
+        lambda c: c.__setitem__("min_mapq", -1), ["min_mapq"])
+vc_case("peak.qvalue 超区间报错",
+        lambda c: c["peak"].__setitem__("qvalue", 5), ["peak.qvalue"])
+vc_case("trim.quality 负数报错",
+        lambda c: c["trim"].__setitem__("quality", -1), ["trim.quality"])
+vc_case("trim.error_rate 超区间报错",
+        lambda c: c["trim"].__setitem__("error_rate", 2), ["trim.error_rate"])
+
+
+def _two_errors(c):
+    c.pop("gtf")
+    c["dedup"].pop("atac")
+
+
+vc_case("多错误一次汇总报出",
+        _two_errors, ["共 2 项", "gtf", "dedup.atac"])
+
+print("== 5. 通配符约束正则 ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
 check("regex: 精确匹配（含转义）",
       re.fullmatch(rx, "myc_vs_IgG") and re.fullmatch(rx, "atac.leaf"))
@@ -153,7 +221,7 @@ check("regex: 不匹配未列分组与变形",
       not re.fullmatch(rx, "other") and not re.fullmatch(rx, "atacXleaf"))
 check("regex: 空列表永不匹配", re.fullmatch(_group_regex([]), "anything") is None)
 
-print("== 5. config 与 envs 完整性 ==")
+print("== 6. config 与 envs 完整性 ==")
 try:
     import yaml  # noqa: F401
     HAS_YAML = True
@@ -166,9 +234,14 @@ if HAS_YAML:
         cfg = yaml.safe_load(fh)
     required_top = ["genome_fa", "gtf", "bed", "chromsize", "genome_size",
                     "grouplist", "threads", "bowtie2_extra", "min_mapq",
-                    "dedup", "peak", "qc"]
+                    "dedup", "peak", "qc", "trim"]
     check("config: 顶层键齐全", all(k in cfg for k in required_top),
           str([k for k in required_top if k not in cfg]))
+    try:
+        validate_config(cfg)
+        check("config: 仓库默认 config 通过 validate_config", True)
+    except WorkflowError as e:
+        check("config: 仓库默认 config 通过 validate_config", False, str(e))
     check("config: dedup 四 assay 齐全",
           set(cfg["dedup"]) == {"chip", "cuttag", "atac", "faire"})
     check("config: peak 子键齐全",

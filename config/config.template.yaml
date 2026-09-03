@@ -15,6 +15,13 @@ genome_size: "3.7e8"                          # MACS2 有效基因组大小（�
 grouplist: "sample_info.csv"                  # 样本表（schema 见 sample_info.example.csv）
 threads: 12                                   # 单任务线程数
 
+# ---------- 质量修剪（trim_galore） ----------
+trim:
+  quality: 25        # -q：末端低质量碱基阈值
+  stringency: 3      # 接头最少重叠碱基数
+  error_rate: 0.1    # -e：接头匹配最大错误率
+  extra: ""          # 追加参数
+
 # ---------- 比对 ----------
 bowtie2_extra: "--end-to-end --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700"
 min_mapq: 30                                  # 比对质量过滤（ENCODE 常规值）

@@ -15,6 +15,12 @@
 #              {threads} 由 snakemake 按每个任务实际线程数填充，与 config threads 自动对齐；
 #              不传 -p 则在本机直接运行（无集群）
 #   -b PATH    conda base 路径（传给 --conda-base-path，如 /opt/anaconda3）
+#   -e DIR     共享 conda 环境目录（传给 --conda-prefix；强烈推荐集群使用，
+#              多个工作目录复用同一套环境，避免每个项目重建约数 GB 的 11 个环境）
+#   -E         仅预建 conda 环境后退出（--conda-create-envs-only；PBS 计算节点
+#              无外网时，先在登录节点执行本模式再正式投递）
+#   -t N       输出可见性等待秒数（--latency-wait，默认 90；PBS + 共享文件系统
+#              上输出延迟是常见的假失败原因，不建议调小）
 #   -l FILE    额外配置文件（如 config.local.yaml，后加载者覆盖前者的键；
 #              不传时自动检测工作目录下的 config.local.yaml，存在即叠加）
 #   -r         启动前把 1.rawdata 中的常见 R1/R2 后缀统一重命名为 _1/_2.fq.gz
@@ -30,12 +36,15 @@ jobs=3
 cores=18
 cluster_cmd=""
 conda_base=""
+conda_envs_dir=""
+prebuild=0
+latency=90
 do_rename=0
 dryrun=""
 
 usage() { grep '^#' "$0" | cut -c 3-; exit "${1:-0}"; }
 
-while getopts "w:s:c:j:C:p:b:l:rnh" opt; do
+while getopts "w:s:c:j:C:p:b:l:e:t:Ernh" opt; do
     case ${opt} in
         w) workdir=${OPTARG} ;;
         s) smk=${OPTARG} ;;
@@ -44,6 +53,9 @@ while getopts "w:s:c:j:C:p:b:l:rnh" opt; do
         C) cores=${OPTARG} ;;
         p) cluster_cmd=${OPTARG} ;;
         b) conda_base=${OPTARG} ;;
+        e) conda_envs_dir=${OPTARG} ;;
+        E) prebuild=1 ;;
+        t) latency=${OPTARG} ;;
         l) extra_config=${OPTARG} ;;
         r) do_rename=1 ;;
         n) dryrun="--dry-run" ;;
@@ -98,7 +110,8 @@ if ! [[ "${smk_version}" =~ ^[0-9]+ ]]; then
 fi
 smk_major="${smk_version%%.*}"
 
-cmd=(snakemake -s "${smk}" --configfile "${config}" --keep-going)
+cmd=(snakemake -s "${smk}" --configfile "${config}" --keep-going
+     --rerun-incomplete --latency-wait "${latency}")
 
 if (( smk_major >= 8 )); then
     cmd+=(--software-deployment-method conda)
@@ -120,6 +133,13 @@ fi
 if [[ -n "${conda_base}" ]]; then
     cmd+=(--conda-base-path "${conda_base}")
 fi
+if [[ -n "${conda_envs_dir}" ]]; then
+    cmd+=(--conda-prefix "${conda_envs_dir}")
+fi
+if [[ ${prebuild} -eq 1 ]]; then
+    cmd+=(--conda-create-envs-only)
+    echo "[INFO] 预建模式：仅创建 conda 环境后退出"
+fi
 
 echo "[INFO] 运行: ${cmd[*]}${dryrun:+ --dry-run}"
 if [[ -n "${dryrun}" ]]; then
@@ -132,4 +152,8 @@ mv ./[a-zA-Z]*.o* ./logs/ 2>/dev/null || true
 
 # 注意：不再删除 .snakemake/ —— 它保存运行元数据与 conda 环境缓存，
 # 删除会导致断点续跑与增量重跑失效。
-echo "[INFO] 完成。结果见 ${workdir} 下的编号目录，日志见 ${workdir}/logs/"
+if [[ ${prebuild} -eq 1 ]]; then
+    echo "[INFO] conda 环境预建完成（目录：${conda_envs_dir:-默认位置}），可正式投递任务。"
+else
+    echo "[INFO] 完成。结果见 ${workdir} 下的编号目录，日志见 ${workdir}/logs/"
+fi

@@ -4,12 +4,26 @@
 
 ## [Unreleased]
 
-### 待办（见 docs/IMPROVEMENT_PLAN.md 遗留清单 + 运维审查 P2 批次）
+### 待办（见 docs/IMPROVEMENT_PLAN.md 遗留清单 + 运维审查 P3 批次）
 
 - 服务器最小样本端到端实跑（CI 首跑 + conda 环境求解 + MACS2 无对照 control_lambda 确认）
 - DiffBind 差异分析补完（需 contrast/设计公式决策）
 - bowtie2 `.bt2l` 大基因组索引支持
-- 运维审查 P2 批次：--conda-prefix 共享环境目录、--latency-wait/--rerun-incomplete、callpeak threads=1、trim 参数入 config、config 集中校验
+- 运维审查 P3 批次：deeptools/注释分析窗口参数统一、FRiP/NSC 注入 multiqc、ucsc 工具锁版、SPP pdf 副产物声明、profile/ 集群配置目录
+
+## [0.2.2] - 2026-09-03
+
+### Added（运维审查 P2 批次）
+
+- **`main_run.sh` 集群健壮性**：默认启用 `--rerun-incomplete` 与 `--latency-wait`（`-t` 可调，默认 90s），覆盖 PBS 断点重跑与共享文件系统输出可见性延迟两类常见假失败
+- **共享 conda 环境目录**：新 `-e DIR`（`--conda-prefix`），多项目复用同一套环境；新 `-E` 预建模式（`--conda-create-envs-only`），PBS 计算节点无外网时先在登录节点建环境
+- **trim_galore 参数配置化**：新 `trim.quality/stringency/error_rate/extra` 四键（原硬编码 `-q 25 --stringency 3 -e 0.1`），template 同步
+- **config 集中校验**（`workflow.smk` `validate_config`）：必需键/子键/类型/取值范围一次汇总报出（含 threads 非整数的友好报错）；参考文件缺失仅警告不中断（保证 --lint/dry-run 在无参考文件的机器可解析）
+- 测试新增 10 项（validate_config 真实源码提取执行），共 **41 项**全部通过
+
+### Changed
+
+- **callpeak 三条规则 threads 降为 1**：MACS2 为单线程程序，原先按 config threads=12 申请集群资源造成超订/浪费；配合 v0.2.1 的 `ncpus={threads}` 后 PBS 申请与实际占用精确一致
 
 ## [0.2.1] - 2026-09-03
 

@@ -130,7 +130,12 @@ def load_sample_table(path):
 
 SAMPLES, GROUPS, SEQTYPE_OF = load_sample_table(_resolve_sample_table(config["grouplist"]))
 
-config["threads"] = int(config["threads"])
+try:
+    config["threads"] = int(config["threads"])
+except (TypeError, ValueError):
+    raise WorkflowError(
+        f"config threads 必须是整数（不要加引号），当前为 {config['threads']!r}"
+    )
 
 # 峰调用模式白名单：mode 只接受 bampe / shifted，笔误静默落入 shifted 的风险需在解析期拦截
 if config["peak"]["atac"]["mode"] not in ("bampe", "shifted"):
@@ -138,6 +143,72 @@ if config["peak"]["atac"]["mode"] not in ("bampe", "shifted"):
         "config peak.atac.mode 必须是 bampe 或 shifted，当前为 "
         f"{config['peak']['atac']['mode']!r}"
     )
+
+
+def validate_config(cfg):
+    """集中校验 config：必需键、子键、类型与取值范围，一次汇总报出全部问题；
+    参考文件存在性只警告不中断（--lint/dry-run 时参考文件常不在本机，硬校验会误伤）。"""
+    errors, warnings = [], []
+    required = ("genome_fa", "gtf", "bed", "chromsize", "genome_size",
+                "grouplist", "threads", "bowtie2_extra", "min_mapq",
+                "dedup", "peak", "qc", "trim")
+    for key in required:
+        if key not in cfg:
+            errors.append(f"缺少必需配置键: {key}")
+    for key in ("dedup", "qc", "peak", "trim"):
+        if key in cfg and not isinstance(cfg[key], dict):
+            errors.append(f"{key} 必须是映射（含子键），当前为 {cfg[key]!r}")
+    if isinstance(cfg.get("dedup"), dict):
+        for assay in ASSAYS:
+            v = cfg["dedup"].get(assay)
+            if not isinstance(v, bool):
+                errors.append(f"dedup.{assay} 必须是 true/false，当前为 {v!r}")
+    if isinstance(cfg.get("qc"), dict):
+        for key in ("nsc_rsc", "frip", "deeptools"):
+            v = cfg["qc"].get(key)
+            if not isinstance(v, bool):
+                errors.append(f"qc.{key} 必须是 true/false，当前为 {v!r}")
+    for key in ("min_mapq",):
+        v = cfg.get(key)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            errors.append(f"{key} 必须是 >= 0 的整数，当前为 {v!r}")
+    if isinstance(cfg.get("peak"), dict):
+        p = cfg["peak"]
+        for key in ("qvalue", "broad_cutoff"):
+            try:
+                if not 0 < float(p[key]) <= 1:
+                    errors.append(f"peak.{key} 必须在 (0, 1] 区间，当前为 {p[key]!r}")
+            except (TypeError, ValueError):
+                errors.append(f"peak.{key} 必须是数值，当前为 {p[key]!r}")
+    if isinstance(cfg.get("trim"), dict):
+        t = cfg["trim"]
+        for key, lo in (("quality", 0), ("stringency", 1)):
+            v = t.get(key)
+            if isinstance(v, bool) or not isinstance(v, int) or v < lo:
+                errors.append(f"trim.{key} 必须是 >= {lo} 的整数，当前为 {v!r}")
+        try:
+            er = float(t.get("error_rate"))
+            if not 0 < er <= 1:
+                errors.append(f"trim.error_rate 必须在 (0, 1] 区间，当前为 {er!r}")
+        except (TypeError, ValueError):
+            errors.append(f"trim.error_rate 必须是数值，当前为 {t.get('error_rate')!r}")
+        if not isinstance(t.get("extra", ""), str):
+            errors.append("trim.extra 必须是字符串")
+    if errors:
+        raise WorkflowError(
+            f"config 校验失败（共 {len(errors)} 项）:\n  " + "\n  ".join(errors)
+        )
+    for key in ("genome_fa", "gtf", "bed", "chromsize"):
+        p = str(cfg[key])
+        if not os.path.isabs(p) and not os.path.exists(p):
+            p = os.path.join(REPO_DIR, p)
+        if not os.path.exists(p):
+            warnings.append(f"参考文件不存在（运行前请确认）: {key} = {cfg[key]}")
+    for w in warnings:
+        print(f"[config 警告] {w}")
+
+
+validate_config(config)
 
 # ---------------------------------------------------------------------
 # 常用查询函数（各 rules/*.smk 共用）

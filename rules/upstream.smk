@@ -8,6 +8,11 @@ rule trim_adapter:
     output:
         fq1="2.cleandata/{sample}_1_val_1.fq.gz",
         fq2="2.cleandata/{sample}_2_val_2.fq.gz",
+    params:
+        quality=config["trim"]["quality"],
+        stringency=config["trim"]["stringency"],
+        error=config["trim"]["error_rate"],
+        extra=config["trim"]["extra"],
     log:
         "logs/trim_galore/{sample}.log",
     threads: config["threads"]
@@ -16,7 +21,8 @@ rule trim_adapter:
     shell:
         """
         mkdir -p 2.cleandata logs/trim_galore
-        trim_galore -q 25 --stringency 3 -e 0.1 --gzip -j {threads} \
+        trim_galore -q {params.quality} --stringency {params.stringency} \
+            -e {params.error} {params.extra} --gzip -j {threads} \
             -o 2.cleandata/ --paired {input.fq1} {input.fq2} > {log} 2>&1
         """
 
