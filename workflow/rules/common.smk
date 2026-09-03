@@ -234,6 +234,17 @@ def _group_regex(groups):
     return "(?:" + "|".join(re.escape(g) for g in groups) + ")"
 
 
+def res(rule, key, default):
+    """按规则名读取 config 的 resources 覆盖段，未覆盖时回落到规则内默认值。
+
+    覆盖段形如 config["resources"][rule][key]；仅支持 mem_mb / runtime_min
+    两个键，runtime_sec 由 runtime_min × 60 在规则声明处自动换算，
+    不支持在覆盖段中独立指定。
+    """
+    override = (config.get("resources") or {}).get(rule) or {}
+    return override.get(key, default)
+
+
 # ---------------------------------------------------------------------
 # 目标汇总
 # ---------------------------------------------------------------------

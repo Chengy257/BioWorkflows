@@ -11,6 +11,10 @@ rule dedup:
     log:
         "logs/dedup/{sample}.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("dedup", 8192),
+        runtime_min=res("dedup", 120),
+        runtime_sec=res("dedup", 120) * 60,
     shell:
         """
         mkdir -p logs/dedup

@@ -15,6 +15,10 @@ rule spp_crosscorr:
     log:
         "logs/spp/{sample}.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("spp_crosscorr", 8192),
+        runtime_min=res("spp_crosscorr", 180),
+        runtime_sec=res("spp_crosscorr", 180) * 60,
     shell:
         """
         mkdir -p 5.QC/spp logs/spp
@@ -36,6 +40,11 @@ rule spp_summary:
         samples=" ".join(SAMPLES),
     log:
         "logs/spp/summary.log",
+    threads: 1
+    resources:
+        mem_mb=res("spp_summary", 1024),
+        runtime_min=res("spp_summary", 10),
+        runtime_sec=res("spp_summary", 10) * 60,
     shell:
         """
         mkdir -p 5.QC/spp logs/spp

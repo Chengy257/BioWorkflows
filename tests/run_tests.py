@@ -340,6 +340,44 @@ if HAS_YAML:
     check("config: qc 开关齐全",
           {"nsc_rsc", "frip", "deeptools"} <= set(cfg["qc"]))
 
+print("== 8. per规则资源声明 ==")
+# --- res() 覆盖语义：从 common.smk 提取真实源码，config 注入（参照 vc_ns 模式） ---
+with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
+    _src = fh.read()
+_start = _src.index("def res(")
+_end = _src.find("\n# -----", _start)
+res_block = _src[_start:_end if _end != -1 else len(_src)]
+
+
+def _make_res(cfg):
+    """以注入的 config 构建 res()（真实源码 exec，命名空间 {"config": cfg}）"""
+    ns = {"config": cfg}
+    exec(compile(res_block, "common.smk(res extracted)", "exec"), ns)
+    return ns["res"]
+
+
+check("res 无覆盖段回落默认值", _make_res({})("x", "mem_mb", 4096) == 4096)
+_res_cov = _make_res({"resources": {"bowtie2_mapping": {"mem_mb": 32768}}})
+check("res 覆盖 mem_mb 生效", _res_cov("bowtie2_mapping", "mem_mb", 16384) == 32768)
+check("res 覆盖段缺 key 回落", _res_cov("bowtie2_mapping", "runtime_min", 240) == 240)
+check("res 其他规则不受影响", _res_cov("frip", "mem_mb", 4096) == 4096)
+
+# --- 静态扫描：每个含规则的 .smk 中 rule 数与 runtime_sec 声明数一致（防漏声明） ---
+_mismatch = []
+_rules_dir = os.path.join(REPO, "workflow", "rules")
+for _fname in sorted(os.listdir(_rules_dir)):
+    if not _fname.endswith(".smk"):
+        continue
+    with open(os.path.join(_rules_dir, _fname), encoding="utf-8") as fh:
+        _text = fh.read()
+    _n_rules = len(re.findall(r"(?m)^rule \w+:", _text))
+    if _n_rules == 0:
+        continue  # common.smk 等纯 helper 文件无规则块
+    _n_rt = _text.count("runtime_sec")
+    if _n_rules != _n_rt:
+        _mismatch.append(f"{_fname}: rule={_n_rules} runtime_sec={_n_rt}")
+check("全部 rule 块均声明 runtime_sec（含 meta.smk）", not _mismatch, "; ".join(_mismatch))
+
 print()
 if FAILED:
     print(f"结果: {len(FAILED)} 项失败 -> {FAILED}")

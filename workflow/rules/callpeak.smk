@@ -25,6 +25,10 @@ rule callpeak_narrow:
     log:
         "logs/callpeak/{group}_narrow.log",
     threads: 1  # MACS2 为单线程程序，按实际占用申请资源
+    resources:
+        mem_mb=res("callpeak_narrow", 8192),
+        runtime_min=res("callpeak_narrow", 180),
+        runtime_sec=res("callpeak_narrow", 180) * 60,
     shell:
         """
         mkdir -p 4.peak logs/callpeak
@@ -56,6 +60,10 @@ rule callpeak_broad:
     log:
         "logs/callpeak/{group}_broad.log",
     threads: 1  # MACS2 为单线程程序，按实际占用申请资源
+    resources:
+        mem_mb=res("callpeak_broad", 8192),
+        runtime_min=res("callpeak_broad", 180),
+        runtime_sec=res("callpeak_broad", 180) * 60,
     shell:
         """
         mkdir -p 4.peak logs/callpeak
@@ -95,6 +103,10 @@ rule callpeak_atac:
     log:
         "logs/callpeak/{group}_atac_faire.log",
     threads: 1  # MACS2 为单线程程序，按实际占用申请资源
+    resources:
+        mem_mb=res("callpeak_atac", 8192),
+        runtime_min=res("callpeak_atac", 180),
+        runtime_sec=res("callpeak_atac", 180) * 60,
     shell:
         """
         mkdir -p 4.peak logs/callpeak
@@ -120,6 +132,10 @@ rule bigwig:
     log:
         "logs/bigwig/{group}.log",
     threads: 1
+    resources:
+        mem_mb=res("bigwig", 4096),
+        runtime_min=res("bigwig", 60),
+        runtime_sec=res("bigwig", 60) * 60,
     shell:
         """
         mkdir -p 4.peak logs/bigwig

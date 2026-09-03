@@ -16,6 +16,10 @@ rule trim_adapter:
     log:
         "logs/trim_galore/{sample}.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("trim_adapter", 4096),
+        runtime_min=res("trim_adapter", 60),
+        runtime_sec=res("trim_adapter", 60) * 60,
     shell:
         """
         mkdir -p 2.cleandata logs/trim_galore
@@ -37,6 +41,10 @@ rule fastqc:
     log:
         "logs/fastqc/{sample}.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("fastqc", 2048),
+        runtime_min=res("fastqc", 30),
+        runtime_sec=res("fastqc", 30) * 60,
     shell:
         """
         mkdir -p 2.cleandata/fastqc logs/fastqc
@@ -60,6 +68,10 @@ rule multiqc:
     log:
         "logs/multiqc.log",
     threads: 1
+    resources:
+        mem_mb=res("multiqc", 4096),
+        runtime_min=res("multiqc", 30),
+        runtime_sec=res("multiqc", 30) * 60,
     params:
         mqc_config=os.path.join(WORKFLOW_DIR, "multiqc_config.yaml"),
     shell:
@@ -77,6 +89,10 @@ rule bowtie2_index:
     log:
         "logs/bowtie2_index.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("bowtie2_index", 8192),
+        runtime_min=res("bowtie2_index", 120),
+        runtime_sec=res("bowtie2_index", 120) * 60,
     shell:
         """
         mkdir -p 0.index logs
@@ -98,6 +114,10 @@ rule bowtie2_mapping:
     log:
         "logs/bowtie2_mapping/{sample}.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("bowtie2_mapping", 16384),
+        runtime_min=res("bowtie2_mapping", 240),
+        runtime_sec=res("bowtie2_mapping", 240) * 60,
     shell:
         """
         mkdir -p 3.align/bowtie2 logs/bowtie2_mapping

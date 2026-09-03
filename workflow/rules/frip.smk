@@ -18,6 +18,10 @@ rule frip:
     log:
         "logs/frip/{group}__{sample}.log",
     threads: 1
+    resources:
+        mem_mb=res("frip", 4096),
+        runtime_min=res("frip", 60),
+        runtime_sec=res("frip", 60) * 60,
     shell:
         """
         mkdir -p 5.QC/frip logs/frip
@@ -37,6 +41,11 @@ rule frip_summary:
         mqc="5.QC/frip/FRiP_mqc.tsv",
     log:
         "logs/frip/summary.log",
+    threads: 1
+    resources:
+        mem_mb=res("frip_summary", 1024),
+        runtime_min=res("frip_summary", 10),
+        runtime_sec=res("frip_summary", 10) * 60,
     shell:
         """
         header_written=0

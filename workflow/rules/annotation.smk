@@ -12,6 +12,10 @@ rule peak_annotation:
         outdir="4.peak/anno_result",
         flank=config["region_flank"],
     threads: 1
+    resources:
+        mem_mb=res("peak_annotation", 8192),
+        runtime_min=res("peak_annotation", 120),
+        runtime_sec=res("peak_annotation", 120) * 60,
     log:
         "logs/peak_annotation.log",
     shell:

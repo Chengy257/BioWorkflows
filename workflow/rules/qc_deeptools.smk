@@ -14,6 +14,10 @@ rule deeptools_multibamsummary:
     log:
         "logs/deeptools/multiBamSummary.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("deeptools_multibamsummary", 8192),
+        runtime_min=res("deeptools_multibamsummary", 120),
+        runtime_sec=res("deeptools_multibamsummary", 120) * 60,
     shell:
         """
         mkdir -p 5.QC_deeptools logs/deeptools
@@ -31,6 +35,11 @@ rule deeptools_correlation:
         tab="5.QC_deeptools/SpearmanCorr_readCounts.tab",
     log:
         "logs/deeptools/correlation.log",
+    threads: 1
+    resources:
+        mem_mb=res("deeptools_correlation", 4096),
+        runtime_min=res("deeptools_correlation", 30),
+        runtime_sec=res("deeptools_correlation", 30) * 60,
     shell:
         """
         plotCorrelation -in {input} --corMethod spearman --skipZeros \
@@ -47,6 +56,11 @@ rule deeptools_pca:
         "5.QC_deeptools/PCA_readCounts.png",
     log:
         "logs/deeptools/pca.log",
+    threads: 1
+    resources:
+        mem_mb=res("deeptools_pca", 4096),
+        runtime_min=res("deeptools_pca", 30),
+        runtime_sec=res("deeptools_pca", 30) * 60,
     shell:
         """
         plotPCA -in {input} -o {output} -T "PCA of read counts" > {log} 2>&1
@@ -64,6 +78,10 @@ rule deeptools_fingerprint:
     log:
         "logs/deeptools/fingerprint.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("deeptools_fingerprint", 8192),
+        runtime_min=res("deeptools_fingerprint", 60),
+        runtime_sec=res("deeptools_fingerprint", 60) * 60,
     shell:
         """
         plotFingerprint -b {input} --labels {params.labels} \
@@ -83,6 +101,10 @@ rule deeptools_fragmentsize:
     log:
         "logs/deeptools/fragmentsize.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("deeptools_fragmentsize", 8192),
+        runtime_min=res("deeptools_fragmentsize", 60),
+        runtime_sec=res("deeptools_fragmentsize", 60) * 60,
     shell:
         """
         bamPEFragmentSize -p {threads} -hist {output} \
@@ -102,6 +124,10 @@ rule deeptools_profile:
     log:
         "logs/deeptools/profile.log",
     threads: config["threads"]
+    resources:
+        mem_mb=res("deeptools_profile", 8192),
+        runtime_min=res("deeptools_profile", 120),
+        runtime_sec=res("deeptools_profile", 120) * 60,
     params:
         flank=config["region_flank"],
     shell:

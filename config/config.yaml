@@ -52,3 +52,12 @@ qc:
   nsc_rsc: false     # SPP 交叉相关 NSC/RSC（较耗时；需要 phantompeakqualtools）
   frip: true         # FRiP（reads in peaks 占比，ENCODE 指标）
   deeptools: true    # 相关性/PCA/指纹图/片段长/基因区信号 profile
+
+# ---------- 集群资源覆盖（可选；按规则名覆盖，未列出的规则用代码内默认值） ----------
+# 只支持 mem_mb / runtime_min 两个键；runtime_sec 由 runtime_min 自动换算，
+# 不支持独立覆盖。各规则的默认值见 workflow/rules/*.smk 的 resources 声明。
+# 本段默认整体注释：config.get("resources") 为 None（缺键），全部走规则默认值。
+# resources:
+#  bowtie2_mapping:
+#    mem_mb: 32768
+#    runtime_min: 480
