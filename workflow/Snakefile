@@ -19,7 +19,7 @@ WORKFLOW_DIR = workflow.basedir                # workflow/ 目录
 configfile: os.environ.get("CHIP_CONFIG", os.path.join(BASE_DIR, "config", "config.yaml"))
 
 # 所有 shell 以 bash -eo pipefail 执行：任何一步失败立即中断，管道错误可捕获。
-# 不加 set -u：conda 激活脚本在 -u 下会因未绑定变量报错。
+# 不加 set -u：集群提交与工具包装脚本在 -u 下可能因未绑定变量报错，保守维持。
 shell.executable("/bin/bash")
 shell.prefix("set -eo pipefail; ")
 

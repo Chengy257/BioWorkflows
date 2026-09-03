@@ -11,8 +11,6 @@ rule dedup:
     log:
         "logs/dedup/{sample}.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "picard.yaml")
     shell:
         """
         mkdir -p logs/dedup

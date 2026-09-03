@@ -14,8 +14,6 @@ rule deeptools_multibamsummary:
     log:
         "logs/deeptools/multiBamSummary.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "deeptools.yaml")
     shell:
         """
         mkdir -p 5.QC_deeptools logs/deeptools
@@ -33,8 +31,6 @@ rule deeptools_correlation:
         tab="5.QC_deeptools/SpearmanCorr_readCounts.tab",
     log:
         "logs/deeptools/correlation.log",
-    conda:
-        os.path.join(ENVS, "deeptools.yaml")
     shell:
         """
         plotCorrelation -in {input} --corMethod spearman --skipZeros \
@@ -51,8 +47,6 @@ rule deeptools_pca:
         "5.QC_deeptools/PCA_readCounts.png",
     log:
         "logs/deeptools/pca.log",
-    conda:
-        os.path.join(ENVS, "deeptools.yaml")
     shell:
         """
         plotPCA -in {input} -o {output} -T "PCA of read counts" > {log} 2>&1
@@ -70,8 +64,6 @@ rule deeptools_fingerprint:
     log:
         "logs/deeptools/fingerprint.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "deeptools.yaml")
     shell:
         """
         plotFingerprint -b {input} --labels {params.labels} \
@@ -91,8 +83,6 @@ rule deeptools_fragmentsize:
     log:
         "logs/deeptools/fragmentsize.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "deeptools.yaml")
     shell:
         """
         bamPEFragmentSize -p {threads} -hist {output} \
@@ -112,8 +102,6 @@ rule deeptools_profile:
     log:
         "logs/deeptools/profile.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "deeptools.yaml")
     params:
         flank=config["region_flank"],
     shell:

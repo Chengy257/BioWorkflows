@@ -18,8 +18,6 @@ rule frip:
     log:
         "logs/frip/{group}__{sample}.log",
     threads: 1
-    conda:
-        os.path.join(ENVS, "bedtools.yaml")
     shell:
         """
         mkdir -p 5.QC/frip logs/frip

@@ -20,6 +20,6 @@ lint:
 
 dryrun:
 	$(SNAKEMAKE) -n -s workflow/Snakefile --configfile config/config.yaml \
-		--use-conda --cores 4
+		--cores 4
 
 test: check lint

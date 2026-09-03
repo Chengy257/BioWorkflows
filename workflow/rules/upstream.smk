@@ -16,8 +16,6 @@ rule trim_adapter:
     log:
         "logs/trim_galore/{sample}.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "trim-galore.yaml")
     shell:
         """
         mkdir -p 2.cleandata logs/trim_galore
@@ -39,8 +37,6 @@ rule fastqc:
     log:
         "logs/fastqc/{sample}.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "fastqc.yaml")
     shell:
         """
         mkdir -p 2.cleandata/fastqc logs/fastqc
@@ -64,8 +60,6 @@ rule multiqc:
     log:
         "logs/multiqc.log",
     threads: 1
-    conda:
-        os.path.join(ENVS, "multiqc.yaml")
     shell:
         """
         mkdir -p 2.cleandata/fastqc/multiqc
@@ -81,8 +75,6 @@ rule bowtie2_index:
     log:
         "logs/bowtie2_index.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "bowtie2.yaml")
     shell:
         """
         mkdir -p 0.index logs
@@ -104,8 +96,6 @@ rule bowtie2_mapping:
     log:
         "logs/bowtie2_mapping/{sample}.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "bowtie2.yaml")
     shell:
         """
         mkdir -p 3.align/bowtie2 logs/bowtie2_mapping

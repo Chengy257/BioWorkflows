@@ -58,12 +58,11 @@ chip_cuttag_atac_faire/
 │   ├── rules/              # common(共享定义) + upstream/dedup/callpeak/annotation/frip/qc_deeptools/spp_qc
 │   ├── scripts/            # 峰注释 R 脚本（annoPeak_batch.R）
 │   └── profile/            # default/pbs profile（Phase 3 扩为四套）
-├── envs/                   # per-rule conda 环境（--use-conda 自动创建；Phase 2 起改统一环境）
 ├── scripts/                # 独立 QC 工具（ChIPQC/DROMPAplus，待归档）
 ├── config/config.yaml      # 默认配置；config.template.yaml 为覆盖模板
 ├── config/samples.csv      # 样本表模板（四 assay 混型 schema）
 ├── main_run.sh             # 启动脚本（本机/PBS 集群、config.local 叠加）
-├── tests/run_tests.py      # 零依赖单元测试（45 项）
+├── tests/run_tests.py      # 零依赖单元测试（44 项）
 ├── Makefile                # make check / lint / dryrun
 ├── .github/workflows/ci.yaml  # CI：测试 + shellcheck + snakemake --lint
 ├── docs/                   # REVIEW.md 审查报告 / IMPROVEMENT_PLAN.md 优化计划
@@ -71,6 +70,12 @@ chip_cuttag_atac_faire/
 ```
 
 ## 3. 环境要求
+
+> ⚠️ **v0.4.0 过渡说明（环境路线变更）**：per-rule conda 体系（`envs/` 与规则内 `conda:` 指令）已移除。
+> 运行环境统一按 `workflow/environment.yaml` 创建（`conda env create -f workflow/environment.yaml`），
+> 或经 `config/software.yaml` 复用服务器已有环境（`conda_prefix` / `conda_name`）。
+> `main_run.sh` 已删除 `-b/-e/-E` 选项，运行时不再附加任何 conda 部署 flag（下文版本矩阵中的 flag 说明随之过时）；
+> 完整变更记录见 v0.4.0 CHANGELOG（本文档将在 v0.4.0 Phase 5 全面重写）。
 
 - Linux + conda/mamba + Snakemake，版本矩阵：
 
@@ -80,7 +85,7 @@ chip_cuttag_atac_faire/
 | **8.x** | ✅ 自动适配 | `main_run.sh` 自动切换为 `--software-deployment-method conda`（`--use-conda` 在 8.x 已弃用）；CI 用 8.x 验证 `--lint`/解析 |
 | <7 或 ≥9 | ⛔ 未验证 | 9.x 可能移除弃用别名，需实测 |
 
-- 其余工具（trim_galore、fastqc、multiqc、bowtie2、samtools、picard、macs2、bedtools、deeptools、R/ChIPseeker 等）由 conda 按 `envs/*.yaml` 自动创建，无需手动安装
+- 其余工具（trim_galore、fastqc、multiqc、bowtie2、samtools、picard、macs2、bedtools、deeptools、R/ChIPseeker 等）按上方过渡说明统一安装，无需逐个手动部署
 - 可选：PBS 集群（`main_run.sh -p`）；Docker（DROMPAplus 独立工具）
 
 ## 4. 快速开始

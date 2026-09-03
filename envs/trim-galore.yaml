@@ -1,7 +1,0 @@
-name: trim-galore
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  # cutadapt 由 trim-galore 依赖自行拉动（显式钉会与 recipe 约束冲突）
-  - trim-galore=0.6.10

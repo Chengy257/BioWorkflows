@@ -1,9 +1,0 @@
-name: phantompeakqualtools
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  # SPP 交叉相关（NSC/RSC）。开启 qc.nsc_rsc 前建议先验证该环境可求解：
-  # conda env create --dry-run -f envs/phantompeakqualtools.yaml
-  - phantompeakqualtools=1.2.2
-  - samtools=1.17

@@ -15,8 +15,6 @@ rule spp_crosscorr:
     log:
         "logs/spp/{sample}.log",
     threads: config["threads"]
-    conda:
-        os.path.join(ENVS, "phantompeakqualtools.yaml")
     shell:
         """
         mkdir -p 5.QC/spp logs/spp

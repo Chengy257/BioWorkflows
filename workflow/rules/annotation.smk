@@ -12,8 +12,6 @@ rule peak_annotation:
         outdir="4.peak/anno_result",
         flank=config["region_flank"],
     threads: 1
-    conda:
-        os.path.join(ENVS, "r-chipseeker.yaml")
     log:
         "logs/peak_annotation.log",
     shell:

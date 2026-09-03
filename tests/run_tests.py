@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""零依赖测试：样本表解析、路由辅助函数、config/envs 完整性。
+"""零依赖测试：样本表解析、路由辅助函数、config 完整性。
 
 运行: python tests/run_tests.py（在仓库根目录）
 - 从 workflow/rules/common.smk 提取【真实源码】执行（非副本），保证测试与实现一致
@@ -312,7 +312,7 @@ check("spp_summary mqc：渲染+执行+格式正确", ok,
 import shutil  # noqa: E402
 shutil.rmtree(tmp, ignore_errors=True)
 
-print("== 7. config 与 envs 完整性 ==")
+print("== 7. config 完整性 ==")
 try:
     import yaml  # noqa: F401
     HAS_YAML = True
@@ -339,17 +339,6 @@ if HAS_YAML:
           {"keepdup", "qvalue", "broad_cutoff", "atac"} <= set(cfg["peak"]))
     check("config: qc 开关齐全",
           {"nsc_rsc", "frip", "deeptools"} <= set(cfg["qc"]))
-
-    env_dir = os.path.join(REPO, "envs")
-    env_files = sorted(f for f in os.listdir(env_dir) if f.endswith(".yaml"))
-    ok = True
-    for f in env_files:
-        with open(os.path.join(env_dir, f), encoding="utf-8") as fh:
-            doc = yaml.safe_load(fh)
-        if "dependencies" not in doc:
-            ok = False
-            print(f"  FAIL  envs/{f} 缺 dependencies")
-    check(f"envs: {len(env_files)} 个环境文件均可解析且含 dependencies", ok)
 
 print()
 if FAILED:

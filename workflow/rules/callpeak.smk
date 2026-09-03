@@ -25,8 +25,6 @@ rule callpeak_narrow:
     log:
         "logs/callpeak/{group}_narrow.log",
     threads: 1  # MACS2 为单线程程序，按实际占用申请资源
-    conda:
-        os.path.join(ENVS, "macs2.yaml")
     shell:
         """
         mkdir -p 4.peak logs/callpeak
@@ -58,8 +56,6 @@ rule callpeak_broad:
     log:
         "logs/callpeak/{group}_broad.log",
     threads: 1  # MACS2 为单线程程序，按实际占用申请资源
-    conda:
-        os.path.join(ENVS, "macs2.yaml")
     shell:
         """
         mkdir -p 4.peak logs/callpeak
@@ -99,8 +95,6 @@ rule callpeak_atac:
     log:
         "logs/callpeak/{group}_atac_faire.log",
     threads: 1  # MACS2 为单线程程序，按实际占用申请资源
-    conda:
-        os.path.join(ENVS, "macs2.yaml")
     shell:
         """
         mkdir -p 4.peak logs/callpeak
@@ -126,8 +120,6 @@ rule bigwig:
     log:
         "logs/bigwig/{group}.log",
     threads: 1
-    conda:
-        os.path.join(ENVS, "bigwig.yaml")
     shell:
         """
         mkdir -p 4.peak logs/bigwig

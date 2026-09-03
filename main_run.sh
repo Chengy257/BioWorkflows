@@ -14,11 +14,6 @@
 #   -p CMD     集群提交命令（PBS 示例: "qsub -V -N chipseq -l ncpus={threads} -j oe"）
 #              {threads} 由 snakemake 按每个任务实际线程数填充，与 config threads 自动对齐；
 #              不传 -p 则在本机直接运行（无集群）
-#   -b PATH    conda base 路径（传给 --conda-base-path，如 /opt/anaconda3）
-#   -e DIR     共享 conda 环境目录（传给 --conda-prefix；强烈推荐集群使用，
-#              多个工作目录复用同一套环境，避免每个项目重建约数 GB 的 11 个环境）
-#   -E         仅预建 conda 环境后退出（--conda-create-envs-only；PBS 计算节点
-#              无外网时，先在登录节点执行本模式再正式投递）
 #   -t N       输出可见性等待秒数（--latency-wait，默认 90；PBS + 共享文件系统
 #              上输出延迟是常见的假失败原因，不建议调小）
 #   -l FILE    额外配置文件（如 config.local.yaml，后加载者覆盖前者的键；
@@ -35,16 +30,13 @@ config="${REPO_DIR}/config/config.yaml"
 jobs=3
 cores=18
 cluster_cmd=""
-conda_base=""
-conda_envs_dir=""
-prebuild=0
 latency=90
 do_rename=0
 dryrun=""
 
 usage() { grep '^#' "$0" | cut -c 3-; exit "${1:-0}"; }
 
-while getopts "w:s:c:j:C:p:b:l:e:t:Ernh" opt; do
+while getopts "w:s:c:j:C:p:l:t:rnh" opt; do
     case ${opt} in
         w) workdir=${OPTARG} ;;
         s) smk=${OPTARG} ;;
@@ -52,9 +44,6 @@ while getopts "w:s:c:j:C:p:b:l:e:t:Ernh" opt; do
         j) jobs=${OPTARG} ;;
         C) cores=${OPTARG} ;;
         p) cluster_cmd=${OPTARG} ;;
-        b) conda_base=${OPTARG} ;;
-        e) conda_envs_dir=${OPTARG} ;;
-        E) prebuild=1 ;;
         t) latency=${OPTARG} ;;
         l) extra_config=${OPTARG} ;;
         r) do_rename=1 ;;
@@ -97,11 +86,10 @@ if [[ -z "${extra_config:-}" && -f "config.local.yaml" ]]; then
     echo "[INFO] 检测到 config.local.yaml，将叠加覆盖默认配置"
 fi
 
-# snakemake 版本探测：8+ 的 conda 部署 flag 是 --software-deployment-method conda
-# （--use-conda 在 8.x 为弃用别名，9.x 可能移除）；7.x 使用 --use-conda
+# snakemake 版本探测：仅用于 info 显示与版本兼容告警（不再拼接部署 flag）
 smk_version="$(snakemake --version 2>/dev/null | head -1 || true)"
 if [[ -z "${smk_version}" ]]; then
-    echo "[ERROR] 未找到 snakemake 命令，请先安装（参考版本 7.32.4；8.x 亦可，脚本自动适配 flag）" >&2
+    echo "[ERROR] 未找到 snakemake 命令，请先安装（参考版本 7.32.4；8.x 亦可）" >&2
     exit 1
 fi
 if ! [[ "${smk_version}" =~ ^[0-9]+ ]]; then
@@ -109,15 +97,13 @@ if ! [[ "${smk_version}" =~ ^[0-9]+ ]]; then
     exit 1
 fi
 smk_major="${smk_version%%.*}"
+echo "[INFO] snakemake 版本: ${smk_version}（参考版本 7.32.4）"
+if (( smk_major >= 8 )); then
+    echo "[WARN] snakemake 8+ 的集群提交语义有变化（--cluster 改为 executor 插件体系），-p 集群模式请先实测"
+fi
 
 cmd=(snakemake -s "${smk}" --configfile "${config}" --keep-going
      --rerun-incomplete --latency-wait "${latency}")
-
-if (( smk_major >= 8 )); then
-    cmd+=(--software-deployment-method conda)
-else
-    cmd+=(--use-conda)
-fi
 
 if [[ -n "${extra_config:-}" ]]; then
     cmd+=(--configfile "${extra_config}")
@@ -130,16 +116,6 @@ if [[ -n "${cluster_cmd}" ]]; then
 else
     cmd+=(--cores "${cores}")
 fi
-if [[ -n "${conda_base}" ]]; then
-    cmd+=(--conda-base-path "${conda_base}")
-fi
-if [[ -n "${conda_envs_dir}" ]]; then
-    cmd+=(--conda-prefix "${conda_envs_dir}")
-fi
-if [[ ${prebuild} -eq 1 ]]; then
-    cmd+=(--conda-create-envs-only)
-    echo "[INFO] 预建模式：仅创建 conda 环境后退出"
-fi
 
 echo "[INFO] 运行: ${cmd[*]}${dryrun:+ --dry-run}"
 if [[ -n "${dryrun}" ]]; then
@@ -150,10 +126,6 @@ fi
 # 集群模式下回收 PBS 输出日志（存在才移动）
 mv ./[a-zA-Z]*.o* ./logs/ 2>/dev/null || true
 
-# 注意：不再删除 .snakemake/ —— 它保存运行元数据与 conda 环境缓存，
+# 注意：不再删除 .snakemake/ —— 它保存运行元数据与重跑缓存，
 # 删除会导致断点续跑与增量重跑失效。
-if [[ ${prebuild} -eq 1 ]]; then
-    echo "[INFO] conda 环境预建完成（目录：${conda_envs_dir:-默认位置}），可正式投递任务。"
-else
-    echo "[INFO] 完成。结果见 ${workdir} 下的编号目录，日志见 ${workdir}/logs/"
-fi
+echo "[INFO] 完成。结果见 ${workdir} 下的编号目录，日志见 ${workdir}/logs/"

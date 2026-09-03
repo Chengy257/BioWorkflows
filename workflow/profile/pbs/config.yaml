@@ -5,10 +5,9 @@
 #       --profile /path/to/repo/workflow/profile/pbs --cores 18
 #
 # 注意：snakemake 8.x 移除了 --cluster 语义（改用 executor 插件体系），
-# 8.x 用户请继续使用 main_run.sh -p（已做版本自动适配）。
+# 8.x 用户请继续使用 main_run.sh -p（启动时探测版本并提示）。
 cluster: "qsub -V -N {rule} -l ncpus={threads} -j oe -o logs/"
 jobs: 3
 latency-wait: 90
 rerun-incomplete: true
 keep-going: true
-use-conda: true

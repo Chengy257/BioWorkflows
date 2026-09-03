@@ -9,8 +9,6 @@ import re
 
 from snakemake.exceptions import WorkflowError
 
-ENVS = os.path.join(BASE_DIR, "envs")
-
 ASSAYS = ("chip", "cuttag", "atac", "faire")
 
 # 样本名/分组名仅允许字母数字._-：逗号会破坏峰列表拼接与 MACS2 多文件参数，
