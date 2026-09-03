@@ -1,8 +1,8 @@
 # Snakemake 7.x PBS profile（可选入口，替代 main_run.sh 的 --cluster 字符串）
 #
 # 用法（snakemake 7.x，在工作目录）：
-#   snakemake -s /path/to/repo/workflow.smk --configfile /path/to/repo/config/config.yaml \
-#       --profile /path/to/repo/profiles/pbs --cores 18
+#   snakemake -s /path/to/repo/workflow/Snakefile --configfile /path/to/repo/config/config.yaml \
+#       --profile /path/to/repo/workflow/profile/pbs --cores 18
 #
 # 注意：snakemake 8.x 移除了 --cluster 语义（改用 executor 插件体系），
 # 8.x 用户请继续使用 main_run.sh -p（已做版本自动适配）。

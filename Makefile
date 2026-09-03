@@ -7,7 +7,7 @@
 PYTHON ?= python3
 SNAKEMAKE ?= snakemake
 
-SHELL_SCRIPTS := main_run.sh $(wildcard workflow/scripts/*.sh)
+SHELL_SCRIPTS := main_run.sh $(wildcard workflow/scripts/*.sh) $(wildcard scripts/*.sh)
 
 .PHONY: check lint dryrun test
 

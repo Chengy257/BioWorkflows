@@ -53,23 +53,18 @@ workdir/
 
 ```
 chip_cuttag_atac_faire/
-├── workflow/               # 标准布局：Snakefile + rules/ + scripts/ + profile/
-├── rules/
-│   ├── upstream.smk        # trim_galore、fastqc、multiqc、bowtie2 index/比对
-│   ├── dedup.smk           # picard MarkDuplicates（按 assay 开关）
-│   ├── callpeak.smk        # MACS2 narrow/broad/atac 按组并行 + bigwig 规则
-│   ├── annotation.smk      # ChIPseeker 批量注释
-│   ├── frip.smk            # FRiP 计算 + 汇总
-│   ├── qc_deeptools.smk    # deeptools QC 全套
-│   └── spp_qc.smk          # 可选 SPP NSC/RSC
-├── envs/                   # per-rule conda 环境（--use-conda 自动创建）
-├── scripts/                # 峰注释 R 脚本 + 独立 QC 工具（ChIPQC/DROMPAplus）
+├── workflow/               # 标准 Snakemake 布局
+│   ├── Snakefile           # 统一入口：CHIP_CONFIG 加载 + include 编排
+│   ├── rules/              # common(共享定义) + upstream/dedup/callpeak/annotation/frip/qc_deeptools/spp_qc
+│   ├── scripts/            # 峰注释 R 脚本（annoPeak_batch.R）
+│   └── profile/            # default/pbs profile（Phase 3 扩为四套）
+├── envs/                   # per-rule conda 环境（--use-conda 自动创建；Phase 2 起改统一环境）
+├── scripts/                # 独立 QC 工具（ChIPQC/DROMPAplus，待归档）
 ├── config/config.yaml      # 默认配置；config.template.yaml 为覆盖模板
-├── config/samples.csv       # 样本表模板（四 assay 混型 schema）
+├── config/samples.csv      # 样本表模板（四 assay 混型 schema）
 ├── main_run.sh             # 启动脚本（本机/PBS 集群、config.local 叠加）
 ├── tests/run_tests.py      # 零依赖单元测试（45 项）
 ├── Makefile                # make check / lint / dryrun
-├── workflow/profile/        # default/pbs profile（Phase 3 扩为四套）
 ├── .github/workflows/ci.yaml  # CI：测试 + shellcheck + snakemake --lint
 ├── docs/                   # REVIEW.md 审查报告 / IMPROVEMENT_PLAN.md 优化计划
 └── legacy/                 # v0.1.0 原始实现归档（不可运行，仅参考）

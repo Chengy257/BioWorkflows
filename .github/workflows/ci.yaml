@@ -26,7 +26,7 @@ jobs:
       - name: shellcheck 静态检查
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck main_run.sh workflow/scripts/*.sh
+          shellcheck main_run.sh workflow/scripts/*.sh scripts/*.sh
 
       - name: snakemake --lint
         run: make lint SNAKEMAKE="snakemake"

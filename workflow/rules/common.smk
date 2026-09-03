@@ -174,7 +174,7 @@ def validate_config(cfg):
         try:
             er = float(t.get("error_rate"))
             if not 0 < er <= 1:
-                errors.append(f"trim.error_rate 必须在 (0, 1] 区间，当前为 {t.get('error_rate')!r}")
+                errors.append(f"trim.error_rate 必须在 (0, 1] 区间，当前为 {er!r}")
         except (TypeError, ValueError):
             errors.append(f"trim.error_rate 必须是数值，当前为 {t.get('error_rate')!r}")
         if not isinstance(t.get("extra", ""), str):

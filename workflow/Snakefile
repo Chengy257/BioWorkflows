@@ -4,8 +4,8 @@
 # ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq 一体化 Snakemake 流程
 # 根据 samples.csv 的 seqtype 列自动路由，支持混型项目。
 #
-# 推荐启动方式（见 run.sh --help）:
-#   bash run.sh -P /path/to/workdir -c config.yaml --profile pbs
+# 启动方式（当前用 main_run.sh；v0.4.0 将提供对齐 rna-seq 的 run.sh）:
+#   bash main_run.sh -w /path/to/workdir -c config.yaml -p "qsub ..."
 # 直接调用 Snakemake 亦支持:
 #   CHIP_CONFIG=/path/to/config.yaml snakemake -s workflow/Snakefile -j 10
 # 详见 README.md
