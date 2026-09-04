@@ -1,4 +1,4 @@
-# picard 去重。是否执行由 workflow.smk 的 sample_bam() 按 assay 决定：
+# picard 去重。是否执行由 workflow/rules/common.smk 的 sample_bam() 按 assay 决定：
 # config["dedup"] 中 chip/atac/faire 默认 true，cuttag 默认 false（保留 PCR 重复）。
 
 rule dedup:

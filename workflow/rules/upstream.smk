@@ -1,5 +1,5 @@
 # 上游公共步骤：trim_galore 修剪 → fastqc → multiqc → bowtie2 建索引 → 比对
-# 依赖 workflow.smk 提供的 SAMPLES / config
+# 依赖 workflow/rules/common.smk 提供的 SAMPLES / config
 
 rule trim_adapter:
     input:
