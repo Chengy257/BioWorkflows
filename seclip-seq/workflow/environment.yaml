@@ -1,0 +1,21 @@
+# Optional all-in-one environment template for a new server.
+# This file is NOT created automatically by Snakemake.
+# Example: mamba env create -f workflow/environment.yaml
+name: seclip-seq
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.10
+  - pyyaml
+  - snakemake-minimal=7.32.4
+  - star=2.7.10b
+  - samtools=1.17
+  - cutadapt=4.6
+  - umi-tools=1.1.4
+  - ea-utils    # fastq-sort; unpinned (few builds). If unsolvable, see
+                # docs/TODO.md: switch rule fastq_sort to seqkit sort -n.
+  - fastqc=0.11.9
+  - multiqc=1.21
+  - pureclip=1.3.1
