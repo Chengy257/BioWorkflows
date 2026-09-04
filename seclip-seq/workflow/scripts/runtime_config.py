@@ -33,17 +33,17 @@ DEFAULT_TOOLS = {
 
 
 def _extra_exports(rt):
-    return {"SECLIP_TOOL_CLIPPER": rt["tools"].get("clipper", "")}
+    return {"SECLIP_TOOL_CLIPPER": rt["paths"].get("clipper", "")}
 
 
 def _extra_checks(rt, pipeline, errors, warnings):
     # CLIPper is an external legacy install; absence is not an error (the
     # workflow auto-skips it) but is always reported.
-    clipper = rt["tools"].get("clipper", "")
+    clipper = rt["paths"].get("clipper", "")
     if clipper:
         print(f"[runtime] [OK] clipper: {clipper}")
     else:
-        warnings.append("CLIPper not configured (software.yaml tools.clipper); "
+        warnings.append("CLIPper not configured (software.yaml paths.clipper); "
                         "CLIPper peak calling will be skipped")
 
 

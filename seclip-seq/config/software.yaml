@@ -9,12 +9,12 @@ environment:
 
 # Ordinary tools are resolved from the main environment/PATH automatically.
 # Add only overrides that differ from the environment.
-tools:
+tools: {}
+
+# Paths that are not ordinary PATH executables.
+paths:
   clipper: ""        # absolute path to an existing CLIPper install, e.g.
                      # /home/chengyu/soft/miniconda3/envs/clipper/bin/clipper
                      # empty = CLIPper peak calling is skipped (PureCLIP only)
-
-# Paths that are not ordinary PATH executables.
-paths: {}
 
 databases: {}

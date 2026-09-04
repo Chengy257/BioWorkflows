@@ -70,7 +70,7 @@ star:
 ## ---- Peak calling ----
 callpeak:
   pureclip: true                # run PureCLIP on the deduplicated BAM
-  clipper: true                 # run CLIPper when an executable is configured (see software.yaml tools.clipper; auto-skipped with a warning when empty)
+  clipper: true                 # run CLIPper when an executable is configured (see software.yaml paths.clipper; auto-skipped with a warning when empty)
   clipper_species: "GRCh38_v40"  # CLIPper --species value
 
 ## Software executables, Conda runtime, and large tool databases

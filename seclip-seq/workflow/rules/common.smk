@@ -71,7 +71,7 @@ def validate_config(cfg):
     absent)."""
     errors, warnings = [], []
     required = ("SampleListFile", "results_dir", "threads", "filter_repeats",
-                "umi", "cutadapt", "star", "callpeak")
+                "genome", "gtf", "umi", "cutadapt", "star", "callpeak")
     for key in required:
         if key not in cfg:
             errors.append(f"missing required config key: {key}")
@@ -164,7 +164,7 @@ FILTER_REPEATS = bool(config["filter_repeats"])
 CLIPPER_ENABLED = bool(config["callpeak"]["clipper"]) and bool(CLIPPER)
 if bool(config["callpeak"]["clipper"]) and not CLIPPER:
     print("[config warning] callpeak.clipper is enabled but no CLIPper executable "
-          "is configured (software.yaml tools.clipper); CLIPper peak calling is "
+          "is configured (software.yaml paths.clipper); CLIPper peak calling is "
           "skipped and only PureCLIP runs")
 
 # ---------------------------------------------------------------------

@@ -81,7 +81,7 @@ Core options:
       --max-status-per-sec N Limit scheduler status checks
   -n, --dry-run             Build the DAG and show planned jobs without executing
       --validate-only       Run sample and software/runtime validation only
-      --check-software      Check required executables, R, packages, and databases; then exit
+      --check-software      Check required executables and databases; then exit
       --skip-software-check Skip runtime preflight before a real workflow run
       --unlock              Remove a stale Snakemake working-directory lock
       --log FILE            Launcher/Snakemake log path (default: snakemake.logs.txt)
