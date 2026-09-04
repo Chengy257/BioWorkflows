@@ -22,13 +22,11 @@ jobs:
           environment-file: rna-seq/workflow/environment.yaml
           channels: conda-forge,bioconda
           channel-priority: strict
-      - name: Install non-Conda R packages
-        run: Rscript -e 'if (!requireNamespace("aPEAR", quietly=TRUE)) install.packages("aPEAR", repos="https://cloud.r-project.org")'
       - name: Install lint tools
-        # shellcheck for the shell sections; graphviz for the DAG artifact.
-        # Do NOT pip-install snakemake here: the Conda environment already
-        # provides the pinned snakemake-minimal 7.32.4, and an unpinned pip
-        # install would shadow it with Snakemake 9.
+        # aPEAR comes from the Conda environment (bioconductor-aPEAR); do not
+        # pip-install snakemake here — the environment already provides the
+        # pinned snakemake-minimal 7.32.4 and a newer pip Snakemake would
+        # shadow it.
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck graphviz
@@ -61,7 +59,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          pip install "snakemake==7.32.4" pyyaml
+          # pulp<2.8: snakemake 7.32.4 still calls pulp.list_solvers, which
+          # pulp 2.8+ removed (renamed to listSolvers).
+          pip install "snakemake==7.32.4" "pulp==2.7.0" pyyaml
       - name: Unit tests
         run: python tests/run_tests.py
       - name: Lint

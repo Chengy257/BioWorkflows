@@ -22,7 +22,7 @@ Architecture consolidation release: flattened output layout, dedicated scheduler
 - License changed to Apache-2.0.
 
 ### Fixed
-- `workflow/environment.yaml` solves again (validated with a dry-run Conda solve): `python` is pinned to 3.10 because `rseqc=5.0.1` ships no newer Python builds, and `r-base` is relaxed to the 4.2.x series so the un-pinned Bioconductor packages resolve against it.
+- `workflow/environment.yaml` solves again (validated with a dry-run Conda solve): `python` is pinned to 3.10 because `rseqc=5.0.1` ships no newer Python builds, `r-base` is set to the 4.3 series, and `aPEAR` moved from a post-install CRAN step into the environment as `bioconductor-aPEAR` (its CRAN release requires a newer R than the solved series).
 
 ## [0.8.0] - 2026-09-03
 

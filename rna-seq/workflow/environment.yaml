@@ -26,9 +26,10 @@ dependencies:
   - diamond=2.1.8
   - hmmer=3.3.2
   - bedtools=2.30.0
-  # R 4.2.x series: kept in sync with the un-pinned Bioconductor packages
-  # below (the solver picks the newest builds built against this R series).
-  - r-base=4.2
+  # R 4.3 series: bioconductor-aPEAR (required by the deg pipeline) entered
+  # Bioconductor at 3.17 / R 4.3, so this series is the minimum that carries
+  # every Bioconductor dependency; the solver picks coherent builds.
+  - r-base=4.3
   - bioconductor-rsubread
   - bioconductor-edger
   - bioconductor-limma
@@ -36,6 +37,7 @@ dependencies:
   - bioconductor-biocparallel
   - bioconductor-clusterprofiler
   - bioconductor-enrichplot
+  - bioconductor-aPEAR
   - bioconductor-org.hs.eg.db
   - r-argparser
   - r-getopt
@@ -49,6 +51,3 @@ dependencies:
   - r-venndiagram
   - r-upsetr
   - r-r.utils
-
-# aPEAR is installed once after environment creation:
-# Rscript -e 'install.packages("aPEAR", repos="https://cloud.r-project.org")'
