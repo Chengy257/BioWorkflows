@@ -1,0 +1,77 @@
+## =====================================================================
+## seclip-seq configuration template -- copy into a project working directory
+## and edit as needed (or copy as config.local.yaml in the working directory;
+## run.sh layers it automatically, and such local files are typically kept out
+## of version control)
+## Keys not listed here inherit the repo defaults from config/config.yaml;
+## species presets are in config/species.yaml.
+## The values below are the repository defaults; change only what differs.
+## =====================================================================
+
+## ---- Outputs and samples ----
+results_dir: "results"          # run outputs root directory (relative to the working directory)
+SampleListFile: "config/samples.csv"   # sample table (single sample_id column; relative to the working directory)
+threads: 12                     # Legacy/default thread cap; explicit resources.<rule>.threads can override
+
+## ---- Per-rule scheduler resources ----
+# Scheduler requests (threads / mem_mb / runtime_min per rule) live in the
+# dedicated config/resources.yaml; copy it into the working directory as
+# resources.yaml to override (run.sh picks it up automatically).
+
+## ---- Species and reference resources ----
+## After choosing a species, reference keys not explicitly given here fall back to the
+## config/species.yaml presets; uncomment and fill in real paths to override (takes priority over species.yaml)
+species: "hsa"                  # currently supported: hsa
+# genome: "/path/to/reference/hsa/GRCh38.p14.genome.onlychr.fa"
+# gtf: "/path/to/reference/hsa/gencode.v44.annotation.gtf"
+# repeats_fa: "/path/to/reference/hsa/sncRNA_gencode_Rfam.fa"
+
+## ---- Reads and UMI ----
+filter_repeats: true            # align against the sncRNA/repeats index first and keep only unmapped reads
+umi:
+  pattern: "NNNNNNNNNN"         # UMI pattern (10 random bases at the start of each read)
+
+## ---- Adapter trimming (two cutadapt passes) ----
+cutadapt:
+  min_len: 18                   # discard trimmed reads shorter than this
+  quality_cutoff: 6             # 3' quality-trimming cutoff
+  error_rate: 0.1               # fraction of mismatches allowed in an adapter match
+  adapters:                     # 20 shifted 3' adapter variants (from the legacy smk)
+    - AGATCGGAAGAGCAC
+    - GATCGGAAGAGCACA
+    - ATCGGAAGAGCACAC
+    - TCGGAAGAGCACACG
+    - CGGAAGAGCACACGT
+    - GGAAGAGCACACGTC
+    - GAAGAGCACACGTCT
+    - AAGAGCACACGTCTG
+    - AGAGCACACGTCTGA
+    - GAGCACACGTCTGAA
+    - AGCACACGTCTGAAC
+    - GCACACGTCTGAACT
+    - CACACGTCTGAACTC
+    - ACACGTCTGAACTCC
+    - CACGTCTGAACTCCA
+    - ACGTCTGAACTCCAG
+    - CGTCTGAACTCCAGT
+    - GTCTGAACTCCAGTC
+    - TCTGAACTCCAGTCA
+    - CTGAACTCCAGTCAC
+
+## ---- STAR index building and alignment ----
+star:
+  sjdb_overhang: 139            # junction-database overhang for the genome index (ReadLength - 1)
+  genome_sa_index_nbases: 14    # genome index suffix-array seed length (--genomeSAindexNbases)
+  repeats_sa_index_nbases: 12   # repeats index suffix-array seed length (small reference)
+  repeats_limit_ram: 500000000000  # --limitGenomeGenerateRAM for the repeats index
+  filter_multimap_nmax: 30      # max multimappings allowed when filtering against repeats
+  align_multimap_nmax: 1        # genome alignment keeps uniquely mapped reads only
+
+## ---- Peak calling ----
+callpeak:
+  pureclip: true                # run PureCLIP on the deduplicated BAM
+  clipper: true                 # run CLIPper when an executable is configured (see software.yaml tools.clipper; auto-skipped with a warning when empty)
+  clipper_species: "GRCh38_v40"  # CLIPper --species value
+
+## Software executables, Conda runtime, and large tool databases
+## are configured separately in config/software.yaml (or project software.yaml).

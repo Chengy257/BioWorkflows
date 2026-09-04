@@ -1,0 +1,13 @@
+## =====================================================================
+## Species resource preset map (loaded by workflow/Snakefile)
+## The top-level species key selects one entry; resource keys only take
+## effect when the project configuration does not set them explicitly.
+## Paths are placeholders; override them with real cluster paths in the
+## project configuration at deployment time.
+## =====================================================================
+
+hsa:
+  label: "Human Homo sapiens (GRCh38.p14 / GENCODE v44)"
+  genome: "/path/to/reference/hsa/GRCh38.p14.genome.onlychr.fa"
+  gtf: "/path/to/reference/hsa/gencode.v44.annotation.gtf"
+  repeats_fa: "/path/to/reference/hsa/sncRNA_gencode_Rfam.fa"

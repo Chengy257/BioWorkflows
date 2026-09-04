@@ -1,0 +1,5 @@
+title: "seCLIP QC Summary"
+subtitle: "umi-tools extract / cutadapt / STAR / umi-tools dedup / FastQC"
+intro_text: "Whole-pipeline QC summary. Barcodes and trimming statistics come from umi_tools and cutadapt, mapping statistics from STAR, and deduplication statistics from umi_tools dedup."
+report_header_info:
+  - Workflow: "seclip-seq (Snakemake)"
