@@ -12,7 +12,7 @@ chromsize: "/path/to/chrom.sizes"             # bigWig 生成用
 genome_size: "3.7e8"                          # MACS2 有效基因组大小（水稻示例）
 
 # ---------- 样本与资源 ----------
-grouplist: "sample_info.csv"                  # 样本表（schema 见 config/samples.csv）
+grouplist: "samples.csv"                        # 样本表（复制到工作目录后改名亦可；schema 见 config/samples.csv）
 threads: 12                                   # 单任务线程数
 
 # ---------- 质量修剪（trim_galore） ----------
