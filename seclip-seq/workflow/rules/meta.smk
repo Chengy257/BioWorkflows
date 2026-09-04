@@ -21,3 +21,28 @@ rule software_versions:
         "{params.python} {params.script} --software-config {params.software_config} "
         "--workflow {params.workflow_dir} --snakemake-version {params.snakemake_version} "
         "--out {output} >> {log} 2>&1"
+
+
+rule multiqc:
+    input:
+        fastqc=expand(R("2.cleandata/fastqc/{sample}_fastqc.zip"), sample=SAMPLES),
+        cutadapt=expand(R("2.cleandata/logs/{sample}_cutadapt.metrics"), sample=SAMPLES),
+        umi_extract=expand(R("2.cleandata/logs/{sample}_umi_extract.metrics"), sample=SAMPLES),
+        star=expand(R("3.align/genome/{sample}_Log.final.out"), sample=SAMPLES),
+        dedup=expand(R("4.rmdup/{sample}_stats/{sample}_edit_distance.tsv"), sample=SAMPLES),
+    output:
+        R("5.QC/multiqc/multiqc_report.html"),
+    params:
+        mqc_config=os.path.join(WORKFLOW_DIR, "multiqc_config.yaml"),
+        outdir=lambda wc, output: os.path.dirname(str(output)),
+    log:
+        R("logs/multiqc.log"),
+    threads: rthreads("multiqc")
+    resources:
+        mem_mb=rmem("multiqc"),
+        runtime_min=rruntime("multiqc"),
+        runtime_sec=rruntime_sec("multiqc"),
+    shell:
+        """
+        multiqc --force -o {params.outdir} -c {params.mqc_config} {input} > {log} 2>&1
+        """

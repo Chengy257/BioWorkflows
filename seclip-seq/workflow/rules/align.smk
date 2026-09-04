@@ -1,13 +1,7 @@
 # Repeats/sncRNA pre-filter + unique genome alignment.
-# Depends on workflow/rules/common.smk for FILTER_REPEATS and helpers.
-
-def _align_input(wc):
-    """Genome alignment input: repeats-unmapped reads, or the trimmed reads
-    when the repeats filter is disabled (config filter_repeats=false)."""
-    if FILTER_REPEATS:
-        return R(f"3.align/repeats/{wc.sample}_Unmapped.out.mate1")
-    return R(f"2.cleandata/{wc.sample}_clean.fqTrTr.sorted.fq.gz")
-
+# Depends on workflow/rules/common.smk for FILTER_REPEATS, _align_input,
+# and resource helpers (the input-routing function lives in common.smk to
+# keep this module rules-only).
 
 if FILTER_REPEATS:
     rule star_filter_repeats:

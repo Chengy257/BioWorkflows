@@ -39,12 +39,6 @@ for _key, _value in (config.get(SPECIES) or {}).items():
     if _key not in config:
         config[_key] = _value
 
-# All shells run under bash -eo pipefail: any failing step aborts immediately
-# and pipeline errors are propagated. No set -u: cluster submission and tool
-# wrappers may fail on unbound variables under -u, so keep it conservative.
-shell.executable("/bin/bash")
-shell.prefix("set -eo pipefail; ")
-
 # Shared definitions: sample-table parsing, config validation, helpers, and
 # target aggregation. Included first by every rules/*.smk consumer.
 include: os.path.join(WORKFLOW_DIR, "rules", "common.smk")

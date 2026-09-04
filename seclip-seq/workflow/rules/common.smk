@@ -192,11 +192,18 @@ def raw_fastq(sample):
     )
 
 
+def _align_input(wc):
+    """Genome alignment input: repeats-unmapped reads, or the trimmed reads
+    when the repeats filter is disabled (config filter_repeats=false)."""
+    if FILTER_REPEATS:
+        return R(f"3.align/repeats/{wc.sample}_Unmapped.out.mate1")
+    return R(f"2.cleandata/{wc.sample}_clean.fqTrTr.sorted.fq.gz")
+
+
 # ---------------------------------------------------------------------
-# Per-rule scheduler resources. Precedence: config/resources.yaml (or a
-# project-local resources.yaml / a "resources" block in the project
-# config) > RESOURCE_DEFAULTS below. The legacy top-level "threads" value
-# still acts as a global thread cap.
+# Scheduler resources per rule; precedence is a project-local resources.yaml
+# (or a "resources" block in the project config), then the defaults below.
+# The legacy top-level "threads" value still acts as a global thread cap.
 # ---------------------------------------------------------------------
 RESOURCE_DEFAULTS = {
     "software_versions": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
@@ -218,7 +225,7 @@ RESOURCE_DEFAULTS = {
 
 def _rule_resource(name, field):
     if name not in RESOURCE_DEFAULTS:
-        raise WorkflowError(f"unknown rule name in resource lookup: {name!r}")
+        raise WorkflowError(f"no resource defaults for rule {name!r}")
     defaults = RESOURCE_DEFAULTS[name]
     overrides = (config.get("resources") or {}).get(name) or {}
     return int(overrides.get(field, defaults[field]))
