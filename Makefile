@@ -2,15 +2,16 @@
 # make check  —— 单元测试 + shell 语法检查（无需 snakemake）
 # make lint   —— 统一静态检查套件 tests/lint.sh（bash -n/shellcheck/py_compile/
 #               R parse/yaml/snakemake --lint，缺可选工具自动跳过，CI 全量执行）
-# make dryrun —— dry-run DAG 预检（需 snakemake + 已备好 1.rawdata）
-# make test   —— CI 同款全量检查
+# make test   —— CI 同款全量检查（= check + lint）
+# 回归测试（需 snakemake，即 CI dry-run job 同款）:
+#   bash tests/run_test.sh             # 合成数据 dry-run，验证 DAG 完整性
+#   bash tests/run_test.sh --real-run  # 端到端实跑 + 产物断言（服务器验证用）
 
 PYTHON ?= python3
-SNAKEMAKE ?= snakemake
 
 SHELL_SCRIPTS := run.sh $(wildcard workflow/scripts/*.sh) $(wildcard scripts/*.sh)
 
-.PHONY: check lint dryrun test
+.PHONY: check lint test
 
 check:
 	$(PYTHON) tests/run_tests.py
@@ -18,9 +19,5 @@ check:
 
 lint:
 	bash tests/lint.sh
-
-dryrun:
-	$(SNAKEMAKE) -n -s workflow/Snakefile --configfile config/config.yaml \
-		--profile workflow/profile/default
 
 test: check lint

@@ -6,31 +6,33 @@ on:
   pull_request:
 
 jobs:
-  check:
+  lint:
+    name: 静态检查
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: 安装依赖（snakemake / pyyaml / shellcheck）
+      - name: 安装工具
         run: |
-          python -m pip install --upgrade pip
-          pip install "snakemake>=8,<9" pyyaml
-
-      - name: 单元测试 + shell/yaml 语法检查
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          pip install "snakemake==7.32.4" pyyaml
+      - name: 单元测试
         run: make check PYTHON=python
+      - name: 运行 lint
+        run: bash tests/lint.sh
 
-      - name: shellcheck 静态检查
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck run.sh workflow/scripts/*.sh scripts/*.sh
-
-      - name: snakemake --lint
-        run: make lint SNAKEMAKE="snakemake"
-
-      - name: snakemake 解析冒烟（--list-rules）
-        run: |
-          snakemake -s workflow/Snakefile --configfile config/config.yaml --list-rules
+  dryrun:
+    name: 合成数据 dry-run 回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装 snakemake（dry-run 无需分析工具）
+        run: pip install "snakemake==7.32.4" pyyaml
+      - name: 生成合成数据并 dry-run
+        run: bash tests/run_test.sh --reads 2000
