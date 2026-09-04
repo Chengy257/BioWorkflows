@@ -1,0 +1,26 @@
+# 统一行尾：本项目的脚本均在 Linux (HPC/SGE) 上运行，仓库内一律使用 LF
+* text=auto
+
+# 脚本与流程文件强制 LF
+*.smk        text eol=lf
+*.sh         text eol=lf
+*.py         text eol=lf
+*.R          text eol=lf
+*.r          text eol=lf
+*.yaml       text eol=lf
+*.yml        text eol=lf
+*.csv        text eol=lf
+*.tsv        text eol=lf
+*.md         text eol=lf
+*.txt        text eol=lf
+*.svg        text eol=lf
+*.json       text eol=lf
+
+# 二进制文件
+*.png        binary
+*.jpg        binary
+*.pdf        binary
+*.gz         binary
+*.bam        binary
+*.fa         binary
+*.fq.gz      binary

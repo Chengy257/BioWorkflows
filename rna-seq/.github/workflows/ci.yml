@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint:
+    name: 静态检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck r-base-core graphviz
+          pip install snakemake
+      - name: 运行 lint
+        run: bash tests/lint.sh
+
+  test:
+    name: 端到端回归测试（deg）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          channels: conda-forge,bioconda
+          channel-priority: strict
+      - name: 安装 snakemake
+        run: conda install -y -c conda-forge snakemake
+      - name: 一键测试（生成数据 → dry-run → 端到端 → 断言）
+        run: bash tests/run_test.sh --pipeline deg --reads 20000
+      - name: 上传 DAG 图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dag
+          path: docs/dag_*.svg
+          if-no-files-found: ignore

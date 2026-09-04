@@ -1,0 +1,17 @@
+## SLURM 备选调度 profile（对应路线图 3.3；snakemake >= 7 经典 cluster 模式）
+## run.sh 不会自动选择本 profile，需显式指定：
+##   RUN_PROFILE=slurm bash run.sh deg <project_dir> [config.yaml] [jobs]
+##
+## 自定义提示：
+##   指定分区：cluster 行追加 -p <partition>
+##   限制内存：cluster 行追加 --mem=<n>G（如需按规则内存，请在规则中声明 resources）
+##   独占节点：追加 --exclusive
+##   作业日志：-o 支持模式串，%x=作业名 %j=作业号
+## 新式替代：snakemake >=8 可改用 snakemake-executor-plugin-slurm 执行器（无需 cluster 字符串）
+cluster: "sbatch --parsable -J {rule} -c {threads} -o slurm-{rule}-%j.out"
+jobs: 20
+use-conda: true
+keep-going: true
+rerun-incomplete: true
+latency-wait: 60
+printshellcmds: true

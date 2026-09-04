@@ -1,0 +1,50 @@
+# ---- Snakemake 运行元数据 ----
+.snakemake/
+*.snakemake*
+
+# ---- 运行产物根目录（results_dir 可配，默认 results） ----
+results/
+snakemake.logs.txt
+
+# ---- 项目内编号目录习惯（历史兼容，工作目录即项目目录时使用） ----
+logs/
+*.logs.txt
+0.index/
+1.rawdata/
+2.cleandata/
+3.align/
+4.assembly/
+4.expression/
+4.LncRNA/
+5.DEG/
+5.expression/
+6.DEGcompare/
+temp.*
+
+# ---- example 项目的本地数据与运行产物 ----
+example/1.rawdata/
+example/results/
+example/snakemake.logs.txt
+
+# ---- tests 的本地生成物（确定性数据由 tests/make_testdata.py 即时生成） ----
+tests/data/
+tests/work/
+
+# ---- 标记/临时文件 ----
+*.flag
+flag.log
+*.tmp
+
+# ---- R / Python ----
+.Rhistory
+.RData
+.Rproj.user/
+__pycache__/
+*.pyc
+
+# ---- 编辑器 / 操作系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

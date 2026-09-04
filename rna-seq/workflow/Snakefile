@@ -1,0 +1,76 @@
+###############################################
+## rna-seq 工作流唯一入口
+##
+## 运行（推荐）:  bash run.sh <upstream|deg|as|lncrna> <project_dir> [config.yaml] [jobs]
+##   - pipeline 经环境变量 RNASEQ_PIPELINE 注入（run.sh 负责）
+##   - 项目配置经环境变量 RNASEQ_CONFIG 注入；未设置时使用仓库 config/config.yaml
+##     （适用于 --lint 与仓库内示例）
+## 直接调用 snakemake:
+##   RNASEQ_PIPELINE=deg RNASEQ_CONFIG=/path/to/config.yaml snakemake -s workflow/Snakefile -j 10
+###############################################
+import os
+
+BASE_DIR = os.path.dirname(workflow.basedir)   # 仓库根（workflow/ 的上一级）
+WORKFLOW_DIR = workflow.basedir                # workflow/ 目录
+
+## ---- 物种资源预设（先加载；项目配置中的同名顶层键覆盖）----
+configfile: os.path.join(BASE_DIR, "config", "species.yaml")
+
+## ---- 主配置：项目配置优先，其次仓库默认 ----
+configfile: os.environ.get("RNASEQ_CONFIG", os.path.join(BASE_DIR, "config", "config.yaml"))
+
+## ---- 运行模式：upstream | deg | as | lncrna ----
+## 环境变量优先（run.sh 注入，解析期确定）；其次项目配置的 pipeline 键
+PIPELINE = (os.environ.get("RNASEQ_PIPELINE") or config.get("pipeline") or "upstream").strip().lower()
+if PIPELINE not in ("upstream", "deg", "as", "lncrna"):
+    raise ValueError(f"未知 pipeline: {PIPELINE}（可选 upstream | deg | as | lncrna）")
+
+## ---- 物种资源解析：顶层显式键优先，缺省回落到 species.yaml 当前物种的预设 ----
+SPECIES = config.get("species", "osa")
+if SPECIES not in ("osa", "hsa"):
+    raise ValueError(f"未知 species: {SPECIES}（可选 osa | hsa）")
+for _k, _v in (config.get(SPECIES) or {}).items():
+    if _k not in config:
+        config[_k] = _v
+
+## ---- 通用定义与辅助函数 ----
+include: os.path.join(WORKFLOW_DIR, "rules", "common.smk")
+
+## ---- 各管线最终产物 ----
+TARGETS = []
+TARGETS += [R("multiqc/multiqc_report.html"),
+            R("3.align/mapping_stat.xls"),
+            R("software_versions.yaml")]
+TARGETS += [expand(R("3.align/{sample}_Aligned.sortedByCoord.out.bam"), sample=SAMPLES)]
+
+if PIPELINE in ("upstream", "deg", "lncrna"):
+    TARGETS += [R("4.expression/count.matrix.tsv"),
+                R("4.expression/GeneExpression_TPM.xls")]
+if PIPELINE == "lncrna":
+    TARGETS += [R("4.LncRNA/4.5.Final_lncRNA/final_lncRNA.fa"),
+                R("5.expression/lncRNA/GeneExpression_TPM.xls")]
+if PIPELINE == "deg":
+    TARGETS += [R("5.DEG/flag.log"),
+                R("5.DEG/GO_KEGG_enrich/flag.log"),
+                R("6.DEGcompare/flag.log")]
+if PIPELINE == "as":
+    TARGETS += [R("4.assembly/4.1.Assembly_stringtie/merged.gtf")]
+    TARGETS += [expand(R("4.assembly/4.1.Assembly_stringtie/{sample}.gtf"), sample=SAMPLES)]
+    TARGETS += [expand(R("4.assembly/4.2.IsoformExpr/{sample}.tab"), sample=SAMPLES)]
+
+
+rule all:
+    input:
+        TARGETS
+
+
+## ---- 规则模块 ----
+include: os.path.join(WORKFLOW_DIR, "rules", "align.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "quant.smk")
+
+if PIPELINE == "deg":
+    include: os.path.join(WORKFLOW_DIR, "rules", "deg.smk")
+if PIPELINE == "as":
+    include: os.path.join(WORKFLOW_DIR, "rules", "as.smk")
+if PIPELINE == "lncrna":
+    include: os.path.join(WORKFLOW_DIR, "rules", "lncrna.smk")
