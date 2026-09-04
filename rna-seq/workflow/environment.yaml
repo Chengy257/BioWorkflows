@@ -7,7 +7,9 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - python=3.11
+  # Python 3.10, not 3.11+: rseqc=5.0.1 only ships builds for <=3.10, and the
+  # exact pins below must stay co-installable (validated by a dry-run solve).
+  - python=3.10
   - git
   - pyyaml
   - snakemake-minimal=7.32.4
@@ -24,7 +26,9 @@ dependencies:
   - diamond=2.1.8
   - hmmer=3.3.2
   - bedtools=2.30.0
-  - r-base=4.2.3
+  # R 4.2.x series: kept in sync with the un-pinned Bioconductor packages
+  # below (the solver picks the newest builds built against this R series).
+  - r-base=4.2
   - bioconductor-rsubread
   - bioconductor-edger
   - bioconductor-limma

@@ -11,6 +11,7 @@ SNAKEFILE="$WORKFLOW_DIR/Snakefile"
 DEFAULT_CONFIG="$REPO_DIR/config/config.yaml"
 DEFAULT_SOFTWARE="$REPO_DIR/config/software.yaml"
 RUNTIME_HELPER="$WORKFLOW_DIR/scripts/runtime_config.py"
+# shellcheck disable=SC2034  # used by the sourced shared launcher (resolve_path)
 CALL_DIR="$PWD"
 
 # Shared cross-project launcher helpers (logging + path resolution).

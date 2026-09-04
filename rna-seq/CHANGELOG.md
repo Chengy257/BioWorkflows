@@ -21,6 +21,9 @@ Architecture consolidation release: flattened output layout, dedicated scheduler
 - All remaining Chinese comments, messages, and documentation unified in English.
 - License changed to Apache-2.0.
 
+### Fixed
+- `workflow/environment.yaml` solves again (validated with a dry-run Conda solve): `python` is pinned to 3.10 because `rseqc=5.0.1` ships no newer Python builds, and `r-base` is relaxed to the 4.2.x series so the un-pinned Bioconductor packages resolve against it.
+
 ## [0.8.0] - 2026-09-03
 
 Unified software and R runtime: the workflow reuses the user's existing server environment by default and no longer creates a dedicated Conda environment per rule.

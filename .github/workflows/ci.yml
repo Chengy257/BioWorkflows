@@ -25,10 +25,13 @@ jobs:
       - name: Install non-Conda R packages
         run: Rscript -e 'if (!requireNamespace("aPEAR", quietly=TRUE)) install.packages("aPEAR", repos="https://cloud.r-project.org")'
       - name: Install lint tools
+        # shellcheck for the shell sections; graphviz for the DAG artifact.
+        # Do NOT pip-install snakemake here: the Conda environment already
+        # provides the pinned snakemake-minimal 7.32.4, and an unpinned pip
+        # install would shadow it with Snakemake 9.
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck r-base-core graphviz
-          pip install snakemake
+          sudo apt-get install -y shellcheck graphviz
       - name: Runtime resolver tests
         run: bash tests/test_runtime_config.sh
       - name: Lint
