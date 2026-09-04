@@ -1,0 +1,31 @@
+# Unified software/runtime configuration.
+# Copy this file to a project as software.yaml and override only what differs.
+
+environment:
+  type: system                  # system | conda
+  conda_prefix: ""              # preferred for HPC, e.g. /share/conda/envs/rna-seq
+  conda_name: ""                # alternative to conda_prefix
+  strict: true
+
+r:
+  rscript: "Rscript"            # command name or absolute executable path
+  version: ""                   # optional, e.g. "4.3" or "4.3.3"
+  version_check: major_minor    # major_minor | exact | warn | off
+  lib_paths: []                 # optional R library directories
+  lib_mode: prepend             # prepend | append | replace
+  package_sources: {}           # optional package -> local tarball, used for install hints only
+
+# Ordinary tools are resolved from the main environment/PATH automatically.
+# Add only overrides that differ from the environment.
+tools:
+  cpc2: ""
+  pfam_scan: ""
+  cnci_python: "python2"         # may be an absolute Python 2 executable
+
+# Paths that are not ordinary PATH executables.
+paths:
+  cnci_dir: ""                  # directory containing CNCI.py
+
+databases:
+  pfam: ""
+  nr_diamond: ""

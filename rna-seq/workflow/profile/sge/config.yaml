@@ -1,8 +1,7 @@
-## SGE 集群调度 profile（snakemake >= 7）
-## run.sh 在检测到 qsub 时自动使用本 profile
-cluster: "qsub -V -N {rule} -l ncpus={threads} -j oe"
+# SGE execution profile for Snakemake >= 7.
+# Resource placeholders are populated from each rule declaration.
+cluster: "qsub -V -N {rule} -l ncpus={threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime_sec} -j oe"
 jobs: 20
-use-conda: true
 keep-going: true
 rerun-incomplete: true
 latency-wait: 60

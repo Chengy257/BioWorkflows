@@ -20,8 +20,8 @@
 - [ ] 新增/修改了 **config 键**？→ 同步 `config/config.yaml` 注释模板 + `docs/使用说明.md` §4.3 配置表
 - [ ] 新增/修改了 **输出文件路径或目录**？→ 同步 `docs/使用说明.md` §6 结果解读 + `tests/check_outputs.py` 断言
 - [ ] 修改了 **规则入参或脚本调用参数**？→ 同步对应 `workflow/scripts/` 脚本的 Usage 注释 + 使用说明 FAQ
-- [ ] 新增了 **外部工具依赖**（conda 之外）？→ 更新 `docs/使用说明.md` §2 系统要求与 §7 已知限制
-- [ ] 修改了 **conda 环境**（`workflow/envs/*.yaml`）？→ 确认版本 pin 合理，并在 CHANGELOG 记录
+- [ ] 新增/修改了 **软件或 R runtime 依赖**？→ 同步 `config/software.yaml`、`workflow/environment.yaml` 与使用说明；不要在 rule 中重新引入独立 `conda:`
+- [ ] 修改了 **R package / Rscript / R library** 需求？→ 更新 runtime preflight 与 `tests/test_runtime_config.sh`
 - [ ] 是否破坏 **旧版本产物兼容**？→ 在 CHANGELOG 用显著条目说明迁移方式
 
 ## 4. 测试要求
@@ -30,6 +30,8 @@
 
 ```bash
 bash tests/lint.sh                          # 静态检查（bash/shellcheck/py/R/snakemake --lint）
+bash tests/test_runtime_config.sh           # 统一软件/R runtime 解析
+bash tests/test_r_runtime_propagation.sh    # 嵌套 R 调用继承检查
 bash tests/run_test.sh --pipeline deg       # 端到端回归（生成数据 → dry-run → 运行 → 断言）
 ```
 
@@ -39,6 +41,6 @@ bash tests/run_test.sh --pipeline deg       # 端到端回归（生成数据 →
 
 ## 5. 代码风格
 
-- Snakefile/规则：与现有规则保持相同的缩进与 directive 顺序（input → output → params → log → conda → shell）；shell 串中 `{}` 转义遵循 `{{}}`。
+- Snakefile/规则：与现有规则保持相同的缩进与 directive 顺序（input → output → log/params → threads/resources → shell）；shell 串中 `{}` 转义遵循 `{{}}`。
 - Shell 脚本：`set -u` 起步、路径加引号、`SCRIPT_DIR` 自解析；优先可移植写法（GNU coreutils 为主）。
 - Python：标准库优先（测试生成器/校验器不得引入第三方依赖）；R：保持现有 `getopt` 风格。

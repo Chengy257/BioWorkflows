@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 ## featureCounts 定量（Rsubread）+ FPKM/TPM 计算，输出 5 列表格
-## 依赖环境见 envs/quant.yaml；不再依赖个人 R 库路径
+## R runtime and library paths are provided by config/software.yaml
 suppressWarnings({
 pkgs <- c('argparser','Rsubread','limma','edgeR','getopt')
 lapply(pkgs, function(x){

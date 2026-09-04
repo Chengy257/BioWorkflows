@@ -1,9 +1,0 @@
-## 可变剪接/转录本组装环境 —— rules(RNA-seq_upstream_AS): Assemble, gtf_merge, isoform_expr
-channels:
-  - conda-forge
-  - bioconda
-  - nodefaults
-dependencies:
-  - stringtie=2.2.1
-  - gffcompare=0.12.6
-  - gffread=0.12.7

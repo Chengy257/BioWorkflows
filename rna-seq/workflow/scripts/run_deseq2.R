@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 # Usage:
 #       Rscript run_deseq2.R -c count.matrix.tsv -s sample_info.csv -o 5.DEG ...
-# 依赖环境见 envs/deseq2.yaml
+# R runtime and library paths are provided by config/software.yaml
 ###############
 # functions
 preprocess_data <- function(count_data,sample_info,is_batch){

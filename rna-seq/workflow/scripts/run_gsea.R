@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 ## Usage:
-##   Rscript run_gsea.R <FoldChange文件列表> <输出目录前缀> <species: osa|hsa> <osa OrgDb tarball>
-## GSEA（gseGO）；物种与 OrgDb 路径由 enrich.sh 从 config 传入；依赖环境见 envs/enrich.yaml
+##   Rscript run_gsea.R <FoldChange文件列表> <输出目录前缀> <species: osa|hsa>
+## GSEA（gseGO）；物种与 OrgDb 路径由 enrich.sh 从 config 传入；R runtime and library paths are provided by config/software.yaml
 args <- commandArgs(T)
 pkgs <- c('clusterProfiler','ggplot2','enrichplot','dplyr')
 lapply(pkgs, function(x){
@@ -9,17 +9,14 @@ lapply(pkgs, function(x){
 
 spe <- "osa"
 if (length(args) >= 3) spe <- args[3]
-orgdb_tar <- NA
-if (length(args) >= 4) orgdb_tar <- args[4]
 
 if (spe == "hsa") {
     suppressMessages(library(org.Hs.eg.db))
     orgdb <- org.Hs.eg.db
     keytype <- "ENSEMBL"
 } else {
-    if (!require("org.Osativa.eg.db", quietly = TRUE)) {
-        if (is.na(orgdb_tar)) stop("osa 需要 OrgDb：请在 config 的 orgdb_tarball 中提供本地 tarball 路径")
-        install.packages(orgdb_tar, repos = NULL)
+    if (!requireNamespace("org.Osativa.eg.db", quietly = TRUE)) {
+        stop("org.Osativa.eg.db is not installed in the configured R libraries; install it before running the workflow")
     }
     suppressMessages(library(org.Osativa.eg.db))
     orgdb <- org.Osativa.eg.db

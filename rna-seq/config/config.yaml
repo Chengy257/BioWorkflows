@@ -14,12 +14,39 @@ pipeline: "upstream"            # upstream | deg | as | lncrna
 results_dir: "results"          # 运行产物根目录（相对运行目录）
 SampleListFile: "config/samples.csv"   # 样本表（相对运行目录；项目内通常为 "samples.csv"）
 control_group: "control"        # 对照组组名
-threads: 12                     # 每任务线程数
+threads: 12                     # Legacy/default thread cap; explicit resources.<rule>.threads can override
+
+## ---- Per-rule scheduler resources ----
+## Memory is MB; runtime_min is walltime in minutes. Older project configs may
+## omit this section and will use the same built-in defaults. Add a "threads"
+## key to any rule below when a rule-specific CPU override is needed.
+resources:
+  trim: {mem_mb: 8000, runtime_min: 180}
+  multiqc: {mem_mb: 4000, runtime_min: 60}
+  star_index: {mem_mb: 48000, runtime_min: 480}
+  star_align: {mem_mb: 32000, runtime_min: 360}
+  mapping_stat: {mem_mb: 2000, runtime_min: 30}
+  strandedness: {mem_mb: 4000, runtime_min: 60}
+  featurecounts: {mem_mb: 16000, runtime_min: 240}
+  count_merge: {mem_mb: 4000, runtime_min: 60}
+  deseq2: {mem_mb: 16000, runtime_min: 240}
+  enrichment: {mem_mb: 12000, runtime_min: 360}
+  deg_compare: {mem_mb: 12000, runtime_min: 360}
+  stringtie: {mem_mb: 16000, runtime_min: 360}
+  gtf_merge: {mem_mb: 12000, runtime_min: 240}
+  isoform_expr: {mem_mb: 16000, runtime_min: 360}
+  lnc_coding: {mem_mb: 16000, runtime_min: 720}
+  pfam: {mem_mb: 24000, runtime_min: 720}
+  nr: {mem_mb: 32000, runtime_min: 1440}
+  lnc_final: {mem_mb: 8000, runtime_min: 120}
+  lnc_featurecounts: {mem_mb: 16000, runtime_min: 240}
+  lnc_count_merge: {mem_mb: 4000, runtime_min: 60}
 
 ## ---- 差异分析 ----
 FoldChange: "2"                 # 倍数阈值（|log2FC| > 1）
 padj: "0.05"                    # 校正 p 值阈值
 pca_ntop: 20000                 # PCA 使用的变异基因数
+batch_correction: "F"           # DESeq2 批次校正（T 时样本表需含第三列 batch；F 关闭）
 
 ## ---- 物种与参考资源 ----
 ## 选定 species 后，未在此显式给出的资源键回落到 config/species.yaml 预设；
@@ -29,17 +56,15 @@ species: "osa"                  # osa | hsa
 # genome: "/path/to/reference/osa/genome.fa"
 # gtf: "/path/to/reference/osa/annotation.gtf"
 # annotation_tsv: "/path/to/reference/osa/annotation_full.tsv"
-# orgdb_tarball: "/path/to/reference/osa/org.Osativa.eg.db_0.1.tar.gz"
 
 ## ---- STAR ----
 star_extra_args: ""             # 追加的 STAR 参数（组装管线默认使用组装优化参数，见 workflow/rules/common.smk）
+
+## Software executables, Conda runtime, Rscript/R libraries, and large tool databases
+## are configured separately in config/software.yaml (or project software.yaml).
 
 ## ---- lncRNA 管线（仅 pipeline=lncrna 使用）----
 lncrna:
   gtf: ""                       # lncRNA 流程参考注释；留空使用顶层 gtf
   gtf_PcGs: "/path/to/reference/osa/MSU_RAP_combined_CDS_PcGs.gtf"
-  pfam_DB: "/path/to/database/pfam/"
-  nr_diamond_DB: "/path/to/database/nr/nr.dmnd"
-  cpc2_bin: "/path/to/software/CPC2_standalone-1.0.1/bin/CPC2.py"
-  cnci_dir: "/path/to/software/CNCI/"
   threads: 30                   # Pfam / NR 搜索线程

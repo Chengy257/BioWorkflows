@@ -1,6 +1,5 @@
-## 本地（无集群）运行 profile：所有任务在当前机器串行/多核执行
+# Local execution profile for a workstation or standalone server.
 cores: 8
-use-conda: true
 keep-going: true
 rerun-incomplete: true
 latency-wait: 60

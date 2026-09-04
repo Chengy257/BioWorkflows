@@ -1,65 +1,81 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""收集工作流版本信息，生成 software_versions.yaml（对应审查 P2-9）。
-
-解析 conda 环境 yaml（不依赖 pyyaml），并记录 snakemake 版本与 git 提交号。
-用法:
-    python collect_versions.py --envs <envs 目录> --workflow <workflow 目录> --out <输出文件>
-"""
+"""Capture the resolved runtime used by the RNA-seq workflow."""
 import argparse
 import datetime
 import os
-import re
+from pathlib import Path
+import shutil
 import subprocess
 
+import yaml
 
-def sh(cmd, cwd=None):
+TOOLS = [
+    "python", "rscript", "fastqc", "trim_galore", "multiqc", "star", "samtools",
+    "infer_experiment", "stringtie", "gffcompare", "gffread", "bioawk", "diamond",
+    "hmmscan", "bedtools", "pfam_scan", "cpc2", "cnci_python",
+]
+
+
+def command_output(args, env=None):
     try:
-        r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True,
-                           text=True, errors="replace", timeout=60)
-        return r.stdout.strip()
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=20, env=env)
+        return (proc.stdout or proc.stderr).strip()
     except Exception:
         return ""
 
 
-def parse_env(path):
-    """解析 env yaml 的 dependencies 段：返回 [(包名, 版本|'')]"""
-    pkgs = []
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            if line.lstrip().startswith("#"):
-                continue
-            m = re.match(r"\s*-\s*([A-Za-z0-9._-]+?)\s*=\s*([A-Za-z0-9._+-]+)\s*$", line)
-            if m:
-                pkgs.append((m.group(1), m.group(2)))
-    return pkgs
+def git_commit(path):
+    return command_output(["git", "-C", path, "rev-parse", "--short", "HEAD"])
+
+
+def resolved_tool(name):
+    key = "RNASEQ_TOOL_" + name.upper().replace("-", "_")
+    value = os.environ.get(key, "")
+    if value:
+        return value
+    defaults = {"python": "python3", "rscript": "Rscript", "star": "STAR", "infer_experiment": "infer_experiment.py"}
+    cmd = defaults.get(name, name)
+    return shutil.which(cmd) or cmd
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--envs", required=True, help="conda 环境定义目录")
-    ap.add_argument("--workflow", required=True, help="workflow 目录（用于读取 git 提交）")
-    ap.add_argument("--out", required=True, help="输出文件")
+    ap.add_argument("--software-config", required=True)
+    ap.add_argument("--workflow", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--snakemake-version", default="")
     args = ap.parse_args()
 
-    lines = [
-        "# software_versions.yaml — 由流程自动生成（记录本次运行所用的环境定义）",
-        f"date: '{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}'",
-        f"snakemake: '{sh('snakemake --version') or 'unknown'}'",
-    ]
-    commit = sh("git rev-parse --short HEAD", cwd=args.workflow)
-    if commit:
-        lines.append(f"git_commit: '{commit}'")
+    data = {
+        "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "snakemake": args.snakemake_version or command_output(["snakemake", "--version"]) or "unknown",
+        "git_commit": git_commit(args.workflow) or "unknown",
+        "software_config": os.path.abspath(args.software_config),
+        "runtime": {
+            "type": os.environ.get("RNASEQ_SOFTWARE_TYPE", "system"),
+            "conda_prefix": os.environ.get("RNASEQ_ENV_PREFIX", ""),
+            "rscript": os.environ.get("RNASEQ_RSCRIPT", resolved_tool("rscript")),
+            "r_libs_user": os.environ.get("R_LIBS_USER", ""),
+        },
+        "tools": {name: resolved_tool(name) for name in TOOLS},
+        "databases": {
+            "pfam": os.environ.get("RNASEQ_DB_PFAM", ""),
+            "nr_diamond": os.environ.get("RNASEQ_DB_NR_DIAMOND", ""),
+            "cnci_dir": os.environ.get("RNASEQ_CNCI_DIR", ""),
+        },
+    }
+    rscript = data["runtime"]["rscript"]
+    if shutil.which(rscript) or os.path.isfile(rscript):
+        rv = command_output([rscript, "--vanilla", "-e", "cat(as.character(getRversion()))"])
+        if rv:
+            data["runtime"]["r_version"] = rv
+        libs = command_output([rscript, "--vanilla", "-e", "cat(paste(.libPaths(), collapse=':'))"])
+        if libs:
+            data["runtime"]["r_lib_paths"] = libs.split(":")
 
-    for env in sorted(os.listdir(args.envs)):
-        if not env.endswith(".yaml"):
-            continue
-        lines.append(f"{env[:-5]}:")
-        for pkg, ver in parse_env(os.path.join(args.envs, env)):
-            lines.append(f"  {pkg}: '{ver or 'unpinned'}'")
-
-    with open(args.out, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + "\n")
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as handle:
+        yaml.safe_dump(data, handle, sort_keys=False, allow_unicode=True)
     print(f"[collect_versions] -> {args.out}")
 
 

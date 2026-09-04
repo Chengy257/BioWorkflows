@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 ## Usage:
-##   Rscript run_enrichment.R <gene list> <output dir> <species: osa|hsa> <osa OrgDb tarball> <kegg organism code>
-## 依赖环境见 envs/enrich.yaml；物种与 OrgDb 路径由 enrich.sh 从 config 传入
+##   Rscript run_enrichment.R <gene list> <output dir> <species: osa|hsa> <kegg organism code>
+## R runtime and library paths are provided by config/software.yaml；物种与 OrgDb 路径由 enrich.sh 从 config 传入
 args <- commandArgs(T)
 pkgs <- c('clusterProfiler','ggplot2','aPEAR','svglite','magrittr','dplyr')
 lapply(pkgs, function(x){
@@ -9,20 +9,16 @@ lapply(pkgs, function(x){
 
 spe <- "osa"
 if (length(args) >= 3) spe <- args[3]
-orgdb_tar <- NA
-if (length(args) >= 4) orgdb_tar <- args[4]
 kegg_org <- ifelse(spe == "hsa", "hsa", "dosa")   # 默认按物种推导，可被第 5 参数覆盖
-if (length(args) >= 5 && !is.na(args[5]) && args[5] != "") kegg_org <- args[5]
+if (length(args) >= 4 && !is.na(args[4]) && args[4] != "") kegg_org <- args[4]
 
 if (spe == "hsa") {
     suppressMessages(library(org.Hs.eg.db))
     orgdb <- org.Hs.eg.db
     keytype <- "ENSEMBL"
 } else {
-    if (!require("org.Osativa.eg.db", quietly = TRUE)) {
-        if (is.na(orgdb_tar) || orgdb_tar == "")
-            stop("osa 需要 OrgDb：请在 config 的 orgdb_tarball 中提供本地 tarball 路径")
-        install.packages(orgdb_tar, repos = NULL)
+    if (!requireNamespace("org.Osativa.eg.db", quietly = TRUE)) {
+        stop("org.Osativa.eg.db is not installed in the configured R libraries; install it before running the workflow")
     }
     suppressMessages(library(org.Osativa.eg.db))
     orgdb <- org.Osativa.eg.db

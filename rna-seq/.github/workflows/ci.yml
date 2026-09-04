@@ -33,10 +33,14 @@ jobs:
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
+          activate-environment: rna-seq
+          environment-file: workflow/environment.yaml
           channels: conda-forge,bioconda
           channel-priority: strict
-      - name: 安装 snakemake
-        run: conda install -y -c conda-forge snakemake
+      - name: 安装非 Conda R 包
+        run: Rscript -e 'if (!requireNamespace("aPEAR", quietly=TRUE)) install.packages("aPEAR", repos="https://cloud.r-project.org")'
+      - name: 验证 runtime resolver
+        run: bash tests/test_runtime_config.sh
       - name: 一键测试（生成数据 → dry-run → 端到端 → 断言）
         run: bash tests/run_test.sh --pipeline deg --reads 20000
       - name: 上传 DAG 图

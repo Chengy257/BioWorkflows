@@ -10,21 +10,28 @@ rule Assemble:
         strandedness=R("3.align/{sample}.strandedness"),
     output:
         R("4.assembly/4.1.Assembly_stringtie/{sample}.gtf"),
-    conda:
-        os.path.join(ENVS, "assembly.yaml")
     log:
         R("logs/Assemble/{sample}_stringtie.log.txt"),
+    params:
+        outdir=lambda wc, output: os.path.dirname(output[0]),
+        stringtie=tool("stringtie", "stringtie"),
+    threads:
+        rthreads("stringtie")
+    resources:
+        mem_mb=rmem("stringtie"),
+        runtime_min=rruntime("stringtie"),
+        runtime_sec=rruntime_sec("stringtie"),
     shell:
         """
-        mkdir -p {RD}4.assembly/4.1.Assembly_stringtie
+        mkdir -p {params.outdir}
         strandedness=$(head -1 {input.strandedness} | awk '{{print $1}}')
         ## 链型选项：firststrand → --rf，secondstrand → --fr
         if [ "$strandedness" == "firststrand" ]; then
-            stringtie -p {config[threads]} --rf -o {output} -G {input.ref} {input.bam} >> {log} 2>&1
+            {params.stringtie} -p {threads} --rf -o {output} -G {input.ref} {input.bam} >> {log} 2>&1
         elif [ "$strandedness" == "secondstrand" ]; then
-            stringtie -p {config[threads]} --fr -o {output} -G {input.ref} {input.bam} >> {log} 2>&1
+            {params.stringtie} -p {threads} --fr -o {output} -G {input.ref} {input.bam} >> {log} 2>&1
         else
-            stringtie -p {config[threads]} -o {output} -G {input.ref} {input.bam} >> {log} 2>&1
+            {params.stringtie} -p {threads} -o {output} -G {input.ref} {input.bam} >> {log} 2>&1
         fi
         """
 
@@ -36,16 +43,23 @@ rule gtf_merge:
         genome=res("genome"),
     output:
         R("4.assembly/4.1.Assembly_stringtie/merged.gtf"),
-    conda:
-        os.path.join(ENVS, "assembly.yaml")
     log:
         R("logs/gtf_merge.log.txt"),
+    params:
+        funcs=os.path.join(SCRIPTS, "lncRNA_functions.sh"),
+        stringtie=tool("stringtie", "stringtie"),
+    threads:
+        rthreads("gtf_merge")
+    resources:
+        mem_mb=rmem("gtf_merge"),
+        runtime_min=rruntime("gtf_merge"),
+        runtime_sec=rruntime_sec("gtf_merge"),
     shell:
         """
         ## 载入辅助函数（runGFFcompare / getFasta）
-        source {SCRIPTS}/lncRNA_functions.sh
+        source {params.funcs}
         ## 合并各样本 gtf 并与参考注释比较
-        stringtie --merge -G {input.ref} -i -o {output} {input.gtf} >> {log} 2>&1
+        {params.stringtie} --merge -G {input.ref} -i -o {output} {input.gtf} >> {log} 2>&1
         runGFFcompare {input.ref} {output} {input.genome} >> {log} 2>&1
         """
 
@@ -58,20 +72,27 @@ rule isoform_expr:
     output:
         gtf=R("4.assembly/4.2.IsoformExpr/{sample}.gtf"),
         tab=R("4.assembly/4.2.IsoformExpr/{sample}.tab"),
-    conda:
-        os.path.join(ENVS, "assembly.yaml")
     log:
         R("logs/isoform_expr/{sample}_stringtie.log.txt"),
+    params:
+        outdir=lambda wc, output: os.path.dirname(output.gtf),
+        stringtie=tool("stringtie", "stringtie"),
+    threads:
+        rthreads("isoform_expr")
+    resources:
+        mem_mb=rmem("isoform_expr"),
+        runtime_min=rruntime("isoform_expr"),
+        runtime_sec=rruntime_sec("isoform_expr"),
     shell:
         """
-        mkdir -p {RD}4.assembly/4.2.IsoformExpr
+        mkdir -p {params.outdir}
         strandedness=$(head -1 {input.strandedness} | awk '{{print $1}}')
         if [ "$strandedness" == "firststrand" ]; then
-            stringtie -p {config[threads]} --rf -o {output.gtf} -e -G {input.ref} {input.bam} >> {log} 2>&1
+            {params.stringtie} -p {threads} --rf -o {output.gtf} -e -G {input.ref} {input.bam} >> {log} 2>&1
         elif [ "$strandedness" == "secondstrand" ]; then
-            stringtie -p {config[threads]} --fr -o {output.gtf} -e -G {input.ref} {input.bam} >> {log} 2>&1
+            {params.stringtie} -p {threads} --fr -o {output.gtf} -e -G {input.ref} {input.bam} >> {log} 2>&1
         else
-            stringtie -p {config[threads]} -o {output.gtf} -e -G {input.ref} {input.bam} >> {log} 2>&1
+            {params.stringtie} -p {threads} -o {output.gtf} -e -G {input.ref} {input.bam} >> {log} 2>&1
         fi
         ## 提取转录本表达
         cat {output.gtf} | grep -v "^#" | awk -v OFS="\\t" 'BEGIN{{print "transcript","FPKM","TPM"}} {{if($3=="transcript"){{print $12,$(NF-2),$NF}}}}' | sed 's/[;"]//g' > {output.tab}

@@ -48,3 +48,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---- local migration backups ----
+.local_backup/

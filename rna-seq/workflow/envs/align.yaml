@@ -1,9 +1,0 @@
-## 比对环境 —— rules: STAR_index, runSTAR, check_strandedness（RSeQC）
-channels:
-  - conda-forge
-  - bioconda
-  - nodefaults
-dependencies:
-  - star=2.7.10b
-  - samtools=1.17
-  - rseqc=5.0.1

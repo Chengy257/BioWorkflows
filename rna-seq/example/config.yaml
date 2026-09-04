@@ -12,6 +12,7 @@ threads: 12
 FoldChange: "2"
 padj: "0.05"
 pca_ntop: 20000
+batch_correction: "F"           # DESeq2 批次校正（T 时样本表需含第三列 batch；F 关闭）
 
 ## 参考资源（运行前必须替换为集群真实路径；也可注释掉回落到 config/species.yaml 预设）
 species: "osa"
@@ -19,15 +20,10 @@ bed: "/path/to/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"
 genome: "/path/to/reference/osa/genome.fa"
 gtf: "/path/to/reference/osa/annotation.gtf"
 annotation_tsv: "/path/to/reference/osa/annotation_full.tsv"
-orgdb_tarball: "/path/to/reference/osa/org.Osativa.eg.db_0.1.tar.gz"
 
 star_extra_args: ""
 
 lncrna:
   gtf: ""
   gtf_PcGs: "/path/to/reference/osa/MSU_RAP_combined_CDS_PcGs.gtf"
-  pfam_DB: "/path/to/database/pfam/"
-  nr_diamond_DB: "/path/to/database/nr/nr.dmnd"
-  cpc2_bin: "/path/to/software/CPC2_standalone-1.0.1/bin/CPC2.py"
-  cnci_dir: "/path/to/software/CNCI/"
   threads: 30
