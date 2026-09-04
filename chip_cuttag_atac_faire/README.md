@@ -168,7 +168,7 @@ bash run.sh -P /path/to/real_project -n              # 3) 真实项目 dry-run �
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 ChengYu
+[Apache-2.0](LICENSE) © 2026 ChengYu
 
 ## 版本
 

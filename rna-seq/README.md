@@ -90,4 +90,4 @@ bash tests/run_test.sh --pipeline deg     # 端到端回归：生成合成数据
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE)
