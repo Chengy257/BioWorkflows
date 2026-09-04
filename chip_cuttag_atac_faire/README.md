@@ -92,8 +92,7 @@ chip_cuttag_atac_faire/
 │   └── samples.csv           # 样本表模板（6 列混型 schema）
 ├── tests/                    # run_tests.py（55 项）/ lint.sh / run_test.sh / make_testdata.py
 ├── example/                  # 示例项目模板（真实样本表 + 项目 config + 一条命令启动指引）
-├── docs/                     # 使用说明 / REVIEW 审查报告 / IMPROVEMENT_PLAN
-├── legacy/                   # v0.1.0 原始实现 + 未接入 DAG 脚本（legacy/diffbind/）归档（不可运行，仅参考）
+├── docs/                     # 使用说明（用户指南）
 ├── Makefile                  # make check / lint / test
 ├── CHANGELOG.md
 └── .github/workflows/ci.yaml # CI：lint（check+lint.sh）+ 合成数据 dry-run 回归
@@ -128,7 +127,6 @@ chip_cuttag_atac_faire/
 |---|---|
 | [docs/使用说明.md](docs/使用说明.md) | 环境三条落地路径、五步快速开始、样本表 schema 与校验、config 全键与资源默认值、集群提交、结果解读、FAQ |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发流程、CHANGELOG 要求、文档同步 checklist、测试要求、代码风格 |
-| [docs/REVIEW.md](docs/REVIEW.md) | v0.2.0 重构的独立审查报告与修复状态 |
 | [workflow/profile/README.md](workflow/profile/README.md) | 四套 profile 的 cluster 串与占位符说明 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 
@@ -163,7 +161,7 @@ bash run.sh -P /path/to/real_project -n              # 3) 真实项目 dry-run �
 
 1. **端到端实跑待完成**：CI 与回归覆盖 dry-run 级；真实数据端到端实跑（含 conda 环境求解、MACS2 无对照 `control_lambda` 产出确认）按上方"服务器验证步骤"执行后记入 CHANGELOG。
 2. bowtie2 索引规则只声明 `.bt2`（参考组 >4Gbp 时 bowtie2 产出 `.bt2l`，需手动建索引后放入 `0.index/`）。
-3. **DiffBind 差异分析**：待实现（contrast 与设计公式待定）；相关空壳脚本（`diffpeak_DiffBind.sh` / `run_DiffBind.R` / `run_ChIPQC.R` / `run_chipqc_DROMPAplus.sh` / `annoPeak_single.R`）已归档至 legacy/diffbind/，恢复路线见 [legacy/README.md](legacy/README.md) 与 [docs/REVIEW.md](docs/REVIEW.md)。
+3. **DiffBind 差异分析**：待实现（contrast 与设计公式待定）；原空壳脚本（DiffBind/ChIPQC/DROMPAplus 等）已移出仓库归档（不入版本库），需要时从本地归档或 git 历史恢复。
 4. 仅支持双端（PE）数据。
 
 ## 许可证
@@ -172,4 +170,4 @@ bash run.sh -P /path/to/real_project -n              # 3) 真实项目 dry-run �
 
 ## 版本
 
-v0.1.0（2024-03 原始实现，见 `legacy/`）→ v0.2.0（2026-09-03 重构）→ v0.4.0（2026-09 对齐 rna-seq 工程体系：统一环境 / run.sh CLI / 四 profile / per-rule 资源 / 测试与文档）。语义化版本 tag 维护，变更见 [CHANGELOG.md](CHANGELOG.md)。
+v0.1.0（2024-03 原始实现，已归档出库）→ v0.2.0（2026-09-03 重构）→ v0.4.0（2026-09 对齐 rna-seq 工程体系：统一环境 / run.sh CLI / 四 profile / per-rule 资源 / 测试与文档）。语义化版本 tag 维护，变更见 [CHANGELOG.md](CHANGELOG.md)。

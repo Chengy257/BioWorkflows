@@ -36,7 +36,7 @@ rna-seq/
 │   └── samples.csv           # 样本表模板
 ├── example/                  # 示例项目（真实样本表参考 + 一条命令上手）
 ├── tests/                    # 回归测试：make_testdata.py（合成数据）/ run_test.sh / lint.sh
-├── docs/                     # 使用说明 / 审查报告 / 优化路线图
+├── docs/                     # 使用说明（用户指南）
 ├── CONTRIBUTING.md           # 贡献指南（文档同步 checklist / CHANGELOG 要求）
 └── results/                  # 运行产物（gitignore；根目录可配 results_dir）
 ```
@@ -57,8 +57,6 @@ rna-seq/
 | 文档 | 内容 |
 |---|---|
 | [docs/使用说明.md](docs/使用说明.md) | 数据准备、样本表约束、配置说明、运行监控、结果目录解读、FAQ |
-| [docs/审查报告.md](docs/审查报告.md) | 2026-09 全面审查：8 个阻断性问题（P0）+ 14 个重要缺陷（P1）+ 9 个规范问题（P2），含 file:line 定位 |
-| [docs/优化路线图.md](docs/优化路线图.md) | 三阶段改造计划与验收标准（阶段 0-3 全部完成） |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 
 ## 已知问题（v0.8.0）
@@ -85,7 +83,7 @@ bash tests/run_test.sh --pipeline deg     # 端到端回归：生成合成数据
 
 ## 贡献与变更
 
-- 修改流程代码请先阅读 [docs/优化路线图.md](docs/优化路线图.md)，避免与改造方向冲突；所有变更记入 `CHANGELOG.md`。
+- 所有变更记入 `CHANGELOG.md`（改动较大时先更新文档再动代码）。
 - 行尾统一 LF（见 `.gitattributes`），运行产物不入库（见 `.gitignore`）。
 
 ## License

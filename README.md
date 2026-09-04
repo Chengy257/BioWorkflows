@@ -24,7 +24,7 @@ BioWorkflows/
 │   ├── example/                 #   example project
 │   ├── tests/                   #   synthetic-data regression tests + lint
 │   └── docs/                    #   user guide, review reports, roadmap
-├── chip_cuttag_atac_faire/      # ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq workflow (same layout, plus legacy/)
+├── chip_cuttag_atac_faire/      # ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq workflow (same layout)
 └── LICENSE                      # Apache-2.0
 ```
 
