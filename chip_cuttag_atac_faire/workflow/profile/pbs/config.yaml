@@ -1,0 +1,8 @@
+# PBS (Torque) 执行 profile，Snakemake >= 7 经典集群接口。
+# 资源占位符由每条规则的 resources 声明填充。
+cluster: "qsub -V -N {rule} -l select=1:ncpus={threads}:mem={resources.mem_mb}mb -l walltime={resources.runtime_sec} -j oe"
+jobs: 20
+keep-going: true
+rerun-incomplete: true
+latency-wait: 90
+printshellcmds: true

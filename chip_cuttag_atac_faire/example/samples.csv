@@ -1,0 +1,3 @@
+sample_id,role,group,seqtype,layout,peak_type
+myc,treat,myc_vs_IgG,chip,PE,narrow
+IgG,control,myc_vs_IgG,chip,PE,narrow

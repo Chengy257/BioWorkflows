@@ -1,0 +1,34 @@
+# 全新服务器的一体化环境模板。
+# 此文件不会被 Snakemake 自动创建；示例：mamba env create -f workflow/environment.yaml
+name: chip-cuttag-atac-faire
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - git
+  - pyyaml
+  - snakemake-minimal=7.32.4
+  # 上游 QC 与修剪
+  - fastqc=0.12.1
+  - trim-galore=0.6.10
+  - multiqc=1.14
+  # 比对
+  - bowtie2=2.5.1
+  - samtools=1.17
+  # 去重 / 峰调用 / 信号
+  - picard=3.0.0
+  - macs2=2.2.7.1
+  - bedtools=2.31.0
+  - deeptools=3.5.1
+  - ucsc-bedclip=482
+  - ucsc-bedgraphtobigwig=482
+  # SPP NSC/RSC
+  - phantompeakqualtools=1.2.2
+  - r-base=4.3
+  - bioconductor-chipseeker=1.38.0
+  - bioconductor-genomicfeatures=1.54.0
+
+# R 包注：ChIPseeker/GenomicFeatures 已含 conda 版；若服务器复用已有 R 库，
+# 走 config/software.yaml 的 r.lib_paths 指定，不必安装本段 bioconductor-*。

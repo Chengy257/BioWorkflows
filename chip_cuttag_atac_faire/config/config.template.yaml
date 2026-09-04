@@ -1,0 +1,53 @@
+# =====================================================================
+# 配置模板 —— 复制为 config.local.yaml 并按需覆盖（后者不进版本库，
+# run.sh 会自动叠加：仓库 config/config.yaml + 工作目录 config.local.yaml）
+# 也可完整复制为项目专属 config 使用。所有键均为可选项，未列键沿用默认。
+# =====================================================================
+
+# ---------- 参考基因组（换物种必须全部替换） ----------
+genome_fa: "/path/to/genome.fasta"            # bowtie2 建索引输入
+gtf: "/path/to/annotation.gtf"                # 峰注释用
+bed: "/path/to/genes.bed"                     # deeptools 基因区信号用
+chromsize: "/path/to/chrom.sizes"             # bigWig 生成用
+genome_size: "3.7e8"                          # MACS2 有效基因组大小（水稻示例）
+
+# ---------- 样本与资源 ----------
+grouplist: "samples.csv"                        # 样本表（复制到工作目录后改名亦可；schema 见 config/samples.csv）
+threads: 12                                   # 单任务线程数
+
+# ---------- 质量修剪（trim_galore） ----------
+trim:
+  quality: 25        # -q：末端低质量碱基阈值
+  stringency: 3      # 接头最少重叠碱基数
+  error_rate: 0.1    # -e：接头匹配最大错误率
+  extra: ""          # 追加参数
+
+# ---------- 比对 ----------
+bowtie2_extra: "--end-to-end --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700"
+min_mapq: 30                                  # 比对质量过滤（ENCODE 常规值）
+
+# ---------- 去重（按 assay 是否 picard 去重） ----------
+dedup:
+  chip: true
+  cuttag: false   # CUT&Tag 文献推荐不去重（Kaya-Okur et al. 2019）
+  atac: true
+  faire: true
+
+# ---------- 峰调用 ----------
+peak:
+  keepdup: all        # MACS2 层面保留全部重复（去重交给上游 dedup 策略）
+  qvalue: 0.05        # narrow 峰 q 值
+  broad_cutoff: 0.05  # broad 峰 cutoff
+  atac:               # ATAC/FAIRE 峰调用模式
+    mode: bampe       # bampe（ENCODE ATAC v2 默认）| shifted（经典 Tn5 偏移配方）
+    shift: -100       # 仅 shifted 模式生效
+    extsize: 200      # 仅 shifted 模式生效
+
+# ---------- 注释与信号窗口 ----------
+region_flank: 3000   # 峰注释 flank 距离与 deeptools 信号窗口上下游长度（bp）
+
+# ---------- QC 开关 ----------
+qc:
+  nsc_rsc: false
+  frip: true
+  deeptools: true

@@ -1,0 +1,9 @@
+sample_id,role,group,seqtype,layout,peak_type
+myc,treat,myc_vs_IgG,chip,PE,narrow
+IgG,control,myc_vs_IgG,chip,PE,narrow
+H3K27me3_rep1,treat,H3K27me3_vs_IgG,cuttag,PE,broad
+IgG_cuta,control,H3K27me3_vs_IgG,cuttag,PE,broad
+atac_leaf_1,treat,atac_leaf,atac,PE,none
+atac_leaf_2,treat,atac_leaf,atac,PE,none
+faire_root,treat,faire_root_vs_Input,faire,PE,none
+Input_faire,control,faire_root_vs_Input,faire,PE,none
