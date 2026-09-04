@@ -13,6 +13,11 @@ DEFAULT_SOFTWARE="$REPO_DIR/config/software.yaml"
 RUNTIME_HELPER="$WORKFLOW_DIR/scripts/runtime_config.py"
 CALL_DIR="$PWD"
 
+# Shared cross-project launcher helpers (logging + path resolution).
+BIO_WORKFLOWS_SHARED="${BIO_WORKFLOWS_SHARED:-$(cd "$REPO_DIR/.." && pwd)/shared}"
+export BIO_WORKFLOWS_SHARED
+source "$BIO_WORKFLOWS_SHARED/lib/launcher.sh"
+
 PROJECT_DIR=""
 CONFIG_PATH=""
 EXTRA_CONFIG=""
@@ -43,22 +48,9 @@ MAX_STATUS_CHECKS_PER_SECOND="${CHIP_MAX_STATUS_CHECKS_PER_SECOND:-}"
 POSITIONAL=()
 SNAKEMAKE_EXTRA_ARGS=()
 
-timestamp() {
-    date '+%Y-%m-%d %H:%M:%S'
-}
 
-info() {
-    printf '[%s] [INFO] %s\n' "$(timestamp)" "$*"
-}
 
-warn() {
-    printf '[%s] [WARN] %s\n' "$(timestamp)" "$*" >&2
-}
 
-die() {
-    printf '[%s] [ERROR] %s\n' "$(timestamp)" "$*" >&2
-    exit 1
-}
 
 usage() {
     cat <<'EOF'
@@ -132,14 +124,6 @@ print_version() {
     printf 'run.sh %s\n' "$SCRIPT_VERSION"
 }
 
-resolve_path() {
-    local value="$1"
-    if [[ "$value" = /* ]]; then
-        printf '%s\n' "$value"
-    else
-        printf '%s\n' "$CALL_DIR/$value"
-    fi
-}
 
 while (($#)); do
     case "$1" in

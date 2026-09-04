@@ -11,6 +11,7 @@ rule software_versions:
                                        os.path.join(BASE_DIR, "config", "software.yaml")),
         workflow_dir=WORKFLOW_DIR,
         python=os.environ.get("CHIP_PYTHON", "python3"),
+        snakemake_version=__import__("importlib.metadata", fromlist=["version"]).version("snakemake"),
     threads: rthreads("software_versions")
     resources:
         mem_mb=rmem("software_versions"),
@@ -18,4 +19,5 @@ rule software_versions:
         runtime_sec=rruntime_sec("software_versions"),
     shell:
         "{params.python} {params.script} --software-config {params.software_config} "
-        "--workflow {params.workflow_dir} --out {output} >> {log} 2>&1"
+        "--workflow {params.workflow_dir} --snakemake-version {params.snakemake_version} "
+        "--out {output} >> {log} 2>&1"
