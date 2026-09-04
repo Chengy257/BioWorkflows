@@ -11,6 +11,10 @@
 # 工作目录（或改成绝对路径）。6 列 schema 与逐行校验规则见 config/samples.csv。
 grouplist: "samples.csv"
 
+# ---------- 物种与输出 ----------
+species: "osa"                  # osa | hsa；预设见 config/species.yaml
+results_dir: "results"          # 运行产物根目录；原始数据 1.rawdata/ 留在工作目录根部
+
 # ---------- 参考基因组（运行前必须替换为集群真实路径；换物种同步改 genome_size） ----------
 genome_fa: "/path/to/genome.fasta"   # bowtie2 建索引输入
 gtf: "/path/to/annotation.gtf"       # 峰注释用

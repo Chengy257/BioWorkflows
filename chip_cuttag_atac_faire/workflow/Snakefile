@@ -1,30 +1,48 @@
 # =====================================================================
-# chip_cuttag_atac_faire —— 统一入口 Snakefile
+# chip_cuttag_atac_faire — unified workflow entry point.
 #
-# ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq 一体化 Snakemake 流程
-# 根据 samples.csv 的 seqtype 列自动路由，支持混型项目。
+# ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq in one Snakemake workflow;
+# rules are routed automatically from the seqtype column of samples.csv
+# (mixed-assay projects are supported).
 #
-# 推荐启动方式（完整选项见 run.sh --help）:
+# Recommended launcher (full options: run.sh --help):
 #   bash run.sh -P /path/to/workdir -c config.yaml --profile pbs
-# 直接调用 Snakemake 亦支持:
+# Direct Snakemake invocation also works:
 #   CHIP_CONFIG=/path/to/config.yaml snakemake -s workflow/Snakefile -j 10
-# 详见 README.md
+# See README.md.
 # =====================================================================
 import os
 
-BASE_DIR = os.path.dirname(workflow.basedir)   # 仓库根目录
-WORKFLOW_DIR = workflow.basedir                # workflow/ 目录
+BASE_DIR = os.path.dirname(workflow.basedir)   # Repository root
+WORKFLOW_DIR = workflow.basedir                # workflow/ directory
 
-# CHIP_CONFIG 由 run.sh 注入项目级配置；缺省回落仓库默认配置
+# Per-rule scheduler resources are managed in a dedicated file so analysis
+# config and cluster resources stay separately editable (run.sh injects
+# CHIP_RESOURCES_CONFIG when the project directory carries its own copy).
+configfile: os.environ.get("CHIP_RESOURCES_CONFIG", os.path.join(BASE_DIR, "config", "resources.yaml"))
+
+# CHIP_CONFIG is injected by run.sh for the project-level config; falls back
+# to the repository default.
 configfile: os.environ.get("CHIP_CONFIG", os.path.join(BASE_DIR, "config", "config.yaml"))
 
-# 所有 shell 以 bash -eo pipefail 执行：任何一步失败立即中断，管道错误可捕获。
-# 不加 set -u：集群提交与工具包装脚本在 -u 下可能因未绑定变量报错，保守维持。
+# Resolve species presets first (config/species.yaml): explicit top-level
+# project config values win, unset keys fall back to the preset.
+SPECIES = config.get("species", "osa")
+if SPECIES not in ("osa", "hsa"):
+    raise ValueError(f"Unknown species '{SPECIES}'. Choose osa or hsa.")
+for _key, _value in (config.get(SPECIES) or {}).items():
+    if _key not in config:
+        config[_key] = _value
+
+# All shells run under bash -eo pipefail: any failing step aborts immediately
+# and pipeline errors are propagated. No set -u: cluster submission and tool
+# wrappers may fail on unbound variables under -u, so keep it conservative.
 shell.executable("/bin/bash")
 shell.prefix("set -eo pipefail; ")
 
 # ---------------------------------------------------------------------
-# 共享定义：样本表解析、config 校验、规则查询函数、目标汇总
+# Shared definitions: sample-table parsing, config validation, rule
+# query helpers, and target aggregation
 # ---------------------------------------------------------------------
 include: os.path.join(WORKFLOW_DIR, "rules", "common.smk")
 
@@ -35,12 +53,12 @@ rule all:
         BAM_TARGETS,
         PEAK_TARGETS,
         BW_TARGETS,
-        "4.peak/anno_result/Peakanno_PeakDistributions.pdf",
+        R("4.peak/anno_result/Peakanno_PeakDistributions.pdf"),
         VERSION_TARGETS,
 
 
 # ---------------------------------------------------------------------
-# 各模块规则
+# Rule modules
 # ---------------------------------------------------------------------
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "dedup.smk")
@@ -53,5 +71,5 @@ if config["qc"]["frip"]:
 if config["qc"]["deeptools"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "qc_deeptools.smk")
 
-# 运行元数据（软件版本记录），置于各模块之后
+# Run metadata (software-version record), placed after all modules
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

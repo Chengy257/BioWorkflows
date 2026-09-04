@@ -102,7 +102,7 @@ FAIL=0
 if [[ "$REAL_RUN" == 1 ]]; then
     # ---------- 实跑产物存在性断言（样本数 = 5：chip 组 3 + atac 组 2） ----------
     shopt -s nullglob
-    bams=("$WORK_DIR"/3.align/bowtie2/*_sorted.bam)
+    bams=("$WORK_DIR"/results/3.align/bowtie2/*_sorted.bam)
     shopt -u nullglob
     if [[ ${#bams[@]} -eq 5 ]]; then
         echo "  PASS  3.align/bowtie2/*_sorted.bam 共 ${#bams[@]} 个（期望 5）"
@@ -110,11 +110,11 @@ if [[ "$REAL_RUN" == 1 ]]; then
         echo "  FAIL  3.align/bowtie2/*_sorted.bam 共 ${#bams[@]} 个（期望 5）"; FAIL=1
     fi
     EXPECTED=(
-        "4.peak/g1_peaks.narrowPeak"
-        "4.peak/g2_peaks.narrowPeak"
-        "5.QC/frip/FRiP_summary.tsv"
-        "2.cleandata/fastqc/multiqc/multiqc_report.html"
-        "5.QC/software_versions.yaml"
+        "results/4.peak/g1_peaks.narrowPeak"
+        "results/4.peak/g2_peaks.narrowPeak"
+        "results/5.QC/frip/FRiP_summary.tsv"
+        "results/2.cleandata/fastqc/multiqc/multiqc_report.html"
+        "results/5.QC/software_versions.yaml"
     )
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then

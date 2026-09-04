@@ -1,19 +1,21 @@
-# 峰调用：按分组（treat vs control）并行，规则选择由分组的 assay/peak_type 决定
-#   chip / cuttag + narrow  -> callpeak_narrow  (MACS2 -q 0.05 + summits)
+# Peak calling: one job per group (treat vs control); the concrete rule is
+# selected by the group's assay/peak_type:
+#   chip / cuttag + narrow  -> callpeak_narrow  (MACS2 -q + summits)
 #   chip / cuttag + broad   -> callpeak_broad   (MACS2 --broad)
-#   atac / faire            -> callpeak_atac    (见 config peak.atac.mode)
-# 分组无对照时自动省略 -c（MACS2 回退到局部 lambda）。
-# bigWig 信号轨道由 bigwig 规则从 treat_pileup/control_lambda 生成。
+#   atac / faire            -> callpeak_atac    (see config peak.atac.mode)
+# Groups without a control automatically drop -c (MACS2 falls back to a
+# local lambda). bigWig signal tracks come from the bigwig rule, built from
+# treat_pileup/control_lambda.
 
 rule callpeak_narrow:
     input:
         treat=lambda wc: group_bams(wc.group, "treat"),
         control=lambda wc: group_bams(wc.group, "control"),
     output:
-        peaks="4.peak/{group}_peaks.narrowPeak",
-        summits="4.peak/{group}_summits.bed",
-        pileup="4.peak/{group}_treat_pileup.bdg",
-        lambda_="4.peak/{group}_control_lambda.bdg",
+        peaks=R("4.peak/{group}_peaks.narrowPeak"),
+        summits=R("4.peak/{group}_summits.bed"),
+        pileup=R("4.peak/{group}_treat_pileup.bdg"),
+        lambda_=R("4.peak/{group}_control_lambda.bdg"),
     wildcard_constraints:
         group=_group_regex(_groups_of("chip", "narrow") + _groups_of("cuttag", "narrow")),
     params:
@@ -22,22 +24,22 @@ rule callpeak_narrow:
         gsize=config["genome_size"],
         keepdup=config["peak"]["keepdup"],
         qvalue=config["peak"]["qvalue"],
+        outdir=lambda wc, output: os.path.dirname(output.peaks),
     log:
-        "logs/callpeak/{group}_narrow.log",
-    threads: 1  # MACS2 为单线程程序，按实际占用申请资源
+        R("logs/callpeak/{group}_narrow.log"),
+    threads: rthreads("callpeak_narrow")  # MACS2 is single-threaded; request accordingly
     resources:
-        mem_mb=res("callpeak_narrow", 8192),
-        runtime_min=res("callpeak_narrow", 180),
-        runtime_sec=res("callpeak_narrow", 180) * 60,
+        mem_mb=rmem("callpeak_narrow"),
+        runtime_min=rruntime("callpeak_narrow"),
+        runtime_sec=rruntime_sec("callpeak_narrow"),
     shell:
         """
-        mkdir -p 4.peak logs/callpeak
         macs2 callpeak \
             -t {input.treat} {params.control} \
             -f {params.fmt} -g {params.gsize} \
             --keep-dup {params.keepdup} -q {params.qvalue} \
             -B --SPMR --call-summits \
-            --outdir 4.peak -n {wildcards.group} > {log} 2>&1
+            --outdir {params.outdir} -n {wildcards.group} > {log} 2>&1
         """
 
 
@@ -46,9 +48,9 @@ rule callpeak_broad:
         treat=lambda wc: group_bams(wc.group, "treat"),
         control=lambda wc: group_bams(wc.group, "control"),
     output:
-        peaks="4.peak/{group}_peaks.broadPeak",
-        pileup="4.peak/{group}_treat_pileup.bdg",
-        lambda_="4.peak/{group}_control_lambda.bdg",
+        peaks=R("4.peak/{group}_peaks.broadPeak"),
+        pileup=R("4.peak/{group}_treat_pileup.bdg"),
+        lambda_=R("4.peak/{group}_control_lambda.bdg"),
     wildcard_constraints:
         group=_group_regex(_groups_of("chip", "broad") + _groups_of("cuttag", "broad")),
     params:
@@ -57,22 +59,22 @@ rule callpeak_broad:
         gsize=config["genome_size"],
         keepdup=config["peak"]["keepdup"],
         broad_cutoff=config["peak"]["broad_cutoff"],
+        outdir=lambda wc, output: os.path.dirname(output.peaks),
     log:
-        "logs/callpeak/{group}_broad.log",
-    threads: 1  # MACS2 为单线程程序，按实际占用申请资源
+        R("logs/callpeak/{group}_broad.log"),
+    threads: rthreads("callpeak_broad")  # MACS2 is single-threaded; request accordingly
     resources:
-        mem_mb=res("callpeak_broad", 8192),
-        runtime_min=res("callpeak_broad", 180),
-        runtime_sec=res("callpeak_broad", 180) * 60,
+        mem_mb=rmem("callpeak_broad"),
+        runtime_min=rruntime("callpeak_broad"),
+        runtime_sec=rruntime_sec("callpeak_broad"),
     shell:
         """
-        mkdir -p 4.peak logs/callpeak
         macs2 callpeak \
             -t {input.treat} {params.control} \
             -f {params.fmt} -g {params.gsize} \
             --keep-dup {params.keepdup} --broad --broad-cutoff {params.broad_cutoff} \
             -B --SPMR \
-            --outdir 4.peak -n {wildcards.group} > {log} 2>&1
+            --outdir {params.outdir} -n {wildcards.group} > {log} 2>&1
         """
 
 
@@ -81,17 +83,19 @@ rule callpeak_atac:
         treat=lambda wc: group_bams(wc.group, "treat"),
         control=lambda wc: group_bams(wc.group, "control"),
     output:
-        peaks="4.peak/{group}_peaks.narrowPeak",
-        summits="4.peak/{group}_summits.bed",
-        pileup="4.peak/{group}_treat_pileup.bdg",
-        lambda_="4.peak/{group}_control_lambda.bdg",
+        peaks=R("4.peak/{group}_peaks.narrowPeak"),
+        summits=R("4.peak/{group}_summits.bed"),
+        pileup=R("4.peak/{group}_treat_pileup.bdg"),
+        lambda_=R("4.peak/{group}_control_lambda.bdg"),
     wildcard_constraints:
         group=_group_regex(_groups_of("atac") + _groups_of("faire")),
     params:
         control=group_control_arg,
-        # mode=bampe（默认）: ENCODE ATAC v2 管线做法，按真实片段长度堆叠，
-        #   此时 MACS2 忽略 shift/extsize，故不传；
-        # mode=shifted: 经典 Tn5 偏移校正配方（-f BAM --nomodel --shift -100 --extsize 200）
+        # mode=bampe (default): the ENCODE ATAC v2 recipe piling up real
+        #   fragment lengths; MACS2 then ignores shift/extsize, so they are
+        #   not passed at all;
+        # mode=shifted: the classic Tn5 offset correction recipe
+        #   (-f BAM --nomodel --shift -100 --extsize 200)
         fmt=lambda wc: ("BAMPE" if GROUPS[wc.group]["layout"] == "PE"
                         else "BAM") if config["peak"]["atac"]["mode"] == "bampe" else "BAM",
         nomodel=lambda wc: "" if config["peak"]["atac"]["mode"] == "bampe" else
@@ -100,55 +104,57 @@ rule callpeak_atac:
         gsize=config["genome_size"],
         keepdup=config["peak"]["keepdup"],
         qvalue=config["peak"]["qvalue"],
+        outdir=lambda wc, output: os.path.dirname(output.peaks),
     log:
-        "logs/callpeak/{group}_atac_faire.log",
-    threads: 1  # MACS2 为单线程程序，按实际占用申请资源
+        R("logs/callpeak/{group}_atac_faire.log"),
+    threads: rthreads("callpeak_atac")  # MACS2 is single-threaded; request accordingly
     resources:
-        mem_mb=res("callpeak_atac", 8192),
-        runtime_min=res("callpeak_atac", 180),
-        runtime_sec=res("callpeak_atac", 180) * 60,
+        mem_mb=rmem("callpeak_atac"),
+        runtime_min=rruntime("callpeak_atac"),
+        runtime_sec=rruntime_sec("callpeak_atac"),
     shell:
         """
-        mkdir -p 4.peak logs/callpeak
         macs2 callpeak \
             -t {input.treat} {params.control} \
             -f {params.fmt} -g {params.gsize} \
             --keep-dup {params.keepdup} -q {params.qvalue} \
             {params.nomodel} \
             -B --SPMR --call-summits \
-            --outdir 4.peak -n {wildcards.group} > {log} 2>&1
+            --outdir {params.outdir} -n {wildcards.group} > {log} 2>&1
         """
 
 
 rule bigwig:
     input:
-        pileup="4.peak/{group}_treat_pileup.bdg",
-        lambda_="4.peak/{group}_control_lambda.bdg",
+        pileup=R("4.peak/{group}_treat_pileup.bdg"),
+        lambda_=R("4.peak/{group}_control_lambda.bdg"),
         chromsize=config["chromsize"],
     output:
-        "4.peak/{group}_FE.bw",
+        R("4.peak/{group}_FE.bw"),
     wildcard_constraints:
         group=_group_regex(list(GROUPS)),
+    params:
+        outdir=lambda wc, output: os.path.dirname(str(output)),
     log:
-        "logs/bigwig/{group}.log",
-    threads: 1
+        R("logs/bigwig/{group}.log"),
+    threads: rthreads("bigwig")
     resources:
-        mem_mb=res("bigwig", 4096),
-        runtime_min=res("bigwig", 60),
-        runtime_sec=res("bigwig", 60) * 60,
+        mem_mb=rmem("bigwig"),
+        runtime_min=rruntime("bigwig"),
+        runtime_sec=rruntime_sec("bigwig"),
     shell:
         """
-        mkdir -p 4.peak logs/bigwig
         macs2 bdgcmp \
             -t {input.pileup} -c {input.lambda_} \
-            -o 4.peak/{wildcards.group}_FE.bdg -m FE -p 0.00001 > {log} 2>&1
-        bedtools slop -i 4.peak/{wildcards.group}_FE.bdg -g {input.chromsize} -b 0 \
-            | bedClip stdin {input.chromsize} 4.peak/{wildcards.group}_FE.clip >> {log} 2>&1
-        # bedGraphToBigWig 要求染色体顺序与 chrom.sizes 一致，用 bedtools sort -g 按
-        # genome 文件顺序排序（字典序 sort 在 Chr10/Chr2 这类命名下顺序会错）
-        bedtools sort -g {input.chromsize} -i 4.peak/{wildcards.group}_FE.clip \
-            > 4.peak/{wildcards.group}_FE.clip.sorted
-        bedGraphToBigWig 4.peak/{wildcards.group}_FE.clip.sorted {input.chromsize} {output} >> {log} 2>&1
-        rm -f 4.peak/{wildcards.group}_FE.bdg \
-              4.peak/{wildcards.group}_FE.clip 4.peak/{wildcards.group}_FE.clip.sorted
+            -o {params.outdir}/{wildcards.group}_FE.bdg -m FE -p 0.00001 > {log} 2>&1
+        bedtools slop -i {params.outdir}/{wildcards.group}_FE.bdg -g {input.chromsize} -b 0 \
+            | bedClip stdin {input.chromsize} {params.outdir}/{wildcards.group}_FE.clip >> {log} 2>&1
+        # bedGraphToBigWig requires chromosome order to match the chrom.sizes
+        # file; sort with bedtools sort -g (lexicographic sort breaks names
+        # like Chr10/Chr2).
+        bedtools sort -g {input.chromsize} -i {params.outdir}/{wildcards.group}_FE.clip \
+            > {params.outdir}/{wildcards.group}_FE.clip.sorted
+        bedGraphToBigWig {params.outdir}/{wildcards.group}_FE.clip.sorted {input.chromsize} {output} >> {log} 2>&1
+        rm -f {params.outdir}/{wildcards.group}_FE.bdg \
+              {params.outdir}/{wildcards.group}_FE.clip {params.outdir}/{wildcards.group}_FE.clip.sorted
         """

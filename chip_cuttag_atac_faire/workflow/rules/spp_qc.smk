@@ -1,27 +1,28 @@
-# 可选 QC：SPP 交叉相关分析（NSC / RSC / 片段长度估计），ENCODE 标准
-# 由 config["qc"]["nsc_rsc"] 开关控制；CUT&Tag 等短片段数据建议关闭。
-# 阈值参考：NSC >= 1.05、RSC >= 0.8（详见 README QC 表）。
-# 注：run_spp.R 的 -savp 图件输出文件名依输入 BAM 派生且落在当前目录，
-# 不做声明管理，故不启用；全部指标已含于 -out 文本输出。
+# Optional QC: SPP cross-correlation analysis (NSC / RSC / fragment-length
+# estimate), the ENCODE standard. Controlled by config["qc"]["nsc_rsc"];
+# recommended off for short-fragment data such as CUT&Tag.
+# Thresholds: NSC >= 1.05, RSC >= 0.8 (see the QC table in README).
+# Note: run_spp.R -savp plot files derive their names from the input BAM and
+# land in the current directory; they are not declared or managed. All
+# metrics are contained in the -out text output.
 
 rule spp_crosscorr:
     input:
         bam=lambda wc: sample_bam(wc.sample),
     output:
-        txt="5.QC/spp/{sample}_spp_crosscorr.txt",
-        fraglen="5.QC/spp/{sample}_fragment_len.txt",
-        nsc="5.QC/spp/{sample}_NSC.txt",
-        rsc="5.QC/spp/{sample}_RSC.txt",
+        txt=R("5.QC/spp/{sample}_spp_crosscorr.txt"),
+        fraglen=R("5.QC/spp/{sample}_fragment_len.txt"),
+        nsc=R("5.QC/spp/{sample}_NSC.txt"),
+        rsc=R("5.QC/spp/{sample}_RSC.txt"),
     log:
-        "logs/spp/{sample}.log",
-    threads: config["threads"]
+        R("logs/spp/{sample}.log"),
+    threads: rthreads("spp_crosscorr")
     resources:
-        mem_mb=res("spp_crosscorr", 8192),
-        runtime_min=res("spp_crosscorr", 180),
-        runtime_sec=res("spp_crosscorr", 180) * 60,
+        mem_mb=rmem("spp_crosscorr"),
+        runtime_min=rruntime("spp_crosscorr"),
+        runtime_sec=rruntime_sec("spp_crosscorr"),
     shell:
         """
-        mkdir -p 5.QC/spp logs/spp
         run_spp.R -c={input.bam} -p={threads} -out={output.txt} > {log} 2>&1
         sed -r 's/,[^\\t]+//g' {output.txt} | cut -f3 | cut -d, -f1 > {output.fraglen}
         cut -f9 {output.txt} > {output.nsc}
@@ -31,23 +32,23 @@ rule spp_crosscorr:
 
 rule spp_summary:
     input:
-        fraglen=expand("5.QC/spp/{sample}_fragment_len.txt", sample=SAMPLES),
-        nsc=expand("5.QC/spp/{sample}_NSC.txt", sample=SAMPLES),
-        rsc=expand("5.QC/spp/{sample}_RSC.txt", sample=SAMPLES),
+        fraglen=expand(R("5.QC/spp/{sample}_fragment_len.txt"), sample=SAMPLES),
+        nsc=expand(R("5.QC/spp/{sample}_NSC.txt"), sample=SAMPLES),
+        rsc=expand(R("5.QC/spp/{sample}_RSC.txt"), sample=SAMPLES),
     output:
-        "5.QC/spp/NSC_RSC_mqc.tsv",
+        R("5.QC/spp/NSC_RSC_mqc.tsv"),
     params:
         samples=" ".join(SAMPLES),
+        spp_dir=lambda wc, output: os.path.dirname(str(output)),
     log:
-        "logs/spp/summary.log",
-    threads: 1
+        R("logs/spp/summary.log"),
+    threads: rthreads("spp_summary")
     resources:
-        mem_mb=res("spp_summary", 1024),
-        runtime_min=res("spp_summary", 10),
-        runtime_sec=res("spp_summary", 10) * 60,
+        mem_mb=rmem("spp_summary"),
+        runtime_min=rruntime("spp_summary"),
+        runtime_sec=rruntime_sec("spp_summary"),
     shell:
         """
-        mkdir -p 5.QC/spp logs/spp
         {{
             echo "# id: 'nsc_rsc_table'"
             echo "# section_name: 'SPP cross-correlation (NSC/RSC)'"
@@ -57,9 +58,9 @@ rule spp_summary:
             echo -e "sample\\tfragment_length\\tNSC\\tRSC"
             for s in {params.samples}; do
                 printf "%s\\t%s\\t%s\\t%s\\n" "$s" \\
-                    "$(cat 5.QC/spp/${{s}}_fragment_len.txt)" \\
-                    "$(cat 5.QC/spp/${{s}}_NSC.txt)" \\
-                    "$(cat 5.QC/spp/${{s}}_RSC.txt)"
+                    "$(cat {params.spp_dir}/${{s}}_fragment_len.txt)" \\
+                    "$(cat {params.spp_dir}/${{s}}_NSC.txt)" \\
+                    "$(cat {params.spp_dir}/${{s}}_RSC.txt)"
             done
         }} > {output} 2> {log}
         """

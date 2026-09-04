@@ -50,8 +50,14 @@ def lres(key):
 
 def get_samples():
     """Read sample ids from SampleListFile; the header must contain id and group."""
+    path = config["SampleListFile"]
+    if not os.path.isfile(path):
+        raise ValueError(
+            f"SampleListFile {path!r} does not exist (configure it relative to the "
+            "working directory, or as an absolute path; see config/samples.csv)"
+        )
     ids = []
-    with open(config["SampleListFile"], "r") as samples_list:
+    with open(path, "r") as samples_list:
         next(samples_list)
         for line in samples_list:
             line = line.strip().split(",")
@@ -59,8 +65,66 @@ def get_samples():
     return ids
 
 
+def validate_config(cfg):
+    """Parse-time hard validation (mirrors chip_cuttag_atac_faire): required
+    keys, types and value ranges aggregated into a single report. Reference
+    existence only warns (--lint/dry-run often run where references are
+    absent)."""
+    errors, warnings = [], []
+    for key in ("SampleListFile", "control_group", "results_dir", "FoldChange", "padj"):
+        if key not in cfg:
+            errors.append(f"missing required config key: {key}")
+    if not isinstance(cfg.get("results_dir", "results"), str):
+        errors.append(f"results_dir must be a string, got {cfg.get('results_dir')!r}")
+    for key in ("FoldChange", "padj"):
+        if key in cfg:
+            try:
+                float(cfg[key])
+            except (TypeError, ValueError):
+                errors.append(f"{key} must be numeric, got {cfg[key]!r}")
+    try:
+        if not 0 < float(cfg.get("padj", 0.05)) <= 1:
+            errors.append(f"padj must be in (0, 1], got {cfg.get('padj')!r}")
+    except (TypeError, ValueError):
+        pass  # already reported by the numeric check above
+    for key in ("pca_ntop", "threads"):
+        if key in cfg:
+            v = cfg[key]
+            if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+                errors.append(f"{key} must be an integer >= 1, got {v!r}")
+    if cfg.get("batch_correction") not in ("T", "F"):
+        errors.append(f"batch_correction must be 'T' or 'F', got {cfg.get('batch_correction')!r}")
+    resources = cfg.get("resources") or {}
+    if not isinstance(resources, dict):
+        errors.append(f"resources must be a mapping of rule -> {{threads, mem_mb, runtime_min}}, got {resources!r}")
+    else:
+        for rule, entry in resources.items():
+            if not isinstance(entry, dict):
+                errors.append(f"resources.{rule} must be a mapping, got {entry!r}")
+                continue
+            for field in entry:
+                if field not in ("threads", "mem_mb", "runtime_min"):
+                    errors.append(f"resources.{rule}.{field}: unknown field (supported: threads/mem_mb/runtime_min)")
+    if errors:
+        raise ValueError(
+            f"config validation failed ({len(errors)} issues):\n  " + "\n  ".join(errors)
+        )
+    for key in ("genome", "gtf", "bed"):
+        value = cfg.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        if "/path/to/" in value:
+            warnings.append(f"{key} is still a placeholder: {value} (fill real paths in the project config)")
+        elif not os.path.exists(value) and not os.path.isabs(value):
+            warnings.append(f"{key} is relative and not found from the working directory: {value}")
+    for w in warnings:
+        print(f"[config warning] {w}")
+
+
 SAMPLES = get_samples()
 SAMPLE_WILDCARD = "(?:" + "|".join(re.escape(sample) for sample in SAMPLES) + ")"
+
+validate_config(config)
 
 
 def _raw_reads(sample):
@@ -165,7 +229,7 @@ def multiqc_inputs(wildcards=None):
     if PIPELINE in ("upstream", "deg", "lncrna"):
         files += [R(f"4.expression/{sample}.log") for sample in SAMPLES]
     if PIPELINE == "lncrna":
-        files += [R(f"5.expression/lncRNA/{sample}.log") for sample in SAMPLES]
+        files += [R(f"4.lncrna/expression/{sample}.log") for sample in SAMPLES]
     return files
 
 

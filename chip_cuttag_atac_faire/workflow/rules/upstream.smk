@@ -1,83 +1,85 @@
-# 上游公共步骤：trim_galore 修剪 → fastqc → multiqc → bowtie2 建索引 → 比对
-# 依赖 workflow/rules/common.smk 提供的 SAMPLES / config
+# Upstream shared steps: trim_galore trimming -> fastqc -> multiqc ->
+# bowtie2 index building -> alignment.
+# Depends on workflow/rules/common.smk for SAMPLES / config / helpers.
 
 rule trim_adapter:
     input:
         fq1="1.rawdata/{sample}_1.fq.gz",
         fq2="1.rawdata/{sample}_2.fq.gz",
     output:
-        fq1="2.cleandata/{sample}_1_val_1.fq.gz",
-        fq2="2.cleandata/{sample}_2_val_2.fq.gz",
+        fq1=R("2.cleandata/{sample}_1_val_1.fq.gz"),
+        fq2=R("2.cleandata/{sample}_2_val_2.fq.gz"),
     params:
         quality=config["trim"]["quality"],
         stringency=config["trim"]["stringency"],
         error=config["trim"]["error_rate"],
         extra=config["trim"]["extra"],
+        outdir=lambda wc, output: os.path.dirname(output.fq1),
     log:
-        "logs/trim_galore/{sample}.log",
-    threads: config["threads"]
+        R("logs/trim_galore/{sample}.log"),
+    threads: rthreads("trim_adapter")
     resources:
-        mem_mb=res("trim_adapter", 4096),
-        runtime_min=res("trim_adapter", 60),
-        runtime_sec=res("trim_adapter", 60) * 60,
+        mem_mb=rmem("trim_adapter"),
+        runtime_min=rruntime("trim_adapter"),
+        runtime_sec=rruntime_sec("trim_adapter"),
     shell:
         """
-        mkdir -p 2.cleandata logs/trim_galore
         trim_galore -q {params.quality} --stringency {params.stringency} \
             -e {params.error} {params.extra} --gzip -j {threads} \
-            -o 2.cleandata/ --paired {input.fq1} {input.fq2} > {log} 2>&1
+            -o {params.outdir}/ --paired {input.fq1} {input.fq2} > {log} 2>&1
         """
 
 
 rule fastqc:
     input:
-        fq1="2.cleandata/{sample}_1_val_1.fq.gz",
-        fq2="2.cleandata/{sample}_2_val_2.fq.gz",
+        fq1=R("2.cleandata/{sample}_1_val_1.fq.gz"),
+        fq2=R("2.cleandata/{sample}_2_val_2.fq.gz"),
     output:
-        html1="2.cleandata/fastqc/{sample}_1_val_1_fastqc.html",
-        html2="2.cleandata/fastqc/{sample}_2_val_2_fastqc.html",
-        zip1="2.cleandata/fastqc/{sample}_1_val_1_fastqc.zip",
-        zip2="2.cleandata/fastqc/{sample}_2_val_2_fastqc.zip",
+        html1=R("2.cleandata/fastqc/{sample}_1_val_1_fastqc.html"),
+        html2=R("2.cleandata/fastqc/{sample}_2_val_2_fastqc.html"),
+        zip1=R("2.cleandata/fastqc/{sample}_1_val_1_fastqc.zip"),
+        zip2=R("2.cleandata/fastqc/{sample}_2_val_2_fastqc.zip"),
+    params:
+        fastqc_dir=lambda wc, output: os.path.dirname(output.html1),
     log:
-        "logs/fastqc/{sample}.log",
-    threads: config["threads"]
+        R("logs/fastqc/{sample}.log"),
+    threads: rthreads("fastqc")
     resources:
-        mem_mb=res("fastqc", 2048),
-        runtime_min=res("fastqc", 30),
-        runtime_sec=res("fastqc", 30) * 60,
+        mem_mb=rmem("fastqc"),
+        runtime_min=rruntime("fastqc"),
+        runtime_sec=rruntime_sec("fastqc"),
     shell:
         """
-        mkdir -p 2.cleandata/fastqc logs/fastqc
-        fastqc -f fastq -t {threads} -o 2.cleandata/fastqc/ {input} > {log} 2>&1
+        fastqc -f fastq -t {threads} -o {params.fastqc_dir} {input} > {log} 2>&1
         """
 
 
 rule multiqc:
     input:
-        fastqc=expand("2.cleandata/fastqc/{sample}_{r}_val_{r}_fastqc.zip",
+        fastqc=expand(R("2.cleandata/fastqc/{sample}_{r}_val_{r}_fastqc.zip"),
                       sample=SAMPLES, r=["1", "2"]),
-        bowtie2_logs=expand("logs/bowtie2_mapping/{sample}.log", sample=SAMPLES),
-        dup_metrics=expand("3.align/bowtie2/{sample}_dup_metrics.txt",
+        bowtie2_logs=expand(R("logs/bowtie2_mapping/{sample}.log"), sample=SAMPLES),
+        dup_metrics=expand(R("3.align/bowtie2/{sample}_dup_metrics.txt"),
                            sample=[s for s in SAMPLES if assay_needs_dedup(SEQTYPE_OF[s])]),
-        frip_mqc=lambda wc: (["5.QC/frip/FRiP_mqc.tsv"]
-                              if config["qc"]["frip"] else []),
-        spp_mqc=lambda wc: (["5.QC/spp/NSC_RSC_mqc.tsv"]
-                             if config["qc"]["nsc_rsc"] else []),
+        frip_mqc=lambda wc: ([R("5.QC/frip/FRiP_mqc.tsv")]
+                             if config["qc"]["frip"] else []),
+        spp_mqc=lambda wc: ([R("5.QC/spp/NSC_RSC_mqc.tsv")]
+                            if config["qc"]["nsc_rsc"] else []),
     output:
-        "2.cleandata/fastqc/multiqc/multiqc_report.html",
-    log:
-        "logs/multiqc.log",
-    threads: 1
-    resources:
-        mem_mb=res("multiqc", 4096),
-        runtime_min=res("multiqc", 30),
-        runtime_sec=res("multiqc", 30) * 60,
+        R("2.cleandata/fastqc/multiqc/multiqc_report.html"),
     params:
         mqc_config=os.path.join(WORKFLOW_DIR, "multiqc_config.yaml"),
+        outdir=lambda wc, output: os.path.dirname(str(output)),
+    log:
+        R("logs/multiqc.log"),
+    threads: rthreads("multiqc")
+    resources:
+        mem_mb=rmem("multiqc"),
+        runtime_min=rruntime("multiqc"),
+        runtime_sec=rruntime_sec("multiqc"),
     shell:
         """
-        mkdir -p 2.cleandata/fastqc/multiqc
-        multiqc --force -o 2.cleandata/fastqc/multiqc -c {params.mqc_config} {input} > {log} 2>&1
+        multiqc --force -o {params.outdir} -c {params.mqc_config} {input} > {log} 2>&1
         """
 
 
@@ -85,49 +87,54 @@ rule bowtie2_index:
     input:
         config["genome_fa"],
     output:
-        "0.index/bowtie2.1.bt2",
+        R("0.index/bowtie2.1.bt2"),
+    params:
+        # bowtie2-build writes <prefix>.1.bt2 .. <prefix>.rev.2.bt2; only the
+        # first file is declared as the DAG sentinel.
+        prefix=lambda wc, output: str(output)[:-len(".1.bt2")],
     log:
-        "logs/bowtie2_index.log",
-    threads: config["threads"]
+        R("logs/bowtie2_index.log"),
+    threads: rthreads("bowtie2_index")
     resources:
-        mem_mb=res("bowtie2_index", 8192),
-        runtime_min=res("bowtie2_index", 120),
-        runtime_sec=res("bowtie2_index", 120) * 60,
+        mem_mb=rmem("bowtie2_index"),
+        runtime_min=rruntime("bowtie2_index"),
+        runtime_sec=rruntime_sec("bowtie2_index"),
     shell:
         """
-        mkdir -p 0.index logs
-        bowtie2-build --threads {threads} {input} 0.index/bowtie2 > {log} 2>&1
+        bowtie2-build --threads {threads} {input} {params.prefix} > {log} 2>&1
         """
 
 
 rule bowtie2_mapping:
     input:
-        index="0.index/bowtie2.1.bt2",
-        fq1="2.cleandata/{sample}_1_val_1.fq.gz",
-        fq2="2.cleandata/{sample}_2_val_2.fq.gz",
+        index=R("0.index/bowtie2.1.bt2"),
+        fq1=R("2.cleandata/{sample}_1_val_1.fq.gz"),
+        fq2=R("2.cleandata/{sample}_2_val_2.fq.gz"),
     output:
-        bam="3.align/bowtie2/{sample}_sorted.bam",
-        bai="3.align/bowtie2/{sample}_sorted.bam.bai",
+        bam=R("3.align/bowtie2/{sample}_sorted.bam"),
+        bai=R("3.align/bowtie2/{sample}_sorted.bam.bai"),
     params:
         extra=config["bowtie2_extra"],
         min_mapq=config["min_mapq"],
+        idx_prefix=lambda wc, input: str(input.index)[:-len(".1.bt2")],
+        unmapped=lambda wc, output: os.path.join(os.path.dirname(str(output.bam)),
+                                                 f"{wc.sample}_unmapped.fq.gz"),
     log:
-        "logs/bowtie2_mapping/{sample}.log",
-    threads: config["threads"]
+        R("logs/bowtie2_mapping/{sample}.log"),
+    threads: rthreads("bowtie2_mapping")
     resources:
-        mem_mb=res("bowtie2_mapping", 16384),
-        runtime_min=res("bowtie2_mapping", 240),
-        runtime_sec=res("bowtie2_mapping", 240) * 60,
+        mem_mb=rmem("bowtie2_mapping"),
+        runtime_min=rruntime("bowtie2_mapping"),
+        runtime_sec=rruntime_sec("bowtie2_mapping"),
     shell:
         """
-        mkdir -p 3.align/bowtie2 logs/bowtie2_mapping
-        # 比对，未比对上的双端读对单独存放；比对摘要写入日志
-        bowtie2 -x 0.index/bowtie2 -p {threads} {params.extra} \
+        # Alignment; unaligned pairs are kept separately and the summary goes to the log.
+        bowtie2 -x {params.idx_prefix} -p {threads} {params.extra} \
             -1 {input.fq1} -2 {input.fq2} \
-            --un-conc-gz 3.align/bowtie2/{wildcards.sample}_unmapped.fq.gz \
+            --un-conc-gz {params.unmapped} \
             2> {log} \
         | samtools view -bS -q {params.min_mapq} - \
         | samtools sort -@ {threads} -O BAM \
-            -o 3.align/bowtie2/{wildcards.sample}_sorted.bam -
-        samtools index -@ {threads} 3.align/bowtie2/{wildcards.sample}_sorted.bam >> {log} 2>&1
+            -o {output.bam} -
+        samtools index -@ {threads} {output.bam} {output.bai} >> {log} 2>&1
         """

@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rna-seq:
+    name: rna-seq (lint + deg end-to-end regression)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+        working-directory: rna-seq
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          activate-environment: rna-seq
+          environment-file: rna-seq/workflow/environment.yaml
+          channels: conda-forge,bioconda
+          channel-priority: strict
+      - name: Install non-Conda R packages
+        run: Rscript -e 'if (!requireNamespace("aPEAR", quietly=TRUE)) install.packages("aPEAR", repos="https://cloud.r-project.org")'
+      - name: Install lint tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck r-base-core graphviz
+          pip install snakemake
+      - name: Runtime resolver tests
+        run: bash tests/test_runtime_config.sh
+      - name: Lint
+        run: bash tests/lint.sh
+      - name: Regression test (deg, synthetic data)
+        run: bash tests/run_test.sh --pipeline deg --reads 20000
+      - name: Upload DAG
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rna-seq-dag
+          path: rna-seq/docs/dag_*.svg
+          if-no-files-found: ignore
+
+  chip-cuttag-atac-faire:
+    name: chip_cuttag_atac_faire (unit tests + lint + dry-run regression)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chip_cuttag_atac_faire
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          pip install "snakemake==7.32.4" pyyaml
+      - name: Unit tests
+        run: python tests/run_tests.py
+      - name: Lint
+        run: bash tests/lint.sh
+      - name: Dry-run regression (synthetic data)
+        run: bash tests/run_test.sh --reads 2000

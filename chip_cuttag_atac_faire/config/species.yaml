@@ -1,0 +1,23 @@
+# =====================================================================
+# Species resource presets (loaded by workflow/Snakefile).
+# The top-level "species" key in config.yaml selects one; a preset key
+# applies only when the project config does not set it explicitly.
+# Paths are placeholders — override them with real cluster paths in the
+# project config when deploying.
+# =====================================================================
+
+osa:
+  label: "Rice Oryza sativa (IRGSP-1.0 / RAP-DB)"
+  genome_fa: "/share/data/reference/osa/genome_Chr_only.fasta"   # bowtie2 index input
+  gtf: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.gtf"   # peak annotation
+  bed: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"   # deeptools gene-region signal
+  chromsize: "/share/data/reference/osa/chrom.sizes"              # bigWig generation
+  genome_size: "3.7e8"   # MACS2 effective genome size (IRGSP-1.0 ~3.7e8)
+
+hsa:
+  label: "Human Homo sapiens (GRCh38 / GENCODE)"
+  genome_fa: "/path/to/reference/hsa/GRCh38.p14.genome.fa"
+  gtf: "/path/to/reference/hsa/gencode.v44.annotation.gtf"
+  bed: "/path/to/reference/hsa/genes.bed"
+  chromsize: "/path/to/reference/hsa/chrom.sizes"
+  genome_size: "2.7e9"

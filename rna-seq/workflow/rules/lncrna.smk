@@ -11,7 +11,7 @@ rule runStringtie:
         ref=lres("gtf"),
         strandedness=R("3.align/{sample}.strandedness"),
     output:
-        R("4.LncRNA/4.1.Assembly_stringtie/{sample}.gtf"),
+        R("4.lncrna/assembly/{sample}.gtf"),
     params:
         extra=" --conservative -j 5 ",
         outdir=lambda wc, output: os.path.dirname(output[0]),
@@ -40,12 +40,12 @@ rule runStringtie:
 
 rule gtf_merge_compare:
     input:
-        gtfIN=expand(R("4.LncRNA/4.1.Assembly_stringtie/{sample}.gtf"), sample=SAMPLES),
+        gtfIN=expand(R("4.lncrna/assembly/{sample}.gtf"), sample=SAMPLES),
         ref=lres("gtf_PcGs"),
         genome=res("genome"),
     output:
-        merged=R("4.LncRNA/4.1.Assembly_stringtie/merged.gtf"),
-        classcode_fa=R("4.LncRNA/4.1.Assembly_stringtie/merged.gtf.compare.classcode_u.fa"),
+        merged=R("4.lncrna/assembly/merged.gtf"),
+        classcode_fa=R("4.lncrna/assembly/merged.gtf.compare.classcode_u.fa"),
     log:
         R("logs/gtf_merge_compare.log.txt"),
     params:
@@ -69,13 +69,13 @@ rule gtf_merge_compare:
 
 rule Coding_predict:
     input:
-        fa=R("4.LncRNA/4.1.Assembly_stringtie/merged.gtf.compare.classcode_u.fa"),
-        gtfIN=R("4.LncRNA/4.1.Assembly_stringtie/merged.gtf"),
+        fa=R("4.lncrna/assembly/merged.gtf.compare.classcode_u.fa"),
+        gtfIN=R("4.lncrna/assembly/merged.gtf"),
         genome=res("genome"),
     output:
-        ids=R("4.LncRNA/4.2.Coding_predict/noncoding.transciptIDs"),
-        gtf_nc=R("4.LncRNA/4.2.Coding_predict/noncoding.transciptIDs.gtf"),
-        fa_nc=R("4.LncRNA/4.2.Coding_predict/noncoding.transciptIDs.fa"),
+        ids=R("4.lncrna/coding_predict/noncoding.transciptIDs"),
+        gtf_nc=R("4.lncrna/coding_predict/noncoding.transciptIDs.gtf"),
+        fa_nc=R("4.lncrna/coding_predict/noncoding.transciptIDs.fa"),
     log:
         R("logs/Coding_predict.log.txt"),
     params:
@@ -120,10 +120,10 @@ rule Coding_predict:
 
 rule Pfam_search:
     input:
-        fa=R("4.LncRNA/4.2.Coding_predict/noncoding.transciptIDs.fa"),
+        fa=R("4.lncrna/coding_predict/noncoding.transciptIDs.fa"),
     output:
-        hitIDs=R("4.LncRNA/4.3.Pfam_search/pfam_scan.hitIDs"),
-        raw=R("4.LncRNA/4.3.Pfam_search/pfam_scan.output"),
+        hitIDs=R("4.lncrna/pfam_search/pfam_scan.hitIDs"),
+        raw=R("4.lncrna/pfam_search/pfam_scan.output"),
     log:
         R("logs/Pfam_search.log.txt"),
     params:
@@ -150,10 +150,10 @@ rule Pfam_search:
 
 rule Nr_search:
     input:
-        fa=R("4.LncRNA/4.2.Coding_predict/noncoding.transciptIDs.fa"),
+        fa=R("4.lncrna/coding_predict/noncoding.transciptIDs.fa"),
     output:
-        hitIDs=R("4.LncRNA/4.4.Nr_search/nr.hitIDs"),
-        raw=R("4.LncRNA/4.4.Nr_search/diamond.output"),
+        hitIDs=R("4.lncrna/nr_search/nr.hitIDs"),
+        raw=R("4.lncrna/nr_search/diamond.output"),
     log:
         R("logs/Nr_search/log.txt"),
     params:
@@ -177,15 +177,15 @@ rule Nr_search:
 
 rule Final_lncRNA:
     input:
-        pfam=R("4.LncRNA/4.3.Pfam_search/pfam_scan.hitIDs"),
-        nr=R("4.LncRNA/4.4.Nr_search/nr.hitIDs"),
-        gtf_noncode=R("4.LncRNA/4.2.Coding_predict/noncoding.transciptIDs.gtf"),
+        pfam=R("4.lncrna/pfam_search/pfam_scan.hitIDs"),
+        nr=R("4.lncrna/nr_search/nr.hitIDs"),
+        gtf_noncode=R("4.lncrna/coding_predict/noncoding.transciptIDs.gtf"),
         genome=res("genome"),
     output:
-        fa=R("4.LncRNA/4.5.Final_lncRNA/final_lncRNA.fa"),
-        gtf=R("4.LncRNA/4.5.Final_lncRNA/final_lncRNA.gtf"),
-        ref_with_lnc=R("4.LncRNA/4.5.Final_lncRNA/ref_withLncRNA.gtf"),
-        hits=R("4.LncRNA/4.5.Final_lncRNA/all.hitsIDs"),
+        fa=R("4.lncrna/final/final_lncRNA.fa"),
+        gtf=R("4.lncrna/final/final_lncRNA.gtf"),
+        ref_with_lnc=R("4.lncrna/final/ref_withLncRNA.gtf"),
+        hits=R("4.lncrna/final/all.hitsIDs"),
     log:
         R("logs/Final_lnc/log.txt"),
     params:
@@ -215,16 +215,16 @@ rule Final_lncRNA:
 rule expression:
     input:
         bam=R("3.align/{sample}_Aligned.sortedByCoord.out.bam"),
-        gtf=R("4.LncRNA/4.5.Final_lncRNA/ref_withLncRNA.gtf"),
+        gtf=R("4.lncrna/final/ref_withLncRNA.gtf"),
         strand=R("3.align/{sample}.strandedness"),
     output:
-        count_file=R("5.expression/lncRNA/{sample}.count"),
-        stat=R("5.expression/lncRNA/{sample}.log"),
+        count_file=R("4.lncrna/expression/{sample}.count"),
+        stat=R("4.lncrna/expression/{sample}.log"),
     log:
         R("logs/featureCount_R/{sample}.log.txt"),
     params:
         is_pe=is_paired_end,
-        prefix=lambda wc: R(f"5.expression/lncRNA/{wc.sample}"),
+        prefix=lambda wc: R(f"4.lncrna/expression/{wc.sample}"),
         outdir=lambda wc, output: os.path.dirname(output.count_file),
         script=os.path.join(SCRIPTS, "run_featurecounts.R"),
         rscript=RSCRIPT,
@@ -252,13 +252,13 @@ rule expression:
 
 rule count_merge2:
     input:
-        counts=expand(R("5.expression/lncRNA/{sample}.count"), sample=SAMPLES),
-        logs=expand(R("5.expression/lncRNA/{sample}.log"), sample=SAMPLES),
+        counts=expand(R("4.lncrna/expression/{sample}.count"), sample=SAMPLES),
+        logs=expand(R("4.lncrna/expression/{sample}.log"), sample=SAMPLES),
     output:
-        R("5.expression/lncRNA/count.matrix.tsv"),
-        R("5.expression/lncRNA/GeneExpression_TPM.xls"),
-        R("5.expression/lncRNA/GeneExpression_FPKM.xls"),
-        R("5.expression/lncRNA/GeneCount_Assigned_logs.xls"),
+        R("4.lncrna/expression/count.matrix.tsv"),
+        R("4.lncrna/expression/GeneExpression_TPM.xls"),
+        R("4.lncrna/expression/GeneExpression_FPKM.xls"),
+        R("4.lncrna/expression/GeneCount_Assigned_logs.xls"),
     log:
         R("logs/count_merge/log.txt"),
     params:

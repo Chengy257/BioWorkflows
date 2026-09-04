@@ -1,8 +1,10 @@
-# FRiP（Fraction of Reads in Peaks）计算：每 (group, sample) 一份
-# ENCODE 参考阈值：TF ≥ 1%（理想 5%+），组蛋白修饰酌情放宽（详见 README）
-# 说明：samtools view -c 计数的是 reads（含双端两条），分子分母同口径，比值不变。
+# FRiP (Fraction of Reads in Peaks), one file per (group, sample).
+# ENCODE reference thresholds: TF >= 1% (ideally 5%+); loosen as appropriate
+# for histone marks (see README).
+# Note: samtools view -c counts reads (both mates of a pair); numerator and
+# denominator use the same convention, so the ratio is unaffected.
 
-FRIP_TSVS = [f"5.QC/frip/{g}__{s}.frip.tsv"
+FRIP_TSVS = [R(f"5.QC/frip/{g}__{s}.frip.tsv")
              for g in GROUPS
              for s in GROUPS[g]["treat"] + GROUPS[g]["control"]]
 
@@ -11,20 +13,19 @@ rule frip:
         bam=lambda wc: sample_bam(wc.sample),
         peaks=lambda wc: group_peak_file(wc.group),
     output:
-        "5.QC/frip/{group}__{sample}.frip.tsv",
+        R("5.QC/frip/{group}__{sample}.frip.tsv"),
     wildcard_constraints:
         group=_group_regex(list(GROUPS)),
         sample=_group_regex(SAMPLES),
     log:
-        "logs/frip/{group}__{sample}.log",
-    threads: 1
+        R("logs/frip/{group}__{sample}.log"),
+    threads: rthreads("frip")
     resources:
-        mem_mb=res("frip", 4096),
-        runtime_min=res("frip", 60),
-        runtime_sec=res("frip", 60) * 60,
+        mem_mb=rmem("frip"),
+        runtime_min=rruntime("frip"),
+        runtime_sec=rruntime_sec("frip"),
     shell:
         """
-        mkdir -p 5.QC/frip logs/frip
         total=$(samtools view -c {input.bam})
         inpeak=$(samtools view -c -L {input.peaks} {input.bam})
         awk -v s="{wildcards.sample}" -v g="{wildcards.group}" -v t=$total -v p=$inpeak \
@@ -37,15 +38,15 @@ rule frip_summary:
     input:
         FRIP_TSVS,
     output:
-        tsv="5.QC/frip/FRiP_summary.tsv",
-        mqc="5.QC/frip/FRiP_mqc.tsv",
+        tsv=R("5.QC/frip/FRiP_summary.tsv"),
+        mqc=R("5.QC/frip/FRiP_mqc.tsv"),
     log:
-        "logs/frip/summary.log",
-    threads: 1
+        R("logs/frip/summary.log"),
+    threads: rthreads("frip_summary")
     resources:
-        mem_mb=res("frip_summary", 1024),
-        runtime_min=res("frip_summary", 10),
-        runtime_sec=res("frip_summary", 10) * 60,
+        mem_mb=rmem("frip_summary"),
+        runtime_min=rruntime("frip_summary"),
+        runtime_sec=rruntime_sec("frip_summary"),
     shell:
         """
         header_written=0
@@ -54,7 +55,7 @@ rule frip_summary:
             if [ $header_written -eq 0 ]; then head -n1 "$f" >> {output.tsv}; header_written=1; fi
             tail -n +2 "$f" >> {output.tsv}
         done
-        # MultiQC 自定义表（custom content，_mqc.tsv 约定格式）
+        # MultiQC custom content (the _mqc.tsv convention)
         {{
             echo "# id: 'frip_table'"
             echo "# section_name: 'FRiP (fraction of reads in peaks)'"

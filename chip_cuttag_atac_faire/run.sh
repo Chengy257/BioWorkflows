@@ -248,6 +248,19 @@ fi
 [[ -f "$SOFTWARE_PATH" ]] || die "Software configuration file not found: $SOFTWARE_PATH"
 SOFTWARE_PATH="$(cd "$(dirname "$SOFTWARE_PATH")" && pwd)/$(basename "$SOFTWARE_PATH")"
 
+# Per-rule scheduler resources: project-local resources.yaml wins, otherwise
+# the repository default (config/resources.yaml). Injected as CHIP_RESOURCES_CONFIG.
+if [[ -n "${CHIP_RESOURCES_CONFIG:-}" ]]; then
+    RESOURCES_PATH="$(resolve_path "$CHIP_RESOURCES_CONFIG")"
+elif [[ -f "$PROJECT_DIR/resources.yaml" ]]; then
+    RESOURCES_PATH="$PROJECT_DIR/resources.yaml"
+else
+    RESOURCES_PATH="$REPO_DIR/config/resources.yaml"
+fi
+[[ -f "$RESOURCES_PATH" ]] || die "Resources configuration file not found: $RESOURCES_PATH"
+RESOURCES_PATH="$(cd "$(dirname "$RESOURCES_PATH")" && pwd)/$(basename "$RESOURCES_PATH")"
+export CHIP_RESOURCES_CONFIG="$RESOURCES_PATH"
+
 [[ -f "$SNAKEFILE" ]] || die "Snakefile not found: $SNAKEFILE"
 [[ -f "$RUNTIME_HELPER" ]] || die "Runtime helper not found: $RUNTIME_HELPER"
 command -v python3 >/dev/null 2>&1 || die "python3 is required to resolve software.yaml."
@@ -415,7 +428,7 @@ if [[ "$RENAME" == true && -d "1.rawdata" ]]; then
 fi
 
 # 额外配置：显式 -l/--extra-config 优先；否则自动检测项目目录下的 config.local.yaml
-if [[ -z "$EXTRA_CONFIG" && -f "config.local.yaml" ]]; then
+if [[ -z "$EXTRA_CONFIG" && -f "$PROJECT_DIR/config.local.yaml" ]]; then
     EXTRA_CONFIG="$PROJECT_DIR/config.local.yaml"
     info "检测到 config.local.yaml，将叠加覆盖默认配置"
 fi
@@ -441,6 +454,7 @@ if [[ "$QUIET" != true ]]; then
     info "Config: ${CONFIG_PATH:-$DEFAULT_CONFIG}"
     [[ -n "$EXTRA_CONFIG" ]] && info "Extra config: $EXTRA_CONFIG (layered last)"
     info "Software config: $SOFTWARE_PATH"
+    info "Resources config: $RESOURCES_PATH"
     info "Software environment: ${CHIP_SOFTWARE_TYPE:-system}${CHIP_ENV_PREFIX:+ ($CHIP_ENV_PREFIX)}"
     info "Rscript: ${CHIP_RSCRIPT:-Rscript}"
     [[ -n "${R_LIBS_USER:-}" ]] && info "R libraries: $R_LIBS_USER"

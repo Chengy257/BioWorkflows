@@ -85,9 +85,9 @@ def main():
 
     # ---- as 管线 ----
     if args.pipeline == "as":
-        check("merged.gtf", os.path.isfile(os.path.join(res, "4.assembly", "4.1.Assembly_stringtie", "merged.gtf")))
+        check("merged.gtf", os.path.isfile(os.path.join(res, "4.assembly", "stringtie", "merged.gtf")))
         for s in samples:
-            check(f"isoform 定量 {s}", os.path.isfile(os.path.join(res, "4.assembly", "4.2.IsoformExpr", f"{s}.tab")))
+            check(f"isoform 定量 {s}", os.path.isfile(os.path.join(res, "4.assembly", "isoform", f"{s}.tab")))
 
     # ---- DEG 管线 ----
     if args.pipeline == "deg":

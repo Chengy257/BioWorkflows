@@ -9,7 +9,7 @@ rule Assemble:
         ref=res("gtf"),
         strandedness=R("3.align/{sample}.strandedness"),
     output:
-        R("4.assembly/4.1.Assembly_stringtie/{sample}.gtf"),
+        R("4.assembly/stringtie/{sample}.gtf"),
     log:
         R("logs/Assemble/{sample}_stringtie.log.txt"),
     params:
@@ -38,11 +38,11 @@ rule Assemble:
 
 rule gtf_merge:
     input:
-        gtf=expand(R("4.assembly/4.1.Assembly_stringtie/{sample}.gtf"), sample=SAMPLES),
+        gtf=expand(R("4.assembly/stringtie/{sample}.gtf"), sample=SAMPLES),
         ref=res("gtf"),
         genome=res("genome"),
     output:
-        R("4.assembly/4.1.Assembly_stringtie/merged.gtf"),
+        R("4.assembly/stringtie/merged.gtf"),
     log:
         R("logs/gtf_merge.log.txt"),
     params:
@@ -67,11 +67,11 @@ rule gtf_merge:
 rule isoform_expr:
     input:
         bam=R("3.align/{sample}_Aligned.sortedByCoord.out.bam"),
-        ref=R("4.assembly/4.1.Assembly_stringtie/merged.gtf"),
+        ref=R("4.assembly/stringtie/merged.gtf"),
         strandedness=R("3.align/{sample}.strandedness"),
     output:
-        gtf=R("4.assembly/4.2.IsoformExpr/{sample}.gtf"),
-        tab=R("4.assembly/4.2.IsoformExpr/{sample}.tab"),
+        gtf=R("4.assembly/isoform/{sample}.gtf"),
+        tab=R("4.assembly/isoform/{sample}.tab"),
     log:
         R("logs/isoform_expr/{sample}_stringtie.log.txt"),
     params:

@@ -1,10 +1,7 @@
 ## =====================================================================
-## rna-seq 工作流主配置（项目级配置模板）
-## 用法：复制本文件到项目目录修改，然后
-##   bash run.sh <pipeline> <project_dir> /path/to/config.yaml [jobs]
-##   （run.sh 经 RNASEQ_CONFIG 环境变量将配置注入 workflow/Snakefile）
-## 仓库内本文件同时是默认配置，供 --lint 与仓库内示例使用；
-## 注释掉的键回落到 config/species.yaml 中当前物种的预设。
+## rna-seq 配置模板 —— 复制到项目目录按需修改（或复制为工作目录下的
+## config.local.yaml，由 run.sh 自动叠加，后者不进版本库）
+## 未列出的键沿用仓库默认值 config/config.yaml；物种预设见 config/species.yaml。
 ## =====================================================================
 
 ## ---- 运行模式（run.sh 自动注入，一般无需在此修改）----

@@ -1,63 +1,65 @@
 # =====================================================================
-# chip_cuttag_atac_faire 全局配置
-# 所有路径支持绝对路径或相对数据工作目录的相对路径
+# chip_cuttag_atac_faire main analysis config (repository default).
+# Copy to a project directory and adjust; run.sh injects it via CHIP_CONFIG:
+#   bash run.sh -P /path/to/workdir -c /path/to/config.yaml
+# Layering: config/resources.yaml (scheduler resources) -> this file ->
+# config.local.yaml in the working directory (auto-merged by run.sh).
+# This file doubles as the default for --lint and repository examples.
 # =====================================================================
 
-# ---------- 参考基因组（示例为水稻 IRGSP-1.0，换物种请全部替换） ----------
-genome_fa: "/share/data/reference/osa/genome_Chr_only.fasta"   # bowtie2 建索引输入
-gtf: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.gtf"   # 峰注释用
-bed: "/share/data/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"   # 预留（deeptools 用）
-chromsize: "/share/data/reference/osa/chrom.sizes"             # bigWig 生成用
-genome_size: "3.7e8"   # MACS2 -g 有效基因组大小；水稻 IRGSP-1.0 约 3.7e8，换物种必改
+## ---- Species and output ----
+species: "osa"                  # osa | hsa; presets live in config/species.yaml
+results_dir: "results"          # all derived artifacts go here; raw inputs stay at the working-directory root
 
-# ---------- 样本与资源 ----------
-grouplist: "config/samples.csv"  # 样本表；默认指向仓库模板（lint/文档场景可解析），工作目录放置自己的表后覆盖
-threads: 12                    # 单任务线程数
+## ---- Sample table and global resources ----
+grouplist: "config/samples.csv" # sample table; defaults to the repository template (parseable for lint/docs), override in the working directory
+threads: 12                     # legacy global thread cap for every rule; per-rule values live in config/resources.yaml
 
-# ---------- 质量修剪（trim_galore） ----------
+## ---- Reference genome (unset keys fall back to the species preset in
+##      config/species.yaml; uncomment to override with explicit paths) ----
+# genome_fa: "/path/to/genome.fasta"        # bowtie2 index input
+# gtf: "/path/to/annotation.gtf"            # peak annotation
+# bed: "/path/to/genes.bed"                 # deeptools gene-region signal
+# chromsize: "/path/to/chrom.sizes"         # bigWig generation
+# genome_size: "3.7e8"                      # MACS2 effective genome size
+
+# ---------- Quality trimming (trim_galore) ----------
 trim:
-  quality: 25        # -q：末端低质量碱基阈值
-  stringency: 3      # 接头最少重叠碱基数
-  error_rate: 0.1    # -e：接头匹配最大错误率
-  extra: ""          # 追加参数，如 "--clip_r1 5 --clip_r2 5"
+  quality: 25        # -q: terminal low-quality base threshold
+  stringency: 3      # minimum adapter overlap (bp)
+  error_rate: 0.1    # -e: max adapter mismatch rate
+  extra: ""          # extra arguments, e.g. "--clip_r1 5 --clip_r2 5"
 
-# ---------- 比对 ----------
+# ---------- Alignment ----------
 bowtie2_extra: "--end-to-end --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700"
-min_mapq: 30   # 比对质量过滤阈值（ENCODE 常规值；原流程为 5）
+min_mapq: 30   # MAPQ filter threshold (ENCODE standard; the legacy pipeline used 5)
 
-# ---------- 去重（按 assay 是否 picard 去重） ----------
-# CUT&Tag 文献推荐不去重（保留 PCR 重复，Kaya-Okur et al. 2019）
+# ---------- Deduplication (picard per assay) ----------
+# CUT&Tag literature recommends keeping PCR duplicates (Kaya-Okur et al. 2019)
 dedup:
   chip: true
   cuttag: false
   atac: true
   faire: true
 
-# ---------- 峰调用（常规默认值，均可按项目调整） ----------
+# ---------- Peak calling (tune per project as needed) ----------
 peak:
-  keepdup: all           # 交给上游去重策略控制，MACS2 层面保留全部
-  qvalue: 0.05           # narrow 峰 q 值阈值
-  broad_cutoff: 0.05     # broad 峰 cutoff
+  keepdup: all           # duplicate handling is decided upstream; MACS2 keeps all
+  qvalue: 0.05           # narrow peak q-value cutoff
+  broad_cutoff: 0.05     # broad peak cutoff
   atac:
-    mode: bampe          # bampe=ENCODE ATAC v2 做法（按真实片段长度堆叠，默认）；
-                         # shifted=经典 Tn5 偏移配方（-f BAM --nomodel --shift -100 --extsize 200）
-    shift: -100          # 仅 mode=shifted 时生效
-    extsize: 200         # 仅 mode=shifted 时生效
+    mode: bampe          # bampe = ENCODE ATAC v2 recipe (pile up real fragment lengths, default);
+                         # shifted = classic Tn5 offset recipe (-f BAM --nomodel --shift -100 --extsize 200)
+    shift: -100          # effective in shifted mode only
+    extsize: 200         # effective in shifted mode only
 
-# ---------- 注释与信号窗口 ----------
-region_flank: 3000   # 峰注释 flank 距离与 deeptools 信号窗口上下游长度（bp）
+# ---------- Annotation and signal windows ----------
+region_flank: 3000   # peak-annotation flank and deeptools signal window up/downstream (bp)
 
-# ---------- QC ----------
+# ---------- QC switches ----------
 qc:
-  nsc_rsc: false     # SPP 交叉相关 NSC/RSC（较耗时；需要 phantompeakqualtools）
-  frip: true         # FRiP（reads in peaks 占比，ENCODE 指标）
-  deeptools: true    # 相关性/PCA/指纹图/片段长/基因区信号 profile
+  nsc_rsc: false     # SPP cross-correlation NSC/RSC (slow; needs phantompeakqualtools)
+  frip: true         # FRiP (fraction of reads in peaks, an ENCODE metric)
+  deeptools: true    # correlation/PCA/fingerprints/fragment sizes/gene-region profiles
 
-# ---------- 集群资源覆盖（可选；按规则名覆盖，未列出的规则用代码内默认值） ----------
-# 只支持 mem_mb / runtime_min 两个键；runtime_sec 由 runtime_min 自动换算，
-# 不支持独立覆盖。各规则的默认值见 workflow/rules/*.smk 的 resources 声明。
-# 本段默认整体注释：config.get("resources") 为 None（缺键），全部走规则默认值。
-# resources:
-#  bowtie2_mapping:
-#    mem_mb: 32768
-#    runtime_min: 480
+# Scheduler resources (per rule) now live in config/resources.yaml.

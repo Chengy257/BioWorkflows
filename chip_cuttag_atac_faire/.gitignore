@@ -48,3 +48,7 @@ desktop.ini
 .vscode/
 .glm-conductor/
 .venv
+
+# ---- 本地测试生成物（tests/make_testdata.py 即时生成）----
+tests/data/
+tests/work/

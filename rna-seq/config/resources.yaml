@@ -1,0 +1,40 @@
+# =====================================================================
+# Per-rule scheduler resources (threads / mem_mb / runtime_min).
+#
+# This is the single place to tune cluster requests -- copy it into your
+# project directory as resources.yaml to override (run.sh picks it up
+# automatically), or edit this file to change the repository defaults.
+# Analysis parameters stay in config.yaml; software environment in
+# software.yaml.
+#
+#   threads     CPU cores requested per job
+#   mem_mb      memory requested per job (MB)
+#   runtime_min walltime requested per job (minutes; runtime_sec for SGE
+#               h_rt is derived automatically)
+#
+# The legacy top-level "threads" value in config.yaml still acts as a
+# global cap on every rule's threads.
+# =====================================================================
+
+resources:
+  software_versions:  {threads:  1, mem_mb:  1024, runtime_min: 10}
+  trim:              {threads:  4, mem_mb:  8000, runtime_min: 180}
+  multiqc:           {threads:  2, mem_mb:  4000, runtime_min: 60}
+  star_index:        {threads: 12, mem_mb: 48000, runtime_min: 480}
+  star_align:        {threads: 12, mem_mb: 32000, runtime_min: 360}
+  mapping_stat:      {threads:  1, mem_mb:  2000, runtime_min: 30}
+  strandedness:      {threads:  1, mem_mb:  4000, runtime_min: 60}
+  featurecounts:     {threads:  8, mem_mb: 16000, runtime_min: 240}
+  count_merge:       {threads:  1, mem_mb:  4000, runtime_min: 60}
+  deseq2:            {threads:  4, mem_mb: 16000, runtime_min: 240}
+  enrichment:        {threads:  2, mem_mb: 12000, runtime_min: 360}
+  deg_compare:       {threads:  4, mem_mb: 12000, runtime_min: 360}
+  stringtie:         {threads:  8, mem_mb: 16000, runtime_min: 360}
+  gtf_merge:         {threads:  4, mem_mb: 12000, runtime_min: 240}
+  isoform_expr:      {threads:  8, mem_mb: 16000, runtime_min: 360}
+  lnc_coding:        {threads:  8, mem_mb: 16000, runtime_min: 720}
+  pfam:              {threads: 16, mem_mb: 24000, runtime_min: 720}
+  nr:                {threads: 16, mem_mb: 32000, runtime_min: 1440}
+  lnc_final:         {threads:  2, mem_mb:  8000, runtime_min: 120}
+  lnc_featurecounts: {threads:  8, mem_mb: 16000, runtime_min: 240}
+  lnc_count_merge:   {threads:  1, mem_mb:  4000, runtime_min: 60}

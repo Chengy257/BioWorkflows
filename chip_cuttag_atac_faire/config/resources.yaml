@@ -1,0 +1,41 @@
+# =====================================================================
+# Per-rule scheduler resources (threads / mem_mb / runtime_min).
+#
+# This is the single place to tune cluster requests — copy it into your
+# project directory as resources.yaml to override (run.sh picks it up
+# automatically), or edit this file to change the repository defaults.
+# Analysis parameters stay in config.yaml; software environment in
+# software.yaml.
+#
+#   threads     CPU cores requested per job
+#   mem_mb      memory requested per job (MB)
+#   runtime_min walltime requested per job (minutes; runtime_sec for SGE
+#               h_rt is derived automatically)
+#
+# The legacy top-level "threads" value in config.yaml still acts as a
+# global cap on every rule's threads.
+# =====================================================================
+
+resources:
+  software_versions:           {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  trim_adapter:                {threads: 4,  mem_mb: 4096,  runtime_min: 60}
+  fastqc:                      {threads: 2,  mem_mb: 2048,  runtime_min: 30}
+  multiqc:                     {threads: 1,  mem_mb: 4096,  runtime_min: 30}
+  bowtie2_index:               {threads: 8,  mem_mb: 8192,  runtime_min: 120}
+  bowtie2_mapping:             {threads: 8,  mem_mb: 16384, runtime_min: 240}
+  dedup:                       {threads: 2,  mem_mb: 8192,  runtime_min: 120}
+  callpeak_narrow:             {threads: 1,  mem_mb: 8192,  runtime_min: 180}
+  callpeak_broad:              {threads: 1,  mem_mb: 8192,  runtime_min: 180}
+  callpeak_atac:               {threads: 1,  mem_mb: 8192,  runtime_min: 180}
+  bigwig:                      {threads: 1,  mem_mb: 4096,  runtime_min: 60}
+  peak_annotation:             {threads: 1,  mem_mb: 8192,  runtime_min: 120}
+  frip:                        {threads: 1,  mem_mb: 4096,  runtime_min: 60}
+  frip_summary:                {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  deeptools_multibamsummary:   {threads: 2,  mem_mb: 8192,  runtime_min: 120}
+  deeptools_correlation:       {threads: 1,  mem_mb: 4096,  runtime_min: 30}
+  deeptools_pca:               {threads: 1,  mem_mb: 4096,  runtime_min: 30}
+  deeptools_fingerprint:       {threads: 2,  mem_mb: 8192,  runtime_min: 60}
+  deeptools_fragmentsize:      {threads: 2,  mem_mb: 8192,  runtime_min: 60}
+  deeptools_profile:           {threads: 2,  mem_mb: 8192,  runtime_min: 120}
+  spp_crosscorr:               {threads: 2,  mem_mb: 8192,  runtime_min: 180}
+  spp_summary:                 {threads: 1,  mem_mb: 1024,  runtime_min: 10}

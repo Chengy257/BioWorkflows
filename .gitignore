@@ -27,6 +27,7 @@ flag.log
 4.assembly/
 4.expression/
 4.LncRNA/
+4.lncrna/
 5.DEG/
 5.expression/
 5.QC*/
@@ -75,3 +76,4 @@ desktop.ini
 .idea/
 .vscode/
 .glm-conductor/
+.testscripts/

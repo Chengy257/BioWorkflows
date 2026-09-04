@@ -17,6 +17,7 @@ PIPELINE=""
 PROJECT_DIR=""
 CONFIG_PATH=""
 SOFTWARE_PATH="${RNASEQ_SOFTWARE_CONFIG:-}"
+EXTRA_CONFIG=""
 JOBS="${RNASEQ_JOBS:-10}"
 PROFILE_REQUEST="${RUN_PROFILE:-auto}"
 LOG_PATH="${RNASEQ_LOG:-snakemake.logs.txt}"
@@ -77,6 +78,8 @@ Core options:
   -P, --project DIR         Project directory; created if it does not exist
   -c, --config FILE         Project analysis configuration file
       --software FILE       Software/runtime configuration (software.yaml)
+  -l, --extra-config FILE   Extra config layered last; config.local.yaml in the
+                            project directory is picked up automatically
   -j, --jobs N              Maximum parallel jobs or local cores (default: 10)
       --profile NAME        auto, default, local, sge, or slurm
       --queue NAME          SGE queue name (SGE only)
@@ -140,6 +143,7 @@ while (($#)); do
         --project=*|--project-dir=*) PROJECT_DIR="${1#*=}"; shift ;;
         --config=*) CONFIG_PATH="${1#*=}"; shift ;;
         --software=*) SOFTWARE_PATH="${1#*=}"; shift ;;
+        --extra-config=*) EXTRA_CONFIG="${1#*=}"; shift ;;
         --jobs=*) JOBS="${1#*=}"; shift ;;
         --profile=*) PROFILE_REQUEST="${1#*=}"; shift ;;
         --queue=*) QUEUE="${1#*=}"; shift ;;
@@ -157,6 +161,7 @@ while (($#)); do
         -P|--project|--project-dir) [[ $# -ge 2 ]] || die "$1 requires a value"; PROJECT_DIR="$2"; shift 2 ;;
         -c|--config) [[ $# -ge 2 ]] || die "$1 requires a value"; CONFIG_PATH="$2"; shift 2 ;;
         --software) [[ $# -ge 2 ]] || die "$1 requires a value"; SOFTWARE_PATH="$2"; shift 2 ;;
+        -l|--extra-config) [[ $# -ge 2 ]] || die "$1 requires a value"; EXTRA_CONFIG="$2"; shift 2 ;;
         -j|--jobs) [[ $# -ge 2 ]] || die "$1 requires a value"; JOBS="$2"; shift 2 ;;
         --profile) [[ $# -ge 2 ]] || die "$1 requires a value"; PROFILE_REQUEST="$2"; shift 2 ;;
         --queue) [[ $# -ge 2 ]] || die "$1 requires a value"; QUEUE="$2"; shift 2 ;;
@@ -239,6 +244,33 @@ else
 fi
 [[ -f "$SOFTWARE_PATH" ]] || die "Software configuration file not found: $SOFTWARE_PATH"
 SOFTWARE_PATH="$(cd "$(dirname "$SOFTWARE_PATH")" && pwd)/$(basename "$SOFTWARE_PATH")"
+
+# Per-rule scheduler resources: project-local resources.yaml wins, otherwise
+# the repository default (config/resources.yaml). Injected as RNASEQ_RESOURCES_CONFIG.
+if [[ -n "${RNASEQ_RESOURCES_CONFIG:-}" ]]; then
+    RESOURCES_PATH="$(resolve_path "$RNASEQ_RESOURCES_CONFIG")"
+elif [[ -f "$PROJECT_DIR/resources.yaml" ]]; then
+    RESOURCES_PATH="$PROJECT_DIR/resources.yaml"
+else
+    RESOURCES_PATH="$REPO_DIR/config/resources.yaml"
+fi
+[[ -f "$RESOURCES_PATH" ]] || die "Resources configuration file not found: $RESOURCES_PATH"
+RESOURCES_PATH="$(cd "$(dirname "$RESOURCES_PATH")" && pwd)/$(basename "$RESOURCES_PATH")"
+export RNASEQ_RESOURCES_CONFIG="$RESOURCES_PATH"
+
+# Extra config layer: explicit -l/--extra-config wins; otherwise pick up
+# config.local.yaml from the project directory automatically.
+if [[ -n "$EXTRA_CONFIG" ]]; then
+    EXTRA_CONFIG="$(resolve_path "$EXTRA_CONFIG")"
+    [[ -f "$EXTRA_CONFIG" ]] || die "Extra configuration file not found: $EXTRA_CONFIG"
+    EXTRA_CONFIG="$(cd "$(dirname "$EXTRA_CONFIG")" && pwd)/$(basename "$EXTRA_CONFIG")"
+elif [[ -f "$PROJECT_DIR/config.local.yaml" ]]; then
+    EXTRA_CONFIG="$PROJECT_DIR/config.local.yaml"
+    info "Found config.local.yaml in the project directory; layering it last"
+fi
+if [[ -n "$EXTRA_CONFIG" ]]; then
+    export RNASEQ_EXTRA_CONFIG="$EXTRA_CONFIG"
+fi
 
 [[ -f "$SNAKEFILE" ]] || die "Snakefile not found: $SNAKEFILE"
 [[ -f "$RUNTIME_HELPER" ]] || die "Runtime helper not found: $RUNTIME_HELPER"
@@ -431,6 +463,7 @@ if [[ "$QUIET" != true ]]; then
     info "Project: $PROJECT_DIR"
     info "Config: ${CONFIG_PATH:-$DEFAULT_CONFIG}"
     info "Software config: $SOFTWARE_PATH"
+    info "Resources config: $RESOURCES_PATH"
     info "Software environment: ${RNASEQ_SOFTWARE_TYPE:-system}${RNASEQ_ENV_PREFIX:+ ($RNASEQ_ENV_PREFIX)}"
     info "Rscript: ${RNASEQ_RSCRIPT:-Rscript}"
     [[ -n "${R_LIBS_USER:-}" ]] && info "R libraries: $R_LIBS_USER"

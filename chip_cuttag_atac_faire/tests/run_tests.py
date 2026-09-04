@@ -107,23 +107,23 @@ check("example/samples.csv: 真实数据 2 样本可解析",
       s2 == ["myc", "IgG"] and g2["myc_vs_IgG"]["peak_type"] == "narrow")
 
 print("== 2. 样本表校验错误路径 ==")
-expect_error("缺列报错", HEADER[:4] + [["a", "treat", "g", "chip"]], "缺少列")
+expect_error("缺列报错", HEADER[:4] + [["a", "treat", "g", "chip"]], "missing columns")
 expect_error("role 非法", [HEADER, ["a", "TREATMENT", "g", "chip", "PE", "narrow"]], "role")
 expect_error("seqtype 非法", [HEADER, ["a", "treat", "g", "chipseq", "PE", "narrow"]], "seqtype")
 expect_error("layout SE 拒绝", [HEADER, ["a", "treat", "g", "chip", "SE", "narrow"]], "PE")
-expect_error("chip 无峰型拒绝", [HEADER, ["a", "treat", "g", "chip", "PE", "none"]], "narrow 或 broad")
+expect_error("chip 无峰型拒绝", [HEADER, ["a", "treat", "g", "chip", "PE", "none"]], "narrow or broad")
 expect_error("atac 指定峰型拒绝", [HEADER, ["a", "treat", "g", "atac", "PE", "narrow"]], "peak_type")
 expect_error("组内峰型不一致拒绝",
              [HEADER, ["a", "treat", "g", "chip", "PE", "narrow"],
-              ["b", "control", "g", "chip", "PE", "broad"]], "一致")
+              ["b", "control", "g", "chip", "PE", "broad"]], "same seqtype/peak_type/layout")
 expect_error("组无 treat 拒绝", [HEADER, ["b", "control", "g", "chip", "PE", "narrow"]], "treat")
 expect_error("同样本跨 seqtype 拒绝",
              [HEADER, ["a", "treat", "g1", "chip", "PE", "narrow"],
-              ["a", "treat", "g2", "atac", "PE", "none"]], "不同 seqtype")
-expect_error("空表拒绝", [HEADER], "没有任何数据行")
-expect_error("样本名含逗号拒绝", [HEADER, ["a,b", "treat", "g", "chip", "PE", "narrow"]], "非法字符")
-expect_error("样本名含双下划线拒绝", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "非法字符")
-expect_error("分组名含空格拒绝", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "非法字符")
+              ["a", "treat", "g2", "atac", "PE", "none"]], "different seqtypes")
+expect_error("空表拒绝", [HEADER], "no data rows")
+expect_error("样本名含逗号拒绝", [HEADER, ["a,b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
+expect_error("样本名含双下划线拒绝", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
+expect_error("分组名含空格拒绝", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "illegal characters")
 
 print("== 3. ATAC 峰调用模式白名单 ==")
 with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
@@ -191,7 +191,7 @@ def vc_case(name, mutate, needles, expect_error=True):
 
 vc_case("合法完整 config 放行（参考文件缺失仅警告）",
         lambda c: None, [], expect_error=False)
-vc_case("缺 trim 键报错", lambda c: c.pop("trim"), ["缺少必需配置键: trim"])
+vc_case("缺 trim 键报错", lambda c: c.pop("trim"), ["missing required config key: trim"])
 vc_case("dedup 非布尔报错",
         lambda c: c["dedup"].__setitem__("chip", 1), ["dedup.chip"])
 vc_case("qc 开关非布尔报错",
@@ -199,7 +199,7 @@ vc_case("qc 开关非布尔报错",
 vc_case("min_mapq 负数报错",
         lambda c: c.__setitem__("min_mapq", -1), ["min_mapq"])
 vc_case("region_flank 缺键报错",
-        lambda c: c.pop("region_flank"), ["缺少必需配置键: region_flank"])
+        lambda c: c.pop("region_flank"), ["missing required config key: region_flank"])
 vc_case("region_flank 非整数报错",
         lambda c: c.__setitem__("region_flank", "3000"), ["region_flank"])
 vc_case("peak.qvalue 超区间报错",
@@ -216,7 +216,7 @@ def _two_errors(c):
 
 
 vc_case("多错误一次汇总报出",
-        _two_errors, ["共 2 项", "gtf", "dedup.atac"])
+        _two_errors, ["2 issues", "gtf", "dedup.atac"])
 
 print("== 5. 通配符约束正则 ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
@@ -298,7 +298,7 @@ for s in ["s1", "s2"]:
 body = render_rule_body(
     os.path.join(REPO, "workflow", "rules", "spp_qc.smk"), "spp_summary",
     {"output": "5.QC/spp/NSC_RSC_mqc.tsv", "log": "spp_summary.log"},
-    literals={"params.samples": "s1 s2"})
+    literals={"params.samples": "s1 s2", "params.spp_dir": "5.QC/spp"})
 r = run_bash(body, tmp)
 mqc = os.path.join(tmp, "5.QC", "spp", "NSC_RSC_mqc.tsv")
 content = open(mqc, encoding="utf-8").read() if os.path.exists(mqc) else ""
@@ -323,44 +323,69 @@ except ImportError:
 if HAS_YAML:
     with open(os.path.join(REPO, "config", "config.yaml"), encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh)
+    # Mimic the Snakefile: unset reference keys fall back to species presets.
+    with open(os.path.join(REPO, "config", "species.yaml"), encoding="utf-8") as fh:
+        presets = yaml.safe_load(fh) or {}
+    _species = cfg.get("species", "osa")
+    for _k, _v in (presets.get(_species) or {}).items():
+        cfg.setdefault(_k, _v)
     required_top = ["genome_fa", "gtf", "bed", "chromsize", "genome_size",
                     "grouplist", "threads", "bowtie2_extra", "min_mapq",
                     "region_flank", "dedup", "peak", "qc", "trim"]
-    check("config: 顶层键齐全", all(k in cfg for k in required_top),
+    check("config: 顶层键齐全（含 species 预设合并）", all(k in cfg for k in required_top),
           str([k for k in required_top if k not in cfg]))
     try:
         validate_config(cfg)
         check("config: 仓库默认 config 通过 validate_config", True)
     except WorkflowError as e:
         check("config: 仓库默认 config 通过 validate_config", False, str(e))
+    check("config: species 键存在且已知",
+          cfg.get("species") in ("osa", "hsa"), str(cfg.get("species")))
     check("config: dedup 四 assay 齐全",
           set(cfg["dedup"]) == {"chip", "cuttag", "atac", "faire"})
     check("config: peak 子键齐全",
           {"keepdup", "qvalue", "broad_cutoff", "atac"} <= set(cfg["peak"]))
     check("config: qc 开关齐全",
           {"nsc_rsc", "frip", "deeptools"} <= set(cfg["qc"]))
+    # resources.yaml: every rule entry must be a known rule with valid fields.
+    with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
+        res_cfg = yaml.safe_load(fh) or {}
+    check("resources.yaml: 顶层 resources 键", "resources" in res_cfg)
+    _bad_res = [k for k, v in (res_cfg.get("resources") or {}).items()
+                if not isinstance(v, dict) or not {"threads", "mem_mb", "runtime_min"} <= set(v)]
+    check("resources.yaml: 每条规则含 threads/mem_mb/runtime_min", not _bad_res, str(_bad_res))
 
 print("== 8. per规则资源声明 ==")
-# --- res() 覆盖语义：从 common.smk 提取真实源码，config 注入（参照 vc_ns 模式） ---
+# --- resource helpers: extract the real source from common.smk, inject config ---
 with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
     _src = fh.read()
-_start = _src.index("def res(")
+_start = _src.index("RESOURCE_DEFAULTS = {")
 _end = _src.find("\n# -----", _start)
 res_block = _src[_start:_end if _end != -1 else len(_src)]
 
 
-def _make_res(cfg):
-    """以注入的 config 构建 res()（真实源码 exec，命名空间 {"config": cfg}）"""
-    ns = {"config": cfg}
-    exec(compile(res_block, "common.smk(res extracted)", "exec"), ns)
-    return ns["res"]
+def _make_helpers(cfg):
+    """Build (rthreads, rmem, rruntime) with an injected config (real source, exec'd)."""
+    ns = {"config": cfg, "WorkflowError": WorkflowError}
+    exec(compile(res_block, "common.smk(resources extracted)", "exec"), ns)
+    return ns["rthreads"], ns["rmem"], ns["rruntime"]
 
 
-check("res 无覆盖段回落默认值", _make_res({})("x", "mem_mb", 4096) == 4096)
-_res_cov = _make_res({"resources": {"bowtie2_mapping": {"mem_mb": 32768}}})
-check("res 覆盖 mem_mb 生效", _res_cov("bowtie2_mapping", "mem_mb", 16384) == 32768)
-check("res 覆盖段缺 key 回落", _res_cov("bowtie2_mapping", "runtime_min", 240) == 240)
-check("res 其他规则不受影响", _res_cov("frip", "mem_mb", 4096) == 4096)
+_t, _m, _r = _make_helpers({})
+check("rmem 无覆盖段回落默认值", _m("frip") == 4096)
+check("rruntime 无覆盖段回落默认值", _r("frip") == 60)
+_t_cov, _m_cov, _r_cov = _make_helpers(
+    {"resources": {"bowtie2_mapping": {"mem_mb": 32768}}})
+check("rmem 覆盖 mem_mb 生效", _m_cov("bowtie2_mapping") == 32768)
+check("rmem 覆盖段缺 key 回落", _r_cov("bowtie2_mapping") == 240)
+check("rmem 其他规则不受影响", _m_cov("frip") == 4096)
+check("rthreads 全局 legacy 线程帽生效", _make_helpers({"threads": 4})[0]("bowtie2_index") == 4)
+check("rthreads 未设帽时用规则默认", _t("bowtie2_index") == 8)
+try:
+    _m("no_such_rule")
+    check("未知规则名报 WorkflowError", False)
+except WorkflowError:
+    check("未知规则名报 WorkflowError", True)
 
 # --- 静态扫描：每个含规则的 .smk 中 rule 数与 runtime_sec 声明数一致（防漏声明） ---
 _mismatch = []
@@ -373,7 +398,7 @@ for _fname in sorted(os.listdir(_rules_dir)):
     _n_rules = len(re.findall(r"(?m)^rule \w+:", _text))
     if _n_rules == 0:
         continue  # common.smk 等纯 helper 文件无规则块
-    _n_rt = _text.count("runtime_sec")
+    _n_rt = len(re.findall(r"(?m)^\s+runtime_sec=", _text))
     if _n_rules != _n_rt:
         _mismatch.append(f"{_fname}: rule={_n_rules} runtime_sec={_n_rt}")
 check("全部 rule 块均声明 runtime_sec（含 meta.smk）", not _mismatch, "; ".join(_mismatch))

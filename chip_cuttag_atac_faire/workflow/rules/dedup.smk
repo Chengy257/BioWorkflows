@@ -1,23 +1,23 @@
-# picard 去重。是否执行由 workflow/rules/common.smk 的 sample_bam() 按 assay 决定：
-# config["dedup"] 中 chip/atac/faire 默认 true，cuttag 默认 false（保留 PCR 重复）。
+# picard deduplication. Whether it runs is decided per assay by sample_bam()
+# in workflow/rules/common.smk: config["dedup"] defaults chip/atac/faire to
+# true and cuttag to false (PCR duplicates are kept).
 
 rule dedup:
     input:
-        "3.align/bowtie2/{sample}_sorted.bam",
+        R("3.align/bowtie2/{sample}_sorted.bam"),
     output:
-        bam="3.align/bowtie2/{sample}_rmdup.bam",
-        bai="3.align/bowtie2/{sample}_rmdup.bam.bai",
-        metrics="3.align/bowtie2/{sample}_dup_metrics.txt",
+        bam=R("3.align/bowtie2/{sample}_rmdup.bam"),
+        bai=R("3.align/bowtie2/{sample}_rmdup.bam.bai"),
+        metrics=R("3.align/bowtie2/{sample}_dup_metrics.txt"),
     log:
-        "logs/dedup/{sample}.log",
-    threads: config["threads"]
+        R("logs/dedup/{sample}.log"),
+    threads: rthreads("dedup")
     resources:
-        mem_mb=res("dedup", 8192),
-        runtime_min=res("dedup", 120),
-        runtime_sec=res("dedup", 120) * 60,
+        mem_mb=rmem("dedup"),
+        runtime_min=rruntime("dedup"),
+        runtime_sec=rruntime_sec("dedup"),
     shell:
         """
-        mkdir -p logs/dedup
         picard MarkDuplicates \
             --REMOVE_DUPLICATES true \
             --INPUT {input} \

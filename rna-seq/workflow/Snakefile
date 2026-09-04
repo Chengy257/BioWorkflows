@@ -17,8 +17,18 @@ WORKFLOW_DIR = workflow.basedir                # workflow/ directory.
 # Load species presets first; explicit top-level project config values win.
 configfile: os.path.join(BASE_DIR, "config", "species.yaml")
 
+# Per-rule scheduler resources live in a dedicated file (run.sh injects
+# RNASEQ_RESOURCES_CONFIG when the project directory carries its own copy).
+configfile: os.environ.get("RNASEQ_RESOURCES_CONFIG", os.path.join(BASE_DIR, "config", "resources.yaml"))
+
 # Load project config when provided, otherwise use the repository default.
 configfile: os.environ.get("RNASEQ_CONFIG", os.path.join(BASE_DIR, "config", "config.yaml"))
+
+# Optional last layer: config.local.yaml in the project directory (picked up
+# automatically by run.sh; later files override earlier keys).
+_EXTRA_CONFIG = os.environ.get("RNASEQ_EXTRA_CONFIG")
+if _EXTRA_CONFIG and os.path.exists(_EXTRA_CONFIG):
+    configfile: _EXTRA_CONFIG
 
 # Runtime mode: upstream | deg | as | lncrna.
 PIPELINE = (os.environ.get("RNASEQ_PIPELINE") or config.get("pipeline") or "upstream").strip().lower()
@@ -59,8 +69,8 @@ if PIPELINE in ("upstream", "deg", "lncrna"):
     ]
 if PIPELINE == "lncrna":
     TARGETS += [
-        R("4.LncRNA/4.5.Final_lncRNA/final_lncRNA.fa"),
-        R("5.expression/lncRNA/GeneExpression_TPM.xls"),
+        R("4.lncrna/final/final_lncRNA.fa"),
+        R("4.lncrna/expression/GeneExpression_TPM.xls"),
     ]
 if PIPELINE == "deg":
     TARGETS += [
@@ -69,9 +79,9 @@ if PIPELINE == "deg":
         R("6.DEGcompare/flag.log"),
     ]
 if PIPELINE == "as":
-    TARGETS += [R("4.assembly/4.1.Assembly_stringtie/merged.gtf")]
-    TARGETS += [expand(R("4.assembly/4.1.Assembly_stringtie/{sample}.gtf"), sample=SAMPLES)]
-    TARGETS += [expand(R("4.assembly/4.2.IsoformExpr/{sample}.tab"), sample=SAMPLES)]
+    TARGETS += [R("4.assembly/stringtie/merged.gtf")]
+    TARGETS += [expand(R("4.assembly/stringtie/{sample}.gtf"), sample=SAMPLES)]
+    TARGETS += [expand(R("4.assembly/isoform/{sample}.tab"), sample=SAMPLES)]
 
 
 rule all:
