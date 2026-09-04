@@ -74,7 +74,7 @@ Core options:
   -l, --extra-config FILE   Extra config layered last; config.local.yaml in the
                             project directory is picked up automatically
   -j, --jobs N              Maximum parallel jobs or local cores (default: 10)
-      --profile NAME        auto, default, local, sge, or slurm
+      --profile NAME        auto, default, local, pbs, sge, or slurm
       --queue NAME          SGE queue name (SGE only)
       --partition NAME      SLURM partition name (SLURM only)
       --memory VALUE        Override per-rule memory for all cluster jobs, e.g. 16G
@@ -282,18 +282,19 @@ select_profile() {
     requested="$(printf '%s' "$PROFILE_REQUEST" | tr '[:upper:]' '[:lower:]')"
     [[ "$requested" == "local" ]] && requested="default"
     if [[ "$requested" == "auto" ]]; then
-        if command -v qsub >/dev/null 2>&1; then
-            requested="sge"
-        elif command -v sbatch >/dev/null 2>&1; then
+        if command -v sbatch >/dev/null 2>&1; then
             requested="slurm"
+        elif command -v qsub >/dev/null 2>&1; then
+            # qsub is ambiguous: an SGE installation always sets SGE_ROOT; otherwise treat as PBS
+            if [[ -n "${SGE_ROOT:-}" ]]; then requested="sge"; else requested="pbs"; fi
         else
             requested="default"
         fi
     fi
 
     case "$requested" in
-        default|sge|slurm) ;;
-        *) die "Unknown profile '$PROFILE_REQUEST'. Choose auto, default, local, sge, or slurm." ;;
+        default|pbs|sge|slurm) ;;
+        *) die "Unknown profile '$PROFILE_REQUEST'. Choose auto, default, pbs, sge, or slurm." ;;
     esac
 
     PROFILE="$requested"
@@ -301,7 +302,7 @@ select_profile() {
     [[ -d "$PROFILE_DIR" ]] || die "Profile directory not found: $PROFILE_DIR"
 
     case "$PROFILE" in
-        sge) command -v qsub >/dev/null 2>&1 || die "SGE profile selected but qsub was not found in PATH." ;;
+        pbs|sge) command -v qsub >/dev/null 2>&1 || die "$PROFILE profile selected but qsub was not found in PATH." ;;
         slurm) command -v sbatch >/dev/null 2>&1 || die "SLURM profile selected but sbatch was not found in PATH." ;;
     esac
 }
@@ -326,8 +327,8 @@ fi
 
 select_profile
 
-if [[ -n "$QUEUE" && "$PROFILE" != "sge" ]]; then
-    die "--queue is only valid with the SGE profile."
+if [[ -n "$QUEUE" && "$PROFILE" != "pbs" && "$PROFILE" != "sge" ]]; then
+    die "--queue is only valid with the PBS or SGE profile."
 fi
 if [[ -n "$PARTITION" && "$PROFILE" != "slurm" ]]; then
     die "--partition is only valid with the SLURM profile."

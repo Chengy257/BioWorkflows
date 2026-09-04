@@ -80,3 +80,6 @@ desktop.ini
 .idea/
 .vscode/
 .glm-conductor/
+
+# Local scratch staging (vendor docs, per-project run configs) — never commit
+.tmp_vendor/
