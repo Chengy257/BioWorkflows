@@ -11,7 +11,7 @@ chromsize: "/share/data/reference/osa/chrom.sizes"             # bigWig 生成�
 genome_size: "3.7e8"   # MACS2 -g 有效基因组大小；水稻 IRGSP-1.0 约 3.7e8，换物种必改
 
 # ---------- 样本与资源 ----------
-grouplist: "sample_info.csv"   # 样本表；相对路径相对工作目录解析；模板见 config/samples.csv
+grouplist: "config/samples.csv"  # 样本表；默认指向仓库模板（lint/文档场景可解析），工作目录放置自己的表后覆盖
 threads: 12                    # 单任务线程数
 
 # ---------- 质量修剪（trim_galore） ----------

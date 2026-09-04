@@ -102,8 +102,8 @@ check("example: atac_leaf 无对照合法",
       groups["atac_leaf"]["control"] == [] and groups["atac_leaf"]["seqtype"] == "atac")
 check("example: faire 组 seqtype 映射", seqtype_of["faire_root"] == "faire")
 
-s2, g2, st2 = load_sample_table(os.path.join(REPO, "sample_info.csv"))
-check("repo: sample_info.csv 可解析",
+s2, g2, st2 = load_sample_table(os.path.join(REPO, "example", "samples.csv"))
+check("example/samples.csv: 真实数据 2 样本可解析",
       s2 == ["myc", "IgG"] and g2["myc_vs_IgG"]["peak_type"] == "narrow")
 
 print("== 2. 样本表校验错误路径 ==")

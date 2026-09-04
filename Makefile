@@ -9,7 +9,7 @@
 
 PYTHON ?= python3
 
-SHELL_SCRIPTS := run.sh $(wildcard workflow/scripts/*.sh) $(wildcard scripts/*.sh)
+SHELL_SCRIPTS := run.sh $(wildcard workflow/scripts/*.sh)
 
 .PHONY: check lint test
 

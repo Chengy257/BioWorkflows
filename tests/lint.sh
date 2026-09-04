@@ -44,7 +44,7 @@ fi
 
 note "4/6 R 解析（未安装 R 则跳过）"
 if command -v Rscript >/dev/null 2>&1; then
-    for f in workflow/scripts/*.R scripts/*.R; do
+    for f in workflow/scripts/*.R; do
         if Rscript --vanilla -e "invisible(parse(file='$f'))" >/dev/null 2>&1; then
             note "  OK  $f"
         else

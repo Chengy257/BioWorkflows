@@ -13,4 +13,16 @@
 | `bdgcmp_macs2.sh` | `scripts/` | `rules/callpeak.smk` 中的 bigwig 规则（排序改用 bedtools sort -g） |
 | `run_deeptools_QC.sh` | `scripts/` | `rules/qc_deeptools.smk`（全量规则化 + FRiP） |
 
-仍在 `scripts/` 维持的文件（不属于 legacy）：`annoPeak_batch.R`（已参数化重写）、`annoPeak_single.R`（已重写）、`run_ChIPQC.R`（已修复参数化）、`run_chipqc_DROMPAplus.sh`（已参数化）；`diffpeak_DiffBind.sh` / `run_DiffBind.R` 为待实现的空壳（需 contrast 设计决策）。
+## legacy/diffbind/（v0.4.0 归档）
+
+未接入主流水线 DAG 的独立 QC / 差异分析空壳脚本，v0.4.0 起从 `scripts/` 归档至此，**不可直接运行**：
+
+| 归档文件 | 原位置 | 取代者 / 恢复路线 |
+|---|---|---|
+| `annoPeak_single.R` | `scripts/` | `workflow/scripts/annoPeak_batch.R`（已参数化重写，按组批量注释） |
+| `run_ChIPQC.R` | `scripts/` | `rules/qc_deeptools.smk` + FRiP（QC 已规则化接入 DAG）；ChIPQC 恢复需先修复 docs/REVIEW.md 所列参数化问题 |
+| `run_chipqc_DROMPAplus.sh` | `scripts/` | `rules/qc_deeptools.smk` + FRiP（同上；DROMPAplus 依赖 docker 镜像未参数化，见 docs/REVIEW.md） |
+| `diffpeak_DiffBind.sh` | `scripts/` | 暂无——差异分析待实现（contrast 与设计公式待定，见 docs/REVIEW.md） |
+| `run_DiffBind.R` | `scripts/` | 同上（空壳文件，仅有文件头） |
+
+仍在 `workflow/scripts/` 维持的文件（不属于 legacy）：`annoPeak_batch.R`（已参数化重写）、`runtime_config.py`、`collect_versions.py`。
