@@ -266,15 +266,17 @@ if [[ -z "$SNAKEMAKE_VERSION" ]]; then
 elif [[ "$SNAKEMAKE_VERSION" =~ ^[0-9]+ ]]; then
     SNAKEMAKE_MAJOR="${SNAKEMAKE_VERSION%%.*}"
     if (( SNAKEMAKE_MAJOR >= 8 )); then
-        warn "snakemake 8+ 改用 executor 插件体系（--cluster 语义有变化），集群 profile 实跑前请先实测"
+        warn "snakemake 8+ switched to the executor plugin system (--cluster semantics changed); test cluster profiles on a small scale before real runs"
     fi
 fi
 
-# CHIP_CONFIG 供 Snakefile 的 configfile: 指令在解析期读取（缺省回落仓库默认配置）。
-# 最终生效配置以 --configfile 链为准：snakemake 会把命令行 --configfile 的合并结果
-# 再次覆盖到 configfile: 指令加载的值之上，因此链上靠后的文件（config.local.yaml）
-# 始终优先；CHIP_CONFIG 只承担解析期种子与缺失回落两个角色，故只指向链上第一个
-# 项目级 config。
+# CHIP_CONFIG feeds the Snakefile's configfile: directive during parsing
+# (falls back to the repository default config when unset). The effective
+# configuration is determined by the --configfile chain: snakemake re-applies
+# the command-line --configfile merge result on top of the configfile:
+# directive values, so later files in the chain (config.local.yaml) always
+# win. CHIP_CONFIG only serves as the parse-time seed and missing-key
+# fallback, hence it points at the first project-level config in the chain.
 export CHIP_CONFIG="$CONFIG_FOR_PARSE"
 
 select_profile() {
@@ -285,7 +287,7 @@ select_profile() {
         if command -v sbatch >/dev/null 2>&1; then
             requested="slurm"
         elif command -v qsub >/dev/null 2>&1; then
-            # qsub 二义性：SGE 环境必有 SGE_ROOT；否则按 PBS 处理
+            # qsub is ambiguous: an SGE installation always sets SGE_ROOT; otherwise treat as PBS
             if [[ -n "${SGE_ROOT:-}" ]]; then requested="sge"; else requested="pbs"; fi
         else
             requested="default"
@@ -396,7 +398,8 @@ esac
 cd "$PROJECT_DIR"
 mkdir -p logs
 
-# 可选：统一原始数据命名（perl rename 语法；系统无 rename 则跳过并提示）
+# Optional: normalize raw-data naming (perl rename syntax; skipped with a
+# warning when the rename command is unavailable)
 if [[ "$RENAME" == true && -d "1.rawdata" ]]; then
     if command -v rename >/dev/null 2>&1; then
         (
@@ -407,17 +410,19 @@ if [[ "$RENAME" == true && -d "1.rawdata" ]]; then
             rename _2.fastq.gz _2.fq.gz ./*gz 2>/dev/null || true
         )
     else
-        warn "未找到 rename 命令，跳过重命名；请确保 fastq 命名为 {sample}_1.fq.gz / {sample}_2.fq.gz"
+        warn "rename command not found; skipping rename. Ensure fastq files are named {sample}_1.fq.gz / {sample}_2.fq.gz"
     fi
 fi
 
-# 额外配置：显式 -l/--extra-config 优先；否则自动检测项目目录下的 config.local.yaml
+# Extra config: an explicit -l/--extra-config wins; otherwise auto-detect
+# config.local.yaml in the project directory
 if [[ -z "$EXTRA_CONFIG" && -f "$PROJECT_DIR/config.local.yaml" ]]; then
     EXTRA_CONFIG="$PROJECT_DIR/config.local.yaml"
-    info "检测到 config.local.yaml，将叠加覆盖默认配置"
+    info "Detected config.local.yaml; it will be layered on top of the earlier configs"
 fi
 
-# 配置链：仓库默认 + 项目 config + config.local.yaml，依序传给 snakemake（后者覆盖前者）。
+# Config chain: repository default + project config + config.local.yaml, passed
+# to snakemake in order (later files override earlier keys).
 CONFIGFILE_ARGS=(--configfile "$DEFAULT_CONFIG")
 [[ -n "$CONFIG_PATH" ]] && CONFIGFILE_ARGS+=(--configfile "$CONFIG_PATH")
 [[ -n "$EXTRA_CONFIG" ]] && CONFIGFILE_ARGS+=(--configfile "$EXTRA_CONFIG")
@@ -463,7 +468,8 @@ if [[ "$QUIET" != true ]]; then
     [[ -n "$SNAKEMAKE_VERSION" ]] && info "Snakemake: $SNAKEMAKE_VERSION"
 fi
 if [[ "$VALIDATE_ONLY" == true ]]; then
-    # 样本表与 config 校验集中在 Snakefile 解析期执行：--list-rules 触发完整解析后即退出。
+    # Sample-table and config validation runs at Snakefile parse time:
+    # --list-rules triggers a full parse and then exits.
     info "Validate-only: parsing workflow and configs (snakemake --list-rules)."
     snakemake -s "$SNAKEFILE" "${CONFIGFILE_ARGS[@]}" --profile "$PROFILE_DIR" --list-rules
     info "Validation completed successfully."
@@ -510,7 +516,7 @@ on_exit() {
     elapsed=$((end - START_EPOCH))
     if (( status == 0 )); then
         if [[ "$PROFILE" == "pbs" ]]; then
-            # PBS 集群模式：回收落在项目目录根的 qsub 输出日志（存在才移动）
+            # PBS cluster mode: collect qsub job logs left at the project root (move only if present)
             mv ./[a-zA-Z]*.o* ./logs/ 2>/dev/null || true
         fi
         info "Workflow finished successfully in ${elapsed}s."

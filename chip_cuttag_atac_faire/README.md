@@ -1,173 +1,180 @@
 # chip_cuttag_atac_faire
 
-基于 **Snakemake** 的植物表观组学一站式分析流程，单入口 `workflow/Snakefile` 同时支持四种数据类型（可混型项目）：
+A one-stop **Snakemake** workflow for plant epigenomics. The single entry point `workflow/Snakefile` supports four data types (mixed-assay projects supported):
 
-| Assay | 典型用途 | 峰调用策略 | 去重策略 |
+| Assay | Typical use | Peak calling strategy | Deduplication strategy |
 |---|---|---|---|
-| **ChIP-seq** | 组蛋白修饰 / TF 结合 | MACS2（narrow：H3K27ac/H3K4me3 等；broad：H3K27me3 等） | picard 去重 |
-| **CUT&Tag** | 低背景组蛋白修饰 / TF | MACS2（narrow/broad 按需） | 不去重（保留 PCR 重复） |
-| **ATAC-seq** | 染色质开放区 | MACS2 BAMPE 模式（ENCODE ATAC v2 做法；可切经典 Tn5 偏移配方） | picard 去重 |
-| **FAIRE-seq** | 染色质开放区（历史方法） | 同 ATAC | picard 去重 |
+| **ChIP-seq** | Histone marks / TF binding | MACS2 (narrow: H3K27ac/H3K4me3 etc.; broad: H3K27me3 etc.) | picard deduplication |
+| **CUT&Tag** | Low-background histone marks / TF | MACS2 (narrow/broad as needed) | no deduplication (PCR duplicates kept) |
+| **ATAC-seq** | Open chromatin regions | MACS2 BAMPE mode (ENCODE ATAC v2 recipe; classic Tn5 offset recipe optional) | picard deduplication |
+| **FAIRE-seq** | Open chromatin regions (legacy method) | same as ATAC | picard deduplication |
 
-去重策略、峰参数、QC 开关均按 assay 在 `config/config.yaml` 中配置。默认示例参考基因组为水稻 *Oryza sativa*（IRGSP-1.0），更换物种只需修改参考文件路径与基因组大小。
+Deduplication strategy, peak parameters, and QC switches are configured per assay in `config/config.yaml`. The default example reference genome is rice *Oryza sativa* (IRGSP-1.0); switching species only requires changing the reference file paths (species presets in `config/species.yaml`) and the genome size.
 
-> **状态（v0.4.0）**：工程体系对齐 rna-seq v0.8.0——统一入口 `run.sh` 运维 CLI（四套调度 profile + auto 探测 + preflight + 资源覆盖 + unlock）、统一环境体系（`workflow/environment.yaml` 一体化模板 + `config/software.yaml` 复用已有环境/R 库，per-rule conda 已移除）、per-rule 集群资源模型、合成数据 dry-run 回归 + 55 项单元测试 + CI、文档四件（README / docs/使用说明.md / CONTRIBUTING.md / CHANGELOG）。DAG 已过 CI dry-run 与独立审查；端到端实跑见[服务器验证步骤](#服务器验证步骤)。
+> **Status (v0.4.0)**: engineering aligned with rna-seq v0.8.0 — unified `run.sh` ops CLI (four scheduler profiles + auto detection + preflight + resource overrides + unlock), unified environment system (`workflow/environment.yaml` all-in-one template + `config/software.yaml` to reuse existing environments/R libraries; per-rule conda removed), per-rule cluster resource model, synthetic-data dry-run regression + unit tests + CI, and four docs (README / docs/user-guide.md / CONTRIBUTING.md / CHANGELOG). All derived outputs are consolidated under the project's `results/` directory (configurable via `results_dir`). The DAG passes the CI dry-run and an independent review; for end-to-end runs see [Server validation steps](#server-validation-steps).
 
-## 流程总览
+## Workflow overview
 
 ```mermaid
 flowchart LR
-    A[1.rawdata<br>原始 fastq] --> B[trim_galore<br>接头修剪/质控]
-    B --> C[FastQC / MultiQC<br>+ bowtie2日志 + picard指标]
-    B --> D[bowtie2 比对<br>+ MAPQ 过滤 + sort/index]
-    D --> E{dedup 按 assay 开关}
+    A[1.rawdata<br>raw fastq] --> B[trim_galore<br>adapter trimming/QC]
+    B --> C[FastQC / MultiQC<br>+ bowtie2 logs + picard metrics]
+    B --> D[bowtie2 alignment<br>+ MAPQ filter + sort/index]
+    D --> E{dedup switch per assay}
     E -->|chip/atac/faire| F[picard MarkDuplicates]
-    E -->|cuttag| G[跳过，用 sorted BAM]
-    F & G --> H[峰调用 按组并行<br>narrow / broad / atac 三规则]
+    E -->|cuttag| G[skipped, use sorted BAM]
+    F & G --> H[peak calling, parallel per group<br>narrow / broad / atac rules]
     H --> I[bdgcmp → bedClip<br>→ bedtools sort -g → bigWig]
-    H --> J[ChIPseeker 峰注释<br>+ 分布图]
-    H & F & G --> K[QC：FRiP + deeptools<br>相关性/PCA/指纹/片段长/基因区信号]
-    H -.可选.-> L[SPP NSC/RSC]
+    H --> J[ChIPseeker peak annotation<br>+ distribution plots]
+    H & F & G --> K[QC: FRiP + deeptools<br>correlation/PCA/fingerprint/fragment size/gene-region signal]
+    H -.optional.-> L[SPP NSC/RSC]
 ```
 
-## 环境准备
+## Environment setup
 
-三条落地路径（任选其一，详见 [docs/使用说明.md](docs/使用说明.md) §1）：
+Three ways to get an environment (pick one; details in [docs/user-guide.md](docs/user-guide.md) §1):
 
-1. **全新服务器**：`mamba env create -f workflow/environment.yaml`（一体化环境 `chip-cuttag-atac-faire`，钉版 snakemake-minimal 7.32.4 / bowtie2 2.5.1 / macs2 2.2.7.1 / R 4.3 + ChIPseeker 等）；
-2. **复用已有 conda 环境**：`config/software.yaml` 设 `environment.type: conda` + `conda_prefix`（推荐）或 `conda_name`，`run.sh` 自动把 prefix 的 `bin` 注入 PATH，无需 activate；
-3. **system 模式 + 复用服务器 R 库**：`environment.type: system` 工具走 PATH，`r.rscript` 指定 Rscript、`r.lib_paths` 复用已有 ChIPseeker 库。
+1. **Fresh server**: `mamba env create -f workflow/environment.yaml` (all-in-one environment `chip-cuttag-atac-faire`, pinning snakemake-minimal 7.32.4 / bowtie2 2.5.1 / macs2 2.2.7.1 / R 4.3 + ChIPseeker etc.);
+2. **Reuse an existing conda environment**: in `config/software.yaml` set `environment.type: conda` + `conda_prefix` (recommended) or `conda_name`; `run.sh` injects the prefix's `bin` into PATH automatically, no activate needed;
+3. **system mode + reuse the server's R libraries**: with `environment.type: system`, tools come from PATH; `r.rscript` points at Rscript and `r.lib_paths` reuses existing ChIPseeker libraries.
 
-环境由用户显式创建，Snakemake 不会自动部署；启动前用 `bash run.sh -P <workdir> --check-software`（工具 + R + R 包）或 `--check-r` 预检。
+Environments are created explicitly by the user; Snakemake never deploys them automatically. Before launching, preflight with `bash run.sh -P <workdir> --check-software` (tools + R + R packages) or `--check-r`.
 
-Snakemake 版本矩阵：
+Snakemake version matrix:
 
-| snakemake 版本 | 支持情况 | 说明 |
+| snakemake version | support | notes |
 |---|---|---|
-| **7.32.4** | ✅ 参考版本 | workflow/environment.yaml 钉版版本；四套集群 profile 按 7.x 经典 `--cluster` 接口编写 |
-| **8.x** | ⚠️ 集群语义未验证 | 解析/lint 级已验证；集群提交改为 executor 插件体系，实跑前先测（launcher 启动时自动告警） |
-| <7 或 ≥9 | ⛔ 未验证 | 需实测 |
+| **7.32.4** | ✅ reference version | pinned in workflow/environment.yaml; the four cluster profiles are written against the 7.x classic `--cluster` interface |
+| **8.x** | ⚠️ cluster semantics unverified | parsing/lint verified; cluster submission moved to the executor plugin system — test before real cluster runs (the launcher warns automatically at startup) |
+| <7 or ≥9 | ⛔ unverified | test before use |
 
-## 快速开始
+## Quick start
 
-完整五步教程见 [docs/使用说明.md](docs/使用说明.md)（工作目录 → 数据 → 样本表 → config → 启动），概要：
+The full five-step tutorial is in [docs/user-guide.md](docs/user-guide.md) (working directory → data → sample table → config → launch). Summary:
 
 ```bash
-# 1) 工作目录与数据
+# 1) Working directory and data
 mkdir -p ~/work/demo/1.rawdata
-cp {sample}_1.fq.gz {sample}_2.fq.gz ~/work/demo/1.rawdata/   # 常见 R1/R2 后缀可 bash run.sh -r 批量重命名
+cp {sample}_1.fq.gz {sample}_2.fq.gz ~/work/demo/1.rawdata/   # common R1/R2 suffixes can be renamed in batch via bash run.sh -r
 
-# 2) 样本表 + 项目配置（6 列 schema 模板见 config/samples.csv）
+# 2) Sample table + project config (6-column schema template in config/samples.csv)
 cp config/samples.csv ~/work/demo/sample_info.csv
-cp config/config.yaml ~/work/demo/config.yaml                 # 改参考四件套 + genome_size
+cp config/config.yaml ~/work/demo/config.yaml                 # adjust the reference file set + genome_size (or rely on species presets)
 
-# 3) 预检 → dry-run → 运行
+# 3) Preflight -> dry-run -> run
 bash run.sh -P ~/work/demo --check-software
 bash run.sh -P ~/work/demo -n
-bash run.sh -P ~/work/demo --profile auto -j 10               # 集群示例：--profile pbs --queue workq --memory 16G --runtime 600
+bash run.sh -P ~/work/demo --profile auto -j 10               # cluster example: --profile pbs --queue workq --memory 16G --runtime 600
 ```
 
-要点：
+Key points:
 
-- 混型项目按样本表 `seqtype` 列自动路由，无需启动选项；样本表逐行校验、错误信息含行号；
-- 配置链：仓库 `config/config.yaml` → 项目 `-c`（缺省自动探测 `<workdir>/config.yaml`）→ `config.local.yaml`（自动叠加，后者优先）；
-- 集群资源默认按各规则 `resources` 声明提交，可用 config `resources:` 段按规则覆盖、`--memory`/`--runtime` 全局覆盖；完整选项见 `run.sh --help`。
+- Mixed-assay projects are routed automatically by the sample table's `seqtype` column, no launcher options needed; the sample table is validated row by row with line numbers in error messages;
+- Config chain: repository `config/config.yaml` → project `-c` (defaults to auto-detected `<workdir>/config.yaml`) → `config.local.yaml` (auto-layered; later files win);
+- `species: "osa" | "hsa"` selects a reference preset from `config/species.yaml` (genome_fa/gtf/bed/chromsize/genome_size); explicit reference keys in the project config win over the preset;
+- Cluster jobs are submitted with the per-rule resources declared in `config/resources.yaml` (`threads/mem_mb/runtime_min`); copy that file into the project as `resources.yaml` to override per rule (run.sh auto-detects it), or override globally via `--memory`/`--runtime`; the legacy top-level `threads` in config still acts as a global cap. Full options in `run.sh --help`.
 
-## 目录结构
+## Directory structure
 
 ```
 chip_cuttag_atac_faire/
-├── run.sh                    # 统一启动 CLI（四 profile/auto 探测/preflight/--unlock，见 run.sh --help）
+├── run.sh                    # unified launcher CLI (four profiles/auto detection/preflight/--unlock; see run.sh --help)
 ├── workflow/
-│   ├── Snakefile             # 统一入口（seqtype 列自动路由 + 条件 include QC 模块）
-│   ├── environment.yaml      # 一体化 conda 环境模板（钉版；用户显式创建）
+│   ├── Snakefile             # unified entry (seqtype-column routing + species presets + conditional QC includes)
+│   ├── environment.yaml      # all-in-one conda environment template (pinned; created explicitly by the user)
 │   ├── rules/                # common/upstream/dedup/callpeak/annotation/frip/qc_deeptools/spp_qc/meta
-│   ├── scripts/              # runtime_config.py（software.yaml 解析）、annoPeak_batch.R、collect_versions.py
-│   ├── profile/              # default / pbs / sge / slurm 四套 profile + README（cluster 串与固参数）
+│   ├── scripts/              # runtime_config.py (software.yaml resolver), annoPeak_batch.R, collect_versions.py
+│   ├── profile/              # default / pbs / sge / slurm profiles + README (cluster commands and pinned params)
 │   └── multiqc_config.yaml
 ├── config/
-│   ├── config.yaml           # 默认配置（水稻 IRGSP-1.0 示例；resources 覆盖段注释示例）
-│   ├── config.template.yaml  # 覆盖模板（复制为工作目录 config.local.yaml）
-│   ├── software.yaml         # 统一软件/R runtime（conda_prefix / system + lib_paths）
-│   └── samples.csv           # 样本表模板（6 列混型 schema）
-├── tests/                    # run_tests.py（55 项）/ lint.sh / run_test.sh / make_testdata.py
-├── example/                  # 示例项目模板（真实样本表 + 项目 config + 一条命令启动指引）
-├── docs/                     # 使用说明（用户指南）
+│   ├── config.yaml           # default config (rice example via the osa preset; outputs rooted at results/)
+│   ├── config.template.yaml  # override template (copy into the working directory as config.local.yaml)
+│   ├── species.yaml          # species presets (osa/hsa: genome_fa/gtf/bed/chromsize/genome_size)
+│   ├── resources.yaml        # per-rule scheduler resources (threads/mem_mb/runtime_min; copy as project resources.yaml to override)
+│   ├── software.yaml         # unified software/R runtime (conda_prefix / system + lib_paths)
+│   └── samples.csv           # sample table template (6-column mixed-assay schema)
+├── tests/                    # run_tests.py (62 checks) / lint.sh / run_test.sh / make_testdata.py
+├── example/                  # example project templates (real sample table + project config + one-command start guide)
+├── docs/                     # user guide
 ├── Makefile                  # make check / lint / test
 ├── CHANGELOG.md
-└── .github/workflows/ci.yaml # CI：lint（check+lint.sh）+ 合成数据 dry-run 回归
+└── LICENSE                   # Apache-2.0 (CI lives at the repository root: .github/workflows/ci.yml)
 ```
 
-## 结果路径速查
+## Results path quick reference
 
-| 结果 | 路径 |
+All derived artifacts live under `results/` in the working directory (rename via `results_dir` in config); raw inputs `1.rawdata/` stay at the working-directory root.
+
+| Result | Path |
 |---|---|
-| 质控汇总（fastqc+bowtie2+picard+FRiP+NSC/RSC） | `2.cleandata/fastqc/multiqc/multiqc_report.html` |
-| 比对 BAM / 去重指标 | `3.align/bowtie2/{sample}_{sorted,rmdup}.bam`、`{sample}_dup_metrics.txt` |
-| 峰文件 / summits | `4.peak/{group}_peaks.{narrowPeak,broadPeak}`、`{group}_summits.bed` |
-| 信号轨道 bigWig | `4.peak/{group}_FE.bw` |
-| 峰注释表与分布图 | `4.peak/anno_result/*.Anno.xls`、`Peakanno_PeakDistributions.pdf` |
-| FRiP 汇总 | `5.QC/frip/FRiP_summary.tsv` |
-| NSC/RSC 汇总（`qc.nsc_rsc: true`） | `5.QC/spp/NSC_RSC_mqc.tsv` |
-| deeptools QC（相关热图/PCA/指纹/片段长/基因区信号） | `5.QC_deeptools/` |
-| 软件版本记录 | `5.QC/software_versions.yaml` |
+| QC summary (fastqc+bowtie2+picard+FRiP+NSC/RSC) | `results/2.cleandata/fastqc/multiqc/multiqc_report.html` |
+| Alignment BAMs / dedup metrics | `results/3.align/bowtie2/{sample}_{sorted,rmdup}.bam`, `{sample}_dup_metrics.txt` |
+| Peak files / summits | `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}`, `{group}_summits.bed` |
+| Signal-track bigWigs | `results/4.peak/{group}_FE.bw` |
+| Peak annotation tables and plots | `results/4.peak/anno_result/*.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
+| bowtie2 index (reusable across projects) | `results/0.index/bowtie2*.bt2` |
+| FRiP summary | `results/5.QC/frip/FRiP_summary.tsv` |
+| NSC/RSC summary (`qc.nsc_rsc: true`) | `results/5.QC/spp/NSC_RSC_mqc.tsv` |
+| deeptools QC (correlation heatmaps/PCA/fingerprints/fragment sizes/gene-region signal) | `results/5.QC/deeptools/` |
+| Software version record | `results/5.QC/software_versions.yaml` |
+| Per-rule logs | `results/logs/` |
 
-## QC 参考阈值
+## QC reference thresholds
 
-| 指标 | 参考标准 | 来源 |
+| Metric | Reference standard | Source |
 |---|---|---|
-| FRiP | TF ≥ 1%（理想 5%+）；组蛋白修饰酌情放宽 | ENCODE |
-| NSC | ≥ 1.05，理想 ≥ 1.1（开启 `qc.nsc_rsc`） | ENCODE |
-| RSC | ≥ 0.8，理想 ≥ 1（开启 `qc.nsc_rsc`） | ENCODE |
-| 比对率 | 常规 ≥ 70% | 经验值 |
+| FRiP | TF ≥ 1% (ideally 5%+); relax as appropriate for histone marks | ENCODE |
+| NSC | ≥ 1.05, ideally ≥ 1.1 (with `qc.nsc_rsc` enabled) | ENCODE |
+| RSC | ≥ 0.8, ideally ≥ 1 (with `qc.nsc_rsc` enabled) | ENCODE |
+| Alignment rate | typically ≥ 70% | empirical |
 
-## 文档索引
+## Documentation index
 
-| 文档 | 内容 |
+| Document | Contents |
 |---|---|
-| [docs/使用说明.md](docs/使用说明.md) | 环境三条落地路径、五步快速开始、样本表 schema 与校验、config 全键与资源默认值、集群提交、结果解读、FAQ |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发流程、CHANGELOG 要求、文档同步 checklist、测试要求、代码风格 |
-| [workflow/profile/README.md](workflow/profile/README.md) | 四套 profile 的 cluster 串与占位符说明 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
+| [docs/user-guide.md](docs/user-guide.md) | three environment paths, five-step quick start, sample-table schema and validation, full config key reference and resource defaults, cluster submission, result interpretation, FAQ |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | development workflow, CHANGELOG requirements, doc-sync checklist, testing requirements, code style |
+| [workflow/profile/README.md](workflow/profile/README.md) | cluster commands and placeholder semantics for the four profiles |
+| [CHANGELOG.md](CHANGELOG.md) | version change log |
 
-## 开发与测试
-
-```bash
-make check    # 55 项单元测试 + bash -n 语法检查（无需 snakemake）
-make lint     # 静态检查套件（bash/shellcheck/py/R/yaml/snakemake --lint，缺可选工具自动跳过）
-make test     # CI 同款全量检查（= check + lint）
-```
-
-回归测试（需 snakemake）：
+## Development and testing
 
 ```bash
-bash tests/run_test.sh               # 合成数据 dry-run：生成 → 组装工作目录 → 验证 DAG 完整性
-bash tests/run_test.sh --real-run    # 端到端实跑 + 产物断言（服务器验证用，需完整分析环境）
+make check    # 62 unit tests + bash -n syntax checks (no snakemake needed)
+make lint     # static check suite (bash/shellcheck/py/R/yaml/snakemake --lint; missing optional tools are skipped)
+make test     # CI-equivalent full check (= check + lint)
 ```
 
-测试数据由 `tests/make_testdata.py` 固定种子生成（2 条 100kb 染色体，chip 3 样本 + atac 2 样本，序列真实取自参考基因组），不入库。CI（`.github/workflows/ci.yaml`）在 push/PR 时执行 lint 与 `--reads 2000` 的快速回归。
-
-### 服务器验证步骤
-
-CI 只覆盖 dry-run；新环境/新服务器部署后按序执行一次端到端验证：
+Regression tests (need snakemake):
 
 ```bash
-bash run.sh -P /path/to/workdir --check-software     # 1) 工具/R/R 包预检
-bash tests/run_test.sh --real-run                    # 2) 合成数据端到端实跑 + 断言（小样本，分钟级）
-bash run.sh -P /path/to/real_project -n              # 3) 真实项目 dry-run 确认 DAG 后正式运行
+bash tests/run_test.sh               # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
+bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs a full analysis environment)
 ```
 
-## 已知限制与待办
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples, sequences drawn from the reference genome) and is never committed. CI (repository-root `.github/workflows/ci.yml`) runs lint and a `--reads 2000` fast regression on push/PR.
 
-1. **端到端实跑待完成**：CI 与回归覆盖 dry-run 级；真实数据端到端实跑（含 conda 环境求解、MACS2 无对照 `control_lambda` 产出确认）按上方"服务器验证步骤"执行后记入 CHANGELOG。
-2. bowtie2 索引规则只声明 `.bt2`（参考组 >4Gbp 时 bowtie2 产出 `.bt2l`，需手动建索引后放入 `0.index/`）。
-3. **DiffBind 差异分析**：待实现（contrast 与设计公式待定）；原空壳脚本（DiffBind/ChIPQC/DROMPAplus 等）已移出仓库归档（不入版本库），需要时从本地归档或 git 历史恢复。
-4. 仅支持双端（PE）数据。
+### Server validation steps
 
-## 许可证
+CI only covers the dry-run; after deploying to a new environment/server, run one end-to-end validation in order:
+
+```bash
+bash run.sh -P /path/to/workdir --check-software     # 1) tools/R/R-package preflight
+bash tests/run_test.sh --real-run                    # 2) synthetic-data end-to-end run + assertions (small sample, minutes)
+bash run.sh -P /path/to/real_project -n              # 3) real-project dry-run to confirm the DAG, then the real run
+```
+
+## Known limitations and TODOs
+
+1. **End-to-end real run pending**: CI and regression cover the dry-run level; the real-data end-to-end run (including conda environment solving and confirming the MACS2 no-control `control_lambda` outputs) follows the "Server validation steps" above and is then recorded in the CHANGELOG.
+2. The bowtie2 index rule only declares `.bt2` (for references >4Gbp bowtie2 produces `.bt2l`; build the index manually and place it under `results/0.index/`).
+3. **DiffBind differential analysis**: not yet implemented (contrast and design formula TBD); the former empty stub scripts (DiffBind/ChIPQC/DROMPAplus etc.) were archived out of the repository (not in version control); restore them from local archives or git history when needed.
+4. Only paired-end (PE) data is supported.
+
+## License
 
 [Apache-2.0](LICENSE) © 2026 ChengYu
 
-## 版本
+## Versions
 
-v0.1.0（2024-03 原始实现，已归档出库）→ v0.2.0（2026-09-03 重构）→ v0.4.0（2026-09 对齐 rna-seq 工程体系：统一环境 / run.sh CLI / 四 profile / per-rule 资源 / 测试与文档）。语义化版本 tag 维护，变更见 [CHANGELOG.md](CHANGELOG.md)。
+v0.1.0 (2024-03 original implementation, archived out of the repository) → v0.2.0 (2026-09-03 refactor) → v0.4.0 (2026-09 aligned with the rna-seq engineering system: unified environment / run.sh CLI / four profiles / per-rule resources / tests and docs). Semantic version tags are maintained; see [CHANGELOG.md](CHANGELOG.md) for changes.

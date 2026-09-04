@@ -1,9 +1,9 @@
 #!/bin/bash
 #########################################################################
-# 组间 DEG 集合比较：生成两两组合任务 → 并行 GO 富集比较 → 交集基因注释
+# Between-group DEG set comparison: generate pairwise combination jobs -> parallel GO enrichment comparison -> intersecting-gene annotation
 # Usage: DEGgroupCompare.sh <results_dir> <control_group> <annotation_tsv> <sample_info.csv> <threads> [species]
-#   species        osa | hsa（默认 osa），转发给 run_deg_compare.R
-# 并行执行用 xargs -P 替代原 ParaFly（不再依赖个人软件路径）
+#   species        osa | hsa (default osa), forwarded to run_deg_compare.R
+# Parallel execution uses xargs -P instead of the former ParaFly (no personal software paths required)
 #########################################################################
 
 set -u
@@ -18,26 +18,26 @@ samplefile=$4
 cpu=$5
 spe=${6:-osa}
 
-## 交集注释用的临时文件（mktemp + trap，避免残留在运行目录）
+## Temporary file for intersection annotation (mktemp + trap avoids leftovers in the run directory)
 tmp_gene=$(mktemp)
 trap 'rm -f "$tmp_gene"' EXIT
 
 mkdir -p "$RD/6.DEGcompare/combination"
 "$PYTHON" "$SCRIPT_DIR/getGroups.py" "$samplefile" "$RD/5.DEG/DEGs" "$control" "$RD/6.DEGcompare"
 
-## 生成任务列表（species / orgdb 贯通到每个任务）
+## Generate the job list (species / orgdb propagated to every job)
 rm -f "$RD/6.DEGcompare/jobs"
 ls "$RD"/6.DEGcompare/combination/* | while read line;
 do
     printf '%q %q %q %q\n' "$RSCRIPT" "$SCRIPT_DIR/run_deg_compare.R" "$line" "$spe" >> "$RD/6.DEGcompare/jobs"
 done
 
-## 并行执行（每行一条命令，-P 控制并发数；-r 处理组 <2 时任务列表为空的情况）
-## 单个任务失败不中断整体（与 enrich 的容错语义一致），但显式告警
+## Run in parallel (one command per line, -P controls concurrency; -r handles an empty job list when <2 treatment groups)
+## A single failing job does not abort the whole run (same fault-tolerance semantics as enrich), but a warning is emitted
 xargs -r -P "$cpu" -d '\n' -I CMD sh -c 'CMD' < "$RD/6.DEGcompare/jobs" \
     || echo "[DEGgroupCompare] [WARN] Some comparison jobs failed; results may be incomplete." >&2
 
-## 交集基因功能注释
+## Functional annotation of intersecting genes
 mkdir -p "$RD/6.DEGcompare/intersetionGene_anno"
 ls "$RD"/6.DEGcompare/*_intersetion.xls | while read id;
 do

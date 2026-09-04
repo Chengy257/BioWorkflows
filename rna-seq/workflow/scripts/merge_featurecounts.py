@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""合并各样本 featureCounts 定量结果。
+"""Merge per-sample featureCounts quantification results.
 
-用法:
-    python merge_featurecounts.py <定量目录>
+Usage:
+    python merge_featurecounts.py <quantification_dir>
 
-<定量目录>/ 下需有每样本的 <sample>.count 与 <sample>.log
-（由 scripts/run_featurecounts.R 产生；.count 5 列: id/effLength/counts/fpkm/tpm）。
+<quantification_dir>/ must contain per-sample <sample>.count and <sample>.log files
+(produced by scripts/run_featurecounts.R; .count has 5 columns: id/effLength/counts/fpkm/tpm).
 
-输出（写入同目录）:
-    count.matrix.tsv            基因 × 样本 raw counts 矩阵（runDESeq2 输入）
-    GeneExpression_TPM.xls      基因 × 样本 TPM 矩阵
-    GeneExpression_FPKM.xls     基因 × 样本 FPKM 矩阵
-    GeneCount_Assigned_logs.xls featureCounts 各状态（Assigned/Unassigned_*）统计
+Outputs (written to the same directory):
+    count.matrix.tsv            gene x sample raw counts matrix (runDESeq2 input)
+    GeneExpression_TPM.xls      gene x sample TPM matrix
+    GeneExpression_FPKM.xls     gene x sample FPKM matrix
+    GeneCount_Assigned_logs.xls featureCounts per-status (Assigned/Unassigned_*) statistics
 
-替代原合并 shell 脚本（其依赖的 njoin.sh / transposition.sh 不在仓库中），
-行为对齐原输出格式。
+Replaces the former merge shell script (its dependencies njoin.sh / transposition.sh are not in the repo);
+the output format matches the original.
 """
 import glob
 import os
@@ -23,7 +23,7 @@ import sys
 
 
 def sample_name(path):
-    """<sample>.count -> 样本名；'-' 替换为 '_'，与 runDESeq2 的 id 处理保持一致"""
+    """<sample>.count -> sample name; '-' replaced with '_', consistent with runDESeq2 id handling"""
     base = os.path.basename(path)
     for ext in (".count", ".log"):
         if base.endswith(ext):
@@ -32,12 +32,12 @@ def sample_name(path):
 
 
 def read_count_file(path):
-    """返回 [(gene_id, counts, fpkm, tpm), ...]"""
+    """Return [(gene_id, counts, fpkm, tpm), ...]"""
     rows = []
     with open(path) as fh:
         header = fh.readline().rstrip("\n").split("\t")
         if header[:5] != ["id", "effLength", "counts", "fpkm", "tpm"]:
-            sys.exit(f"[ERROR] {path} 表头异常: {header[:5]}")
+            sys.exit(f"[ERROR] unexpected header in {path}: {header[:5]}")
         for line in fh:
             parts = line.rstrip("\n").split("\t")
             if len(parts) < 5:
@@ -47,7 +47,7 @@ def read_count_file(path):
 
 
 def read_log_file(path):
-    """featureCounts $stat 表 -> {status: 数量}；跳过表头行（Status/...）"""
+    """featureCounts $stat table -> {status: count}; skips the header row (Status/...)"""
     stats = {}
     with open(path) as fh:
         for line in fh:
@@ -65,9 +65,9 @@ def main():
 
     count_files = sorted(glob.glob(os.path.join(out_dir, "*.count")))
     if not count_files:
-        sys.exit(f"[ERROR] {out_dir} 下未找到 *.count 文件")
+        sys.exit(f"[ERROR] no *.count files found in {out_dir}")
 
-    ## ---- 合并 count/fpkm/tpm 矩阵（以首个样本的基因顺序为基准）----
+    ## ---- Merge count/fpkm/tpm matrices (gene order anchored to the first sample)----
     gene_order = []
     values = {}  # gene_id -> {sample: (counts, fpkm, tpm)}
     for cf in count_files:
@@ -90,7 +90,7 @@ def main():
     write_matrix("GeneExpression_FPKM.xls", 1)
     write_matrix("GeneExpression_TPM.xls", 2)
 
-    ## ---- 合并 featureCounts 状态统计（行=样本，列=状态）----
+    ## ---- Merge featureCounts status statistics (rows=samples, columns=statuses)----
     log_files = sorted(glob.glob(os.path.join(out_dir, "*.log")))
     status_order = []
     stat_values = {}  # sample -> {status: value}

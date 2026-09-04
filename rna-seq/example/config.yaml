@@ -1,20 +1,21 @@
 ## =====================================================================
-## 示例项目配置（复制到你的项目目录后修改）
-## 运行：bash run.sh deg <project_dir> <project_dir>/config.yaml 10
+## Example project configuration (copy into your project directory, then edit)
+## Run: bash run.sh deg <project_dir> <project_dir>/config.yaml 10
 ## =====================================================================
 
 pipeline: "deg"                 # upstream | deg | as | lncrna
 results_dir: "results"
-SampleListFile: "samples_231107XTL.csv"   # 示例使用真实项目样本表（27 样本，见本目录）
+SampleListFile: "samples_231107XTL.csv"   # the example uses a real project sample table (27 samples, see this directory)
 control_group: "control"
 threads: 12
 
 FoldChange: "2"
 padj: "0.05"
 pca_ntop: 20000
-batch_correction: "F"           # DESeq2 批次校正（T 时样本表需含第三列 batch；F 关闭）
+batch_correction: "F"           # DESeq2 batch correction (when T the sample table needs a third "batch" column; F disables it)
 
-## 参考资源（运行前必须替换为集群真实路径；也可注释掉回落到 config/species.yaml 预设）
+## Reference resources (must be replaced with real cluster paths before running;
+## they can also be commented out to fall back to the config/species.yaml presets)
 species: "osa"
 bed: "/path/to/reference/osa/Oryza_sativa.IRGSP-1.0.56.Chr.bed"
 genome: "/path/to/reference/osa/genome.fa"

@@ -1,30 +1,32 @@
-# 统一软件/运行时配置。
-# 复制到项目目录为 software.yaml 并仅覆盖差异项。
+# Unified software/runtime configuration.
+# Copy it into the project directory as software.yaml and override only the
+# entries that differ.
 
 environment:
   type: system                  # system | conda
-  conda_prefix: ""              # HPC 推荐，如 /share/conda/envs/chip-cuttag-atac-faire
-  conda_name: ""                # conda_prefix 的替代
+  conda_prefix: ""              # recommended on HPC, e.g. /share/conda/envs/chip-cuttag-atac-faire
+  conda_name: ""                # alternative to conda_prefix
   strict: true
 
 r:
-  rscript: "Rscript"            # 命令名或绝对路径
-  version: ""                   # 可选，如 "4.3"
+  rscript: "Rscript"            # command name or absolute path
+  version: ""                   # optional, e.g. "4.3"
   version_check: major_minor    # major_minor | exact | warn | off
-  lib_paths: []                 # 可选 R 库目录（复用服务器已有 ChIPseeker 等时填）
+  lib_paths: []                 # optional R library dirs (fill in to reuse existing server libraries such as ChIPseeker)
   lib_mode: prepend             # prepend | append | replace
-  package_sources: {}           # 可选 包名 -> 本地 tarball 路径（仅用于安装提示）
+  package_sources: {}           # optional package name -> local tarball path (for install hints only)
 
-# 常规工具自动从主环境/PATH 解析；仅覆盖差异项。
+# Regular tools are resolved from the main environment/PATH automatically;
+# override only entries that differ.
 tools:
   trim_galore: "trim_galore"
   bowtie2: "bowtie2"
   samtools: "samtools"
-  picard: "picard"              # picard.jar 完整路径亦可
+  picard: "picard"              # a full picard.jar path also works
   macs2: "macs2"
   bedtools: "bedtools"
-  deeptools: "bamCoverage"     # deeptools 工具组以 bamCoverage 为代表二进制（包本身无 deeptools 可执行文件）
-  spp: "run_spp.R"              # phantompeakqualtools 的 R 入口（bioconda 包内命令名）
+  deeptools: "bamCoverage"     # the deeptools suite is represented by the bamCoverage binary (the package ships no "deeptools" executable)
+  spp: "run_spp.R"              # phantompeakqualtools' R entry point (command name inside the bioconda package)
 
 paths: {}
 

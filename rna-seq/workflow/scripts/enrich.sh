@@ -1,11 +1,11 @@
 #!/bin/bash
 #########################################################################
-# DEG 功能富集：拆分 Up/Down/All DEGs → GO/KEGG 富集 + GSEA → DEGs 注释表
+# DEG functional enrichment: split Up/Down/All DEGs -> GO/KEGG enrichment + GSEA -> DEG annotation table
 # Usage: enrich.sh <DEG_dir> <species> <annotation_tsv> <kegg_organism>
-#   DEG_dir        runDESeq2 输出目录（含 Diff_Expr_Analysis_Results/*_DESeq2.output.tsv）
+#   DEG_dir        runDESeq2 output directory (contains Diff_Expr_Analysis_Results/*_DESeq2.output.tsv)
 #   species        osa | hsa
-#   annotation_tsv 基因 id 功能注释表
-#   kegg_organism  KEGG 物种代码（osa→dosa，hsa→hsa）
+#   annotation_tsv functional annotation table keyed by gene id
+#   kegg_organism  KEGG organism code (osa->dosa, hsa->hsa)
 #########################################################################
 
 set -u
@@ -21,17 +21,17 @@ function enrich() {
 	mkdir -p "$DIR/GO_KEGG_enrich" "$DIR/DEGs"
 	ls "$DIR"/Diff_Expr_Analysis_Results/*_DESeq2.output.tsv | while read id;
 	do
-	## 拆分 DEGs
+	## Split DEGs
 		b_name=$(basename "$id")
 		prefix=${b_name%_*}
 		awk '$NF=="Up"{print $1}' "$id" > "$DIR/DEGs/${prefix}_UP.DEGs.txt"
 		awk '$NF=="Down"{print $1}' "$id" > "$DIR/DEGs/${prefix}_DOWN.DEGs.txt"
 		cat "$DIR/DEGs/${prefix}_UP.DEGs.txt" "$DIR/DEGs/${prefix}_DOWN.DEGs.txt" > "$DIR/DEGs/${prefix}_ALL.DEGs.txt"
 
-	## 提取 FoldChange（供 GSEA）
+	## Extract FoldChange (used by GSEA)
 		cut -f1,3 "$id" > "$DIR/DEGs/${prefix}_FoldChange.xls"
 
-	## GO & KEGG 富集
+	## GO & KEGG enrichment
 		for i in UP DOWN ALL;
 		do
 			mkdir -p "$DIR/GO_KEGG_enrich/${prefix}/${i}"
@@ -40,7 +40,7 @@ function enrich() {
 		done
 	done
 
-	## DEGs 功能注释
+	## DEG functional annotation
 	(
 	cd "$DIR/DEGs" || exit 1
 	ls *.DEGs.txt | while read f;
@@ -50,7 +50,7 @@ function enrich() {
 	)
 	ls "$DIR"/DEGs/*_FoldChange.xls > "$DIR/DEGs/all_fc_filespath"
 
-	## GSEA（GO）
+	## GSEA (GO)
 	"$RSCRIPT" "$SCRIPT_DIR/run_gsea.R" "$DIR/DEGs/all_fc_filespath" "$DIR/GSEA_enrich_GO" "$spe"
 }
 

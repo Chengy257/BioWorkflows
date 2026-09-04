@@ -1,5 +1,5 @@
 ###############################################
-## 定量规则（upstream/deg/lncrna 管线使用）：featureCounts → 表达矩阵合并
+## Quantification rules (used by upstream/deg/lncrna pipelines): featureCounts -> expression matrix merge
 ###############################################
 
 rule featureCount_R:
@@ -28,7 +28,7 @@ rule featureCount_R:
         """
         mkdir -p {params.outdir}
         strandedness=$(head -1 {input.strand} | awk '{{print $1}}')
-        ## 链特异性定量：featureCounts strandSpecific（1=整合链，2=反转链）
+        ## Stranded quantification: featureCounts strandSpecific (1=same strand, 2=opposite strand)
         if [ "$strandedness" == "firststrand" ]; then
             strand="2"
         elif [ "$strandedness" == "secondstrand" ]; then

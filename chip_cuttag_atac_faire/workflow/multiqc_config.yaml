@@ -1,6 +1,6 @@
-## MultiQC 定制配置（全流程 QC 汇总：FastQC / Trim Galore / Bowtie2 / Picard / MACS2 / deeptools / FRiP / NSC-RSC）
+## MultiQC customization (workflow-wide QC summary: FastQC / Trim Galore / Bowtie2 / Picard / MACS2 / deeptools / FRiP / NSC-RSC)
 title: "ChIP/CUT&Tag/ATAC/FAIRE QC Summary"
 subtitle: "FastQC / Trim Galore / Bowtie2 / Picard / MACS2 / deeptools"
-intro_text: "全流程 QC 汇总。FRiP 与 NSC/RSC 为流程注入的 custom content（_mqc.tsv）。"
+intro_text: "Workflow-wide QC summary. FRiP and NSC/RSC are workflow-injected custom content (_mqc.tsv)."
 report_header_info:
   - Workflow: "chip_cuttag_atac_faire (Snakemake)"

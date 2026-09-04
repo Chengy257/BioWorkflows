@@ -1,43 +1,43 @@
-# 示例项目
+# Example project
 
-本目录提供启动一个新分析项目所需的全部模板。
+This directory provides all the templates needed to start a new analysis project.
 
-## 目录内容
+## Directory contents
 
-| 文件 | 说明 |
+| File | Description |
 |---|---|
-| `config.yaml` | 示例项目配置（复制到项目目录后修改路径） |
-| `samples_231107XTL.csv` | 真实项目样本表示例（231107XTL 项目，27 样本 / 8 处理组 + 对照），可作为样本表格式参考 |
+| `config.yaml` | Example project configuration (copy into the project directory, then edit paths) |
+| `samples_231107XTL.csv` | Real project sample table example (project 231107XTL, 27 samples / 8 treatment groups + control), usable as a sample table format reference |
 
-微型测试数据集（2 组 × 2 样本降采样 reads）计划在路线图阶段 3 提供（`tests/`），当前示例项目需自备真实 fastq。
+A miniature test dataset (2 groups x 2 samples, downsampled reads) can be generated deterministically by `tests/make_testdata.py` (used by `make test`); example projects still need to supply their own real fastq files.
 
-## 一条命令启动新项目
+## Start a new project with one command
 
 ```bash
-# 1. 建项目目录，复制配置与样本表
+# 1. Create the project directory, copy the configuration and sample table
 mkdir -p myproject && cd myproject
 cp ../example/config.yaml .
-cp ../example/samples_231107XTL.csv samples.csv   # 或换成你自己的样本表
+cp ../example/samples_231107XTL.csv samples.csv   # or replace with your own sample table
 
-# 2. 放置原始数据（PE 双端示例）
+# 2. Place the raw data (PE paired-end example)
 mkdir -p 1.rawdata
 #   cp /data/raw/{sample}_1.fastq.gz 1.rawdata/
 #   cp /data/raw/{sample}_2.fastq.gz 1.rawdata/
 
-# 3. 修改 config.yaml：把 /path/to/... 替换为集群真实路径，核对样本表文件名
+# 3. Edit config.yaml: replace /path/to/... with real cluster paths, verify the sample table file name
 
-# 4. 校验样本表（可选但推荐）
+# 4. Validate the sample table (optional but recommended)
 python3 ../workflow/scripts/validate_samples.py samples.csv control
 
-# 5. dry-run 预览
+# 5. Dry-run preview
 RNASEQ_PIPELINE=deg RNASEQ_CONFIG=$PWD/config.yaml \
   snakemake -s ../workflow/Snakefile --profile ../workflow/profile/default -n --quiet
 
-# 6. 正式运行（自动选择 SGE / 本地）
+# 6. Real run (SGE / local selected automatically)
 bash ../run.sh deg . config.yaml 10
 ```
 
-## 样本表格式
+## Sample table format
 
 ```csv
 id,group,layout
@@ -45,6 +45,6 @@ WT_1,control,auto
 drugA_1,drugA,auto
 ```
 
-- `id`：样本名，禁止 `-`、空格、`/`；避免互为前缀；
-- `group`：分组名；对照组名与 config 的 `control_group` 一致；
-- `layout`：`PE`/`SE`/`auto`（当前版本以实际文件探测为准，`auto` 即可）。
+- `id`: sample name; `-`, spaces, and `/` are forbidden; avoid names that are prefixes of each other;
+- `group`: group name; the control group name must match `control_group` in the config;
+- `layout`: `PE`/`SE`/`auto` (the current version detects from the actual files, so `auto` is fine).

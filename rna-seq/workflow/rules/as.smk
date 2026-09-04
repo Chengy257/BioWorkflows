@@ -1,6 +1,6 @@
 ###############################################
-## 转录本组装规则（仅 pipeline=as）：StringTie 组装 → 合并 gffcompare → isoform 定量
-## 比对阶段由 align.smk 完成（pipeline=as 时 STAR 使用组装优化参数，见 common.smk）
+## Transcript assembly rules (pipeline=as only): StringTie assembly -> merge + gffcompare -> isoform quantification
+## The alignment stage is handled by align.smk (STAR uses assembly-optimized parameters when pipeline=as, see common.smk)
 ###############################################
 
 rule Assemble:
@@ -25,7 +25,7 @@ rule Assemble:
         """
         mkdir -p {params.outdir}
         strandedness=$(head -1 {input.strandedness} | awk '{{print $1}}')
-        ## 链型选项：firststrand → --rf，secondstrand → --fr
+        ## Strand options: firststrand -> --rf, secondstrand -> --fr
         if [ "$strandedness" == "firststrand" ]; then
             {params.stringtie} -p {threads} --rf -o {output} -G {input.ref} {input.bam} >> {log} 2>&1
         elif [ "$strandedness" == "secondstrand" ]; then
@@ -56,9 +56,9 @@ rule gtf_merge:
         runtime_sec=rruntime_sec("gtf_merge"),
     shell:
         """
-        ## 载入辅助函数（runGFFcompare / getFasta）
+        ## Load helper functions (runGFFcompare / getFasta)
         source {params.funcs}
-        ## 合并各样本 gtf 并与参考注释比较
+        ## Merge per-sample GTFs and compare against the reference annotation
         {params.stringtie} --merge -G {input.ref} -i -o {output} {input.gtf} >> {log} 2>&1
         runGFFcompare {input.ref} {output} {input.genome} >> {log} 2>&1
         """
@@ -94,6 +94,6 @@ rule isoform_expr:
         else
             {params.stringtie} -p {threads} -o {output.gtf} -e -G {input.ref} {input.bam} >> {log} 2>&1
         fi
-        ## 提取转录本表达
+        ## Extract transcript-level expression
         cat {output.gtf} | grep -v "^#" | awk -v OFS="\\t" 'BEGIN{{print "transcript","FPKM","TPM"}} {{if($3=="transcript"){{print $12,$(NF-2),$NF}}}}' | sed 's/[;"]//g' > {output.tab}
         """

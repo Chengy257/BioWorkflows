@@ -1,129 +1,148 @@
 # Changelog
 
-所有对项目的显著变更将记录在本文件。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### 待办
+### Added
 
-- 服务器最小样本端到端实跑（CI 首跑 + conda 环境求解 + MACS2 无对照 control_lambda 确认；验证入口 `bash tests/run_test.sh --real-run`）
-- DiffBind 差异分析补完（需 contrast/设计公式决策；v0.4.0 起空壳脚本归档于 `legacy/diffbind/`）
-- bowtie2 `.bt2l` 大基因组索引支持
-- snakemake 8.x 的 executor-plugin 风格 profile（`snakemake-executor-plugin-cluster-generic`）
+- **`results_dir` output consolidation** (!): all derived artifacts now live under the configurable results root (default `results/`) in the project working directory — `results/0.index/bowtie2*` (bowtie2 index), `results/2.cleandata/`, `results/3.align/bowtie2/`, `results/4.peak/` (incl. `anno_result/`), `results/5.QC/` (incl. `spp/`, `frip/`, `deeptools/`, `software_versions.yaml`, `logs/`), and `results/logs/` (per-rule logs); raw inputs `1.rawdata/` stay at the working-directory root and the former top-level output directories (`0.index/`, `2.cleandata/`, ... in the workdir) no longer exist there.
+- **Per-rule scheduler resources extracted to `config/resources.yaml`**: one dedicated file with per-rule `threads/mem_mb/runtime_min` (copy it into the project directory as `resources.yaml` and run.sh auto-detects it; the legacy top-level `threads` in config.yaml still acts as a global cap; `runtime_sec` is derived automatically). The `res()` helper is gone; rules read resources via the `rthreads`/`rmem`/`rruntime` helpers backed by centralized `RESOURCE_DEFAULTS`.
+- **Species presets in `config/species.yaml`**: `osa`/`hsa` presets for genome_fa/gtf/bed/chromsize/genome_size, selected by `species: "osa"` in `config.yaml`; unset reference keys fall back to the preset, explicit config keys win.
+- **Config layering completed**: repository `config/config.yaml` -> project config (`-c`) -> `config.local.yaml` in the project directory (auto-detected, or `-l/--extra-config`); `config.template.yaml` remains the annotated override template. Parse-time validation (sample table + config, aggregated errors with line numbers) is retained unchanged.
+- **Shared-layer extraction**: run.sh now sources `../shared/lib/launcher.sh` (logging helpers) and auto-detects a project `resources.yaml` (exported as `CHIP_RESOURCES_CONFIG`); `workflow/scripts/runtime_config.py` and `collect_versions.py` became thin wrappers over `shared/python/bioworkflows_runtime.py` / `bioworkflows_versions.py`; `meta.smk` records the Snakemake version into `results/5.QC/software_versions.yaml`.
+- **Root-level CI**: the CI workflow moved to the repository root `.github/workflows/ci.yml` (chip unit tests + lint + dry-run regression); the sub-level `.github/` directory was removed; the Makefile stays (`make check/lint/test`).
 
-## [0.4.0] - 2026-09-04
+### Changed
 
-向姊妹项目 rna-seq（v0.8.0）工程体系全面对齐：目录布局、环境管理、启动体验、资源模型、测试与文档。
-设计文档见 `docs/superpowers/specs/2026-09-04-rna-seq-alignment-design.md`，实施计划见 `docs/superpowers/plans/2026-09-04-rna-seq-alignment.md`。
-
-### Added（对齐 rna-seq v0.8.0）
-
-- **统一环境体系三件套**：`workflow/environment.yaml`（钉版一体化主环境，合并原 11 个 per-rule envs 的全部版本约束）、`config/software.yaml`（environment.type=system/conda_prefix/conda_name + R runtime + 工具路径覆盖）、`workflow/scripts/runtime_config.py`（`export` 注入 `CHIP_*` 环境变量 / `check` preflight 双子命令）
-- **software_versions 规则 + collect_versions.py**：运行期把实际工具版本、git commit、运行时模式记录到 `5.QC/software_versions.yaml`（复现审计与方法节依据）
-- **run.sh 完整运维 CLI**（535 行，替代 main_run.sh）：`--profile auto|default|pbs|sge|slurm`（auto 探测：sbatch→slurm；qsub 按 SGE_ROOT 消歧 PBS/SGE）、per-rule 资源占位符集群提交串、`--memory/--runtime/--queue/--partition` 覆盖、`--check-software/--check-r` preflight、`--validate-only`、`--unlock`、`--retries`、`--log` tee + trap 计时、`--` 透传、`-r` 原始数据重命名、config.local.yaml 自动叠加
-- **per-rule 资源模型**：22 条规则全部声明 `mem_mb/runtime_min/runtime_sec`（4 条规则补 threads:1）；`config.yaml` 新增 `resources:` 覆盖段（按规则名覆盖）；`res()` helper 支持项目级调参
-- **四套 profile**：`workflow/profile/{default,pbs,sge,slurm}/config.yaml`（资源占位符统一；pbs walltime 用秒避免格式歧义）
-- **MultiQC 定制**：`workflow/multiqc_config.yaml`（标题/流程标识/说明），multiqc 规则 `-c` 接线
-- **测试与 CI**：`tests/lint.sh`（六段静态检查，缺工具自动跳过）；`tests/make_testdata.py`（确定性合成数据生成器：2×100kb 参考基因组 + chr1 三峰区富集的 chip/atac PE reads + 样本表 + 测试 config，seed 固定逐字节可复现）；`tests/run_test.sh`（合成数据 dry-run 回归默认 + `--real-run` 服务器实跑开关 + 产物断言）；CI 重写为双 job（lint + dry-run 回归，后者无需 conda 环境）
-- **文档四件**：`docs/使用说明.md`（8 章操作手册）、`CONTRIBUTING.md`、`README.md` 全面重写（保留 mermaid/QC 阈值表/结果速查亮点）、`example/` 真实项目模板（2 样本表 + 项目 config + 一条命令指引）
-
-### Changed（破坏性）
-
-- **目录布局迁移至 Snakemake 标准**：`workflow.smk` → `workflow/Snakefile`（纯编排）；约 200 行共享定义（样本表解析/config 校验/查询函数/目标汇总）拆至 `workflow/rules/common.smk`；rules/ 与 R 脚本迁入 `workflow/{rules,scripts}/`；样本表模板 → `config/samples.csv`；profile → `workflow/profile/`（全部 git mv 保留历史）
-- **启动入口更替**：`main_run.sh` 移除，统一 `bash run.sh`（位置参数=工作目录，`-P/-w` 均可）；旧 `-b/-e/-E` conda 部署选项随环境路线切换移除
-- **样本表解析失败行为**：`grouplist` 三级解析（绝对 > 工作目录 > 仓库）都找不到文件时直接报错（不再静默回落仓库根示例文件）；默认值改指 `config/samples.csv` 模板
-- 5 个未接入 DAG 的独立 QC 空壳脚本（DiffBind/ChIPQC/DROMPAplus 等）归档 `legacy/diffbind/`（映射表见 `legacy/README.md`）
-- 单元测试 45 → **55 项**（删 envs 完整性 1 项；增资源声明 5 项 + 合成数据生成器 6 项）
-
-### Removed
-
-- **per-rule conda 体系**（!）：`envs/` 11 个环境文件与规则内 19 处 `conda:` 指令全部移除，改统一环境路线；服务器需一次性 `mamba env create -f workflow/environment.yaml` 或经 `config/software.yaml` 复用已有环境（三条落地路径见使用说明 §1）
+- **`5.QC_deeptools/` renamed to `5.QC/deeptools/`**.
+- **English unification**: all comments, user-facing messages, and documentation across the project were converted to English.
+- **Relicensed from MIT to Apache-2.0**.
 
 ### Fixed
 
-- 工具名映射保真：preflight/版本记录的 deeptools → `bamCoverage`（代表二进制）、spp → `run_spp.R`（与 spp_qc.smk 实际调用一致，消除保证性误报）
-- meta.smk 的 python 解释器经 `CHIP_PYTHON` 注入（对齐 rna-seq）；PBS `.o` 日志回收加 profile 守卫（不再误吞 slurm 输出）
+- P0: fixed the `res()` helper signature crash (resources now flow exclusively through the `rthreads`/`rmem`/`rruntime` helpers).
+- Fixed the `config.local.yaml` overlay: the auto-detected project-local overlay is reliably appended last to the `--configfile` chain.
+
+### TODO
+
+- Minimal-sample end-to-end real run on a server (first real CI run + conda environment solving + MACS2 no-control `control_lambda` output confirmation; entry point `bash tests/run_test.sh --real-run`)
+- Complete the DiffBind differential analysis (needs contrast/design-formula decisions; the stub scripts were archived out of the repository as of v0.4.0)
+- bowtie2 `.bt2l` large-genome index support
+- executor-plugin style profiles for snakemake 8.x (`snakemake-executor-plugin-cluster-generic`)
+
+## [0.4.0] - 2026-09-04
+
+Full alignment with the sister project rna-seq (v0.8.0) engineering system: directory layout, environment management, launcher experience, resource model, tests, and documentation. The design document and implementation plan for this alignment were archived out of the repository.
+
+### Added (aligned with rna-seq v0.8.0)
+
+- **Unified environment system trio**: `workflow/environment.yaml` (pinned all-in-one main environment merging every version constraint of the former 11 per-rule envs), `config/software.yaml` (environment.type=system/conda_prefix/conda_name + R runtime + tool path overrides), `workflow/scripts/runtime_config.py` (`export` injects `CHIP_*` environment variables / `check` preflight subcommands)
+- **software_versions rule + collect_versions.py**: records the actually-used tool versions, git commit, and runtime mode into `5.QC/software_versions.yaml` at run time (the basis for reproducibility audits and methods sections)
+- **Full run.sh ops CLI** (535 lines, replaces main_run.sh): `--profile auto|default|pbs|sge|slurm` (auto detection: sbatch→slurm; qsub disambiguated to PBS/SGE via SGE_ROOT), per-rule resource placeholder cluster submit strings, `--memory/--runtime/--queue/--partition` overrides, `--check-software/--check-r` preflight, `--validate-only`, `--unlock`, `--retries`, `--log` tee + trap timing, `--` passthrough, `-r` raw-data renaming, config.local.yaml auto-layering
+- **Per-rule resource model**: all 22 rules declare `mem_mb/runtime_min/runtime_sec` (4 rules also gained threads:1); `config.yaml` gained a `resources:` override section (per-rule overrides); the `res()` helper supports project-level tuning
+- **Four profiles**: `workflow/profile/{default,pbs,sge,slurm}/config.yaml` (unified resource placeholders; pbs walltime in seconds to avoid format ambiguity)
+- **MultiQC customization**: `workflow/multiqc_config.yaml` (title/workflow identity/intro), wired into the multiqc rule via `-c`
+- **Tests and CI**: `tests/lint.sh` (six-stage static checks, missing tools skipped automatically); `tests/make_testdata.py` (deterministic synthetic-data generator: 2×100kb reference genome + chr1 three-peak-region enriched chip/atac PE reads + sample table + test config, fixed seed, byte-identical reproducibility); `tests/run_test.sh` (synthetic-data dry-run regression by default + `--real-run` server switch + output assertions); CI rewritten as two jobs (lint + dry-run regression, the latter needing no conda environment)
+- **Four docs**: `docs/user-guide.md` (8-chapter operations manual), `CONTRIBUTING.md`, a full README rewrite (keeping the mermaid diagram/QC threshold table/results quick-reference), and the `example/` real-project template (2-sample table + project config + one-command guide)
+
+### Changed (breaking)
+
+- **Directory layout moved to the Snakemake standard**: `workflow.smk` → `workflow/Snakefile` (pure orchestration); ~200 lines of shared definitions (sample-table parsing/config validation/query helpers/target aggregation) split into `workflow/rules/common.smk`; rules and the R script moved into `workflow/{rules,scripts}/`; sample-table template → `config/samples.csv`; profiles → `workflow/profile/` (all via git mv, preserving history)
+- **Launcher replaced**: `main_run.sh` removed; use `bash run.sh` uniformly (positional argument = working directory, `-P/-w` both accepted); the old `-b/-e/-E` conda deployment options were dropped along with the environment-route switch
+- **Sample-table parse-failure behavior**: when the `grouplist` three-level resolution (absolute > working directory > repository) finds no file, it now errors out (no more silent fallback to the repository-root example file); the default value now points at the `config/samples.csv` template
+- The 5 standalone QC stub scripts not wired into the DAG (DiffBind/ChIPQC/DROMPAplus etc.) were archived out of the repository (an archive mapping table accompanied the move)
+- Unit tests 45 → **55 checks** (removed 1 envs-integrity check; added 5 resource-declaration checks + 6 synthetic-data generator checks)
+
+### Removed
+
+- **Per-rule conda system** (!): the 11 environment files under `envs/` and the 19 `conda:` directives inside rules were all removed in favor of the unified environment route; servers need a one-time `mamba env create -f workflow/environment.yaml`, or reuse an existing environment via `config/software.yaml` (three onboarding paths in user-guide §1)
+
+### Fixed
+
+- Tool-name mapping fidelity: preflight/version recording map deeptools → `bamCoverage` (representative binary) and spp → `run_spp.R` (matching the actual spp_qc.smk invocation, eliminating false preflight failures)
+- The meta.smk Python interpreter is injected via `CHIP_PYTHON` (aligned with rna-seq); PBS `.o` log collection gained a profile guard (no longer swallows slurm outputs)
 
 ## [0.3.0] - 2026-09-03
 
-### Added（运维审查 P3 批次）
+### Added (ops review P3 batch)
 
-- **FRiP / NSC-RSC 注入 MultiQC 报告**：frip_summary 与新增 spp_summary 规则产出 `_mqc.tsv` 自定义表（custom content），multiqc 汇总规则自动纳入——QC 指标（fastqc + bowtie2 + picard + FRiP + NSC/RSC）集中单报告；qc 开关闭合与条件 include 联动
-- **分析窗口参数统一**：新 `region_flank`（默认 3000）一键控制 ChIPseeker flank/TSS 窗口与 deeptools computeMatrix 上下游长度（原先三处硬编码）；`annoPeak_batch.R` 新增第四参数
-- **`profiles/pbs/`**：snakemake 7.x PBS profile（集群参数固化入库：`{rule}` 任务名、`{threads}` 核数、latency-wait/rerun-incomplete 默认值）；8.x 用户继续用 main_run.sh（版本自动适配），README 注明迁移方向
-- 测试新增 4 项（region_flank 校验 ×2 + **mqc shell 规则体实测** ×2——按 snakemake 同款解析链 `ast.literal_eval` 解码 + format 渲染 + bash 实际执行并断言产物格式），共 **45 项**全部通过
+- **FRiP / NSC-RSC injected into the MultiQC report**: the frip_summary and the new spp_summary rules emit `_mqc.tsv` custom-content tables that the multiqc aggregation rule picks up automatically — QC metrics (fastqc + bowtie2 + picard + FRiP + NSC/RSC) concentrated in a single report; QC switch state is wired to conditional includes
+- **Analysis window parameter unified**: the new `region_flank` (default 3000) controls the ChIPseeker flank/TSS window and the deeptools computeMatrix up/downstream length from one place (previously three hard-coded spots); `annoPeak_batch.R` gained a fourth parameter
+- **`profiles/pbs/`**: snakemake 7.x PBS profile (cluster parameters pinned into the repository: `{rule}` job name, `{threads}` cores, latency-wait/rerun-incomplete defaults); 8.x users keep using main_run.sh (version auto-adaptation), with the migration direction noted in the README
+- 4 new tests (region_flank validation ×2 + **mqc shell rule-body execution tests** ×2 — decoded via the snakemake-equivalent `ast.literal_eval` chain + format rendering + actual bash execution with output-format assertions), for **45 checks** all passing
 
 ### Changed
 
-- SPP 规则移除 `-savp`（pdf 副产物文件名依输入 BAM 派生且落 cwd，不可声明管理；全部指标已含于 `-out` 文本）
-- `envs/bigwig.yaml`：ucsc-bedclip/bedgraphtobigwig 锁 bioconda 构建号 482（消除无语义版本的漂移风险）
-- `envs/trim-galore.yaml`：移除冗余的显式 `cutadapt=4.4` 钉（由 trim-galore 依赖自行拉动，双钉增加求解冲突面）
+- SPP rule dropped `-savp` (the pdf side-product filename derives from the input BAM and lands in the cwd, so it cannot be declared; all metrics are already in the `-out` text)
+- `envs/bigwig.yaml`: ucsc-bedclip/bedgraphtobigwig pinned to bioconda build 482 (removing drift risk from semantically versionless packages)
+- `envs/trim-galore.yaml`: removed the redundant explicit `cutadapt=4.4` pin (pulled in by the trim-galore dependency itself; double pinning increases solver conflict surface)
 
 ## [0.2.2] - 2026-09-03
 
-### Added（运维审查 P2 批次）
+### Added (ops review P2 batch)
 
-- **`main_run.sh` 集群健壮性**：默认启用 `--rerun-incomplete` 与 `--latency-wait`（`-t` 可调，默认 90s），覆盖 PBS 断点重跑与共享文件系统输出可见性延迟两类常见假失败
-- **共享 conda 环境目录**：新 `-e DIR`（`--conda-prefix`），多项目复用同一套环境；新 `-E` 预建模式（`--conda-create-envs-only`），PBS 计算节点无外网时先在登录节点建环境
-- **trim_galore 参数配置化**：新 `trim.quality/stringency/error_rate/extra` 四键（原硬编码 `-q 25 --stringency 3 -e 0.1`），template 同步
-- **config 集中校验**（`workflow.smk` `validate_config`）：必需键/子键/类型/取值范围一次汇总报出（含 threads 非整数的友好报错）；参考文件缺失仅警告不中断（保证 --lint/dry-run 在无参考文件的机器可解析）
-- 测试新增 10 项（validate_config 真实源码提取执行），共 **45 项**全部通过
+- **`main_run.sh` cluster robustness**: `--rerun-incomplete` and `--latency-wait` enabled by default (`-t` tunable, default 90s), covering the two common false-failure classes of PBS resume runs and shared-filesystem output visibility delay
+- **Shared conda environment directory**: new `-e DIR` (`--conda-prefix`) to reuse one environment set across projects; new `-E` pre-build mode (`--conda-create-envs-only`) to create environments on the login node when PBS compute nodes lack internet
+- **trim_galore parameters made configurable**: four new keys `trim.quality/stringency/error_rate/extra` (previously hard-coded `-q 25 --stringency 3 -e 0.1`), template updated in sync
+- **Centralized config validation** (`workflow.smk` `validate_config`): required keys/sub-keys/types/value ranges aggregated into one report (including a friendly error for non-integer threads); missing reference files only warn and do not abort (keeping --lint/dry-run parseable on machines without the reference files)
+- 10 new tests (validate_config executed from real extracted source), for **45 checks** all passing
 
 ### Changed
 
-- **callpeak 三条规则 threads 降为 1**：MACS2 为单线程程序，原先按 config threads=12 申请集群资源造成超订/浪费；配合 v0.2.1 的 `ncpus={threads}` 后 PBS 申请与实际占用精确一致
+- **callpeak three rules' threads lowered to 1**: MACS2 is single-threaded; previously requesting cluster resources at config threads=12 caused over-subscription/waste; combined with v0.2.1's `ncpus={threads}`, PBS requests now match actual usage exactly
 
 ## [0.2.1] - 2026-09-03
 
-### Fixed（运维审查 2 项 P1）
+### Fixed (2 P1 items from the ops review)
 
-- **PBS 资源参数与流程线程数脱钩**：`main_run.sh`/README 的集群提交示例改为 `-l ncpus={threads}`——snakemake 按每个任务实际线程数格式化 cluster 串，与 config `threads` 自动对齐（原示例固定 `ncpus=6` 与默认 `threads: 12` 矛盾，导致超订）
-- **snakemake 版本矩阵不明确**：`main_run.sh` 启动时探测 snakemake 主版本——≥8 自动使用 `--software-deployment-method conda`（`--use-conda` 在 8.x 已弃用），7.x 继续用 `--use-conda`；未安装/版本不可解析时给出明确报错。README 新增版本支持矩阵（7.32.4 参考版本 / 8.x 自动适配 / <7 与 ≥9 未验证），方式二手动命令同步加注
+- **PBS resource parameters decoupled from workflow thread counts**: the `main_run.sh`/README cluster submit examples changed to `-l ncpus={threads}` — snakemake formats the cluster string with each job's actual thread count, aligning automatically with config `threads` (the old example's fixed `ncpus=6` contradicted the default `threads: 12`, causing over-subscription)
+- **snakemake version matrix unclear**: `main_run.sh` probes the snakemake major version at startup — ≥8 automatically uses `--software-deployment-method conda` (`--use-conda` is deprecated in 8.x), 7.x keeps `--use-conda`; a clear error is emitted when snakemake is missing or its version cannot be parsed. The README gained a version support matrix (7.32.4 reference version / 8.x auto-adapted / <7 and ≥9 unverified), with notes added to the manual commands
 
 ## [0.2.0] - 2026-09-03
 
-> v0.1.0 原始实现整体归档至 `legacy/`。重构经独立代码审查（fix-first），审查发现的 3 项 P1 与全部 P2/P3 已在同版本内修复。
+> The v0.1.0 original implementation was archived out of the repository in its entirety. The refactor went through an independent code review (fix-first); the 3 P1 findings it produced plus all P2/P3 findings were fixed within the same version.
 
 ### Added
 
-- 统一入口 `workflow.smk`：新样本表 schema（sample_id/role/group/seqtype/layout/peak_type）、逐行校验（行号报错、名字字符集校验）、按 assay 自动路由；旧 4 入口归档
-- 全新规则集 `rules/`：upstream（trim/fastqc/multiqc/bowtie2，fastqc 按样本并行）、dedup（picard，按 assay 开关，CUT&Tag 默认不去重）、callpeak（narrow/broad/atac 三规则按组并行 + bigwig）、annotation（ChIPseeker 批量注释）、frip（FRiP + 汇总表）、qc_deeptools（相关性/PCA/指纹/片段长/基因区信号全套）、spp_qc（可选 NSC/RSC）
-- per-rule conda 环境 `envs/`（11 个，仅 conda-forge+bioconda），替代非法的 `conda: "chip"` 写法
-- 配置体系：完整 config schema（genome_size/min_mapq/dedup 按 assay/peak 阈值/qc 开关）+ `config.template.yaml` + `config.local.yaml` 叠加机制
-- 阈值常规默认：narrow q=0.05、broad_cutoff=0.05、min_mapq=30（ENCODE 常规值），全部可配置
-- ATAC/FAIRE 峰调用双模式：`bampe`（默认，ENCODE ATAC v2 做法）| `shifted`（经典 Tn5 偏移配方）
-- `main_run.sh` 重写：getopts 参数化（含 dry-run 预检、PBS 可选、config.local 自动叠加、集群/本机 -j/--cores 正确拆分）
-- 测试与 CI：`tests/run_tests.py`（31 项零依赖单元测试，直接抽取 workflow.smk 真实源码执行）、Makefile（check/lint/dryrun）、GitHub Actions（测试 + shellcheck + snakemake --lint）
-- MIT LICENSE；`docs/REVIEW.md` 修复状态表；`legacy/README.md` 归档映射
+- Unified entry `workflow.smk`: new sample-table schema (sample_id/role/group/seqtype/layout/peak_type), row-level validation (line-number errors, name character-set checks), per-assay automatic routing; the old 4 entry points archived
+- Brand-new rule set `rules/`: upstream (trim/fastqc/multiqc/bowtie2, fastqc parallel per sample), dedup (picard, per-assay switch, CUT&Tag keeps duplicates by default), callpeak (narrow/broad/atac three rules parallel per group + bigwig), annotation (ChIPseeker batch annotation), frip (FRiP + summary table), qc_deeptools (correlation/PCA/fingerprint/fragment size/gene-region signal, the full set), spp_qc (optional NSC/RSC)
+- Per-rule conda environments `envs/` (11, conda-forge+bioconda only), replacing the illegal `conda: "chip"` usage
+- Config system: complete config schema (genome_size/min_mapq/per-assay dedup/peak thresholds/qc switches) + `config.template.yaml` + the `config.local.yaml` layering mechanism
+- Sensible default thresholds: narrow q=0.05, broad_cutoff=0.05, min_mapq=30 (common ENCODE values), all configurable
+- ATAC/FAIRE peak-calling dual mode: `bampe` (default, ENCODE ATAC v2 recipe) | `shifted` (classic Tn5 offset recipe)
+- `main_run.sh` rewritten: getopts parameterization (incl. dry-run pre-check, optional PBS, config.local auto-layering, correct cluster/local -j/--cores split)
+- Tests and CI: `tests/run_tests.py` (31 dependency-free unit tests executing real source extracted from workflow.smk), Makefile (check/lint/dryrun), GitHub Actions (tests + shellcheck + snakemake --lint)
+- MIT License; an independent-review fix-status table and an archive-mapping README (both since archived out of the repository)
 
-### Fixed（对 v0.1.0 的全部 P0/P1，详见 docs/REVIEW.md §七）
+### Fixed (all v0.1.0 P0/P1 findings from the independent review)
 
-- 峰调用链接入 DAG（原 include 断裂、rule all 目标全被注释）
-- 去重规则 shell 命令误写进 conda 块、`${id}` 非法通配符、threads 字符串类型
-- 峰调用循环变量未用导致每组重复调用两次、空规则输出冲突
-- 样本表 schema 与消费代码矛盾（三种互不兼容的定义并存）
-- `get_samples()` 用 seqtype 列判断样本去重的逻辑错误
-- 注释规则引用不存在的脚本路径
-- 全部 16 处机器特定绝对路径（/home/chengyu、/opt、/share）
-- `run_ChIPQC.R`：args 未定义即使用、`basename()` 缺参、教程残留名、私人路径
-- bigwig 染色体字典序与 chrom.sizes 顺序不匹配（改 `bedtools sort -g`）
-- r-chipseeker conda 环境 R 4.2 与 Bioc 3.18 包版本冲突（r-base=4.3）
-- ATAC shift/extsize 在 BAMPE 模式下被静默忽略（改双模式开关）
-- MACS2 参数 `-q 0.5` 等宽松阈值（改常规默认并配置化）
-- 根目录与 scripts/ 重复的 call_peak.sh
+- Peak-calling rules wired into the DAG (the include was broken and all rule-all targets were commented out)
+- Dedup rule shell command mistakenly placed in a conda block, illegal `${id}` wildcard, threads as a string type
+- Peak-calling loop variable unused, causing each group to be called twice; conflicting empty-rule outputs
+- Sample-table schema contradicted its consumers (three mutually incompatible definitions coexisted)
+- `get_samples()` deduplicated samples by the seqtype column — wrong logic
+- Annotation rule referenced a non-existent script path
+- All 16 machine-specific absolute paths (/home/chengyu, /opt, /share)
+- `run_ChIPQC.R`: args used before definition, `basename()` missing an argument, tutorial leftover names, private paths
+- bigwig chromosome lexicographic order mismatched chrom.sizes order (switched to `bedtools sort -g`)
+- r-chipseeker conda environment R 4.2 conflicted with Bioc 3.18 package versions (r-base=4.3)
+- ATAC shift/extsize silently ignored in BAMPE mode (switched to the dual-mode toggle)
+- MACS2 loose thresholds like `-q 0.5` (changed to standard defaults and made configurable)
+- Duplicate call_peak.sh at the repository root and in scripts/
 
 ### Changed
 
-- README 全面重写（新用法/新 schema/QC 阈值/已知限制）；换行符策略 `.gitattributes` 强制 LF
+- README fully rewritten (new usage/new schema/QC thresholds/known limitations); line-ending policy enforced to LF via `.gitattributes`
 
 ## [0.1.0] - 2024-03
 
-### Added（原始快照，commit 03f5c0c，已归档至 legacy/）
+### Added (original snapshot, commit 03f5c0c, since archived out of the repository)
 
-- ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq 四入口 Snakemake 流程
-- 上游规则：trim_galore、FastQC、MultiQC、bowtie2 比对
-- 峰调用脚本：SPP 片段长估计 + MACS2（narrow/broad/ATAC 模式）、HMMRATAC、FSeq2
-- MACS2 bdgcmp → bigWig 转换脚本
-- ChIPseeker 批量/单样本峰注释 R 脚本
-- deeptools / ChIPQC / DROMPAplus QC 脚本（部分为片段或空壳）
-- 旧版整环境导出 `chip_environment.yaml` 与 PBS 启动脚本 `main_run.sh`
+- ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq four-entry Snakemake workflow
+- Upstream rules: trim_galore, FastQC, MultiQC, bowtie2 alignment
+- Peak-calling scripts: SPP fragment-length estimation + MACS2 (narrow/broad/ATAC modes), HMMRATAC, FSeq2
+- MACS2 bdgcmp → bigWig conversion scripts
+- ChIPseeker batch/single-sample peak annotation R scripts
+- deeptools / ChIPQC / DROMPAplus QC scripts (some partial or empty stubs)
+- Legacy full-environment export `chip_environment.yaml` and the PBS launcher `main_run.sh`

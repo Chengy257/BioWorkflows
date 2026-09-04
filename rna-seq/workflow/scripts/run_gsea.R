@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 ## Usage:
-##   Rscript run_gsea.R <FoldChange文件列表> <输出目录前缀> <species: osa|hsa>
-## GSEA（gseGO）；物种与 OrgDb 路径由 enrich.sh 从 config 传入；R runtime and library paths are provided by config/software.yaml
+##   Rscript run_gsea.R <FoldChange file list> <output directory prefix> <species: osa|hsa>
+## GSEA (gseGO); species and OrgDb paths are passed in from config by enrich.sh; R runtime and library paths are provided by config/software.yaml
 args <- commandArgs(T)
 pkgs <- c('clusterProfiler','ggplot2','enrichplot','dplyr')
 lapply(pkgs, function(x){
@@ -40,7 +40,7 @@ for (i in 1:length(filenamelist[,1])) {
 
     fc <- as.vector(df$log2FoldChange[order(df$log2FoldChange, decreasing = T)])
     gids <- df$gene_id[order(df$log2FoldChange, decreasing = T)]
-    if (spe == "hsa") gids <- sub("\\..*$", "", gids)   ## 去掉 ENSEMBL 版本号
+    if (spe == "hsa") gids <- sub("\\..*$", "", gids)   ## strip the ENSEMBL version suffix
     names(fc) <- gids
 
     for (j in 1:3) {

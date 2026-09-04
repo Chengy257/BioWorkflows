@@ -1,9 +1,11 @@
-# ---- Snakemake 运行时 ----
+# ---- Snakemake runtime ----
 .snakemake/
 logs/
 *.log
 
-# ---- 分析产出目录（数据不属于版本库，只在运行目录生成） ----
+# ---- Analysis output directories (data never belongs in the repository; it is
+#      only generated inside the run directory; derived outputs now live under
+#      results/ inside each project working directory) ----
 0.index/
 1.rawdata/
 2.cleandata/
@@ -13,7 +15,8 @@ logs/
 6.motif/
 reference/
 
-# 高通量数据文件（万一放到仓库根目录也不入库）
+# High-throughput data files (kept out of the repository even if they end up at
+# the repository root)
 *.fastq
 *.fastq.gz
 *.fq.gz
@@ -25,7 +28,7 @@ reference/
 *.bdg
 *.npz
 
-# ---- 本地私有配置（Phase 2 起采用 config.template.yaml + config.local.yaml 模式） ----
+# ---- Local private configs (config.template.yaml + config.local.yaml pattern) ----
 config/config.local.yaml
 
 # ---- R ----
@@ -38,7 +41,7 @@ config/config.local.yaml
 __pycache__/
 *.py[cod]
 
-# ---- 系统与编辑器 ----
+# ---- System and editor files ----
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -49,6 +52,6 @@ desktop.ini
 .glm-conductor/
 .venv
 
-# ---- 本地测试生成物（tests/make_testdata.py 即时生成）----
+# ---- Local test artifacts (generated on demand by tests/make_testdata.py) ----
 tests/data/
 tests/work/

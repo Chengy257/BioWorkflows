@@ -1,6 +1,6 @@
-## MultiQC 定制配置（全流程 QC 汇总：FastQC / Trim Galore / STAR / featureCounts）
+## Custom MultiQC configuration (whole-pipeline QC summary: FastQC / Trim Galore / STAR / featureCounts)
 title: "RNA-seq QC Summary"
 subtitle: "FastQC / Trim Galore / STAR / featureCounts"
-intro_text: "全流程 QC 汇总。样本顺序按样本表；比对统计来自 STAR Log.final.out，定量分配统计来自 featureCounts。"
+intro_text: "Whole-pipeline QC summary. Samples are ordered per the sample table; alignment statistics come from STAR Log.final.out and quantification assignment statistics from featureCounts."
 report_header_info:
   - Workflow: "rna-seq (Snakemake)"

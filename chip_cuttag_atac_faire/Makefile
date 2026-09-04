@@ -1,11 +1,12 @@
-# chip_cuttag_atac_faire 开发检查入口
-# make check  —— 单元测试 + shell 语法检查（无需 snakemake）
-# make lint   —— 统一静态检查套件 tests/lint.sh（bash -n/shellcheck/py_compile/
-#               R parse/yaml/snakemake --lint，缺可选工具自动跳过，CI 全量执行）
-# make test   —— CI 同款全量检查（= check + lint）
-# 回归测试（需 snakemake，即 CI dry-run job 同款）:
-#   bash tests/run_test.sh             # 合成数据 dry-run，验证 DAG 完整性
-#   bash tests/run_test.sh --real-run  # 端到端实跑 + 产物断言（服务器验证用）
+# chip_cuttag_atac_faire development check entry points
+# make check  -- unit tests + shell syntax checks (no snakemake needed)
+# make lint   -- unified static check suite tests/lint.sh (bash -n/shellcheck/
+#                py_compile/R parse/yaml/snakemake --lint; missing optional tools
+#                are skipped automatically; CI runs everything)
+# make test   -- the CI-equivalent full check (= check + lint)
+# Regression tests (need snakemake; same as the CI dry-run job):
+#   bash tests/run_test.sh             # synthetic-data dry-run, validates DAG integrity
+#   bash tests/run_test.sh --real-run  # end-to-end run + output assertions (server validation)
 
 PYTHON ?= python3
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""解析并校验统一软件运行时（chip/CUT&Tag/ATAC/FAIRE）。
+"""Resolve and validate the unified software runtime (chip/CUT&Tag/ATAC/FAIRE).
 
-移植自 rna-seq v0.8.0 的 runtime_config.py：
-- export 子命令：输出可 eval 的 `export KEY=VALUE` 行，供 run.sh 注入环境；
-- check 子命令：preflight，缺工具/R 版本不符/缺 R 包时输出人读清单并以非零码退出。
+Ported from rna-seq v0.8.0's runtime_config.py:
+- export subcommand: prints eval-able `export KEY=VALUE` lines for run.sh to inject;
+- check subcommand: preflight; prints a human-readable list of missing tools /
+  mismatched R versions / missing R packages and exits non-zero.
 """
 import argparse
 import json
@@ -16,8 +17,10 @@ import sys
 
 import yaml
 
-# 默认工具解析表：键为 WORKFLOW_TOOLS 的逻辑名，值为命令名（或默认可执行文件）；
-# config/software.yaml 的 tools 段可用同名键覆盖为命令名或绝对路径。
+# Default tool resolution table: keys are the logical names from WORKFLOW_TOOLS,
+# values are command names (or default executables); the tools section of
+# config/software.yaml can override them by the same key with a command name or
+# an absolute path.
 DEFAULT_TOOLS = {
     "python": "python3",
     "rscript": "Rscript",
@@ -35,11 +38,12 @@ DEFAULT_TOOLS = {
     "spp": "run_spp.R",
 }
 
-# chip 流程无 pipeline 划分，preflight 统一检查这一组工具；
-# scope 过滤：software 查非 R 工具（rscript 归 r scope），r 查 R 本体、版本与包。
+# The chip workflow has no pipeline split, so preflight checks this one tool set;
+# scope filtering: software checks the non-R tools (rscript belongs to the r
+# scope), r checks the R binary itself, its version, and packages.
 WORKFLOW_TOOLS = ["python", "snakemake", "rscript", "trim_galore", "bowtie2", "bowtie2-build", "samtools", "picard", "macs2", "bedtools", "deeptools", "spp", "multiqc", "fastqc"]
 
-# R 包级检查清单（spp 走工具级检查，不做包级）。
+# R package-level check list (spp is checked at the tool level, no package check).
 R_PACKAGES = ["GenomicFeatures", "ChIPseeker"]
 
 
@@ -95,8 +99,9 @@ def resolve_runtime(cfg):
             raise RuntimeError(f"Conda prefix does not exist: {prefix}")
 
     tools_cfg = cfg.get("tools") or {}
-    # 工具级绝对路径覆盖只作用于该工具本身，
-    # 不会把覆盖目录整体加进 PATH 而全局遮蔽主环境中的无关命令。
+    # Tool-level absolute-path overrides apply only to that tool; the override
+    # directory is never prepended wholesale to PATH, which would globally
+    # shadow unrelated commands from the main environment.
     if prefix:
         path_parts.append(os.path.join(prefix, "bin"))
     path_parts.append(os.environ.get("PATH", ""))
@@ -171,8 +176,9 @@ def r_eval(rscript, expression):
 
 
 def check_runtime(rt, scope, analysis_cfg=None):
-    # analysis_cfg 为保留参数（--analysis-config 扩展位）；chip 的样本表与 config
-    # 校验集中在 Snakefile 解析期执行，此处不做包级以外的扩展检查。
+    # analysis_cfg is a reserved parameter (--analysis-config extension point); the
+    # chip workflow centralizes sample-table and config validation at Snakefile
+    # parse time, so no extra checks beyond the package check happen here.
     errors = []
     warnings = []
     print(f"[runtime] Environment: {rt['type']}" + (f" ({rt['prefix']})" if rt["prefix"] else ""))
@@ -180,7 +186,7 @@ def check_runtime(rt, scope, analysis_cfg=None):
     if scope in {"all", "software"}:
         for name in WORKFLOW_TOOLS:
             if name == "rscript":
-                continue  # rscript 归 r scope 检查
+                continue  # rscript belongs to the r scope check
             exe = rt["tools"][name]
             if cmd_exists(exe):
                 print(f"[runtime] [OK] {name}: {exe}")
@@ -240,7 +246,8 @@ def check_runtime(rt, scope, analysis_cfg=None):
         print(f"[runtime] [WARN] {msg}", file=sys.stderr)
     for msg in errors:
         print(f"[runtime] [ERROR] {msg}", file=sys.stderr)
-    # strict=false 时 preflight 只告警不拦截（warn-only）；true 则任一 error 即非零退出。
+    # With strict=false the preflight only warns and never blocks (warn-only);
+    # with true, any error exits non-zero.
     return 0 if not errors or not rt["strict"] else 1
 
 
@@ -252,7 +259,7 @@ def main():
     p_check = sub.add_parser("check")
     p_check.add_argument("--config", required=True)
     p_check.add_argument("--scope", choices=["all", "software", "r"], default="all")
-    p_check.add_argument("--analysis-config")  # 保留扩展位，默认不启用
+    p_check.add_argument("--analysis-config")  # reserved extension point, disabled by default
     args = parser.parse_args()
     cfg = load_yaml(args.config)
     try:

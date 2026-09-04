@@ -1,5 +1,5 @@
 ###############################################
-## 差异分析规则（仅 pipeline=deg）：DESeq2 → GO/KEGG 富集 + GSEA → 组间比较
+## Differential analysis rules (pipeline=deg only): DESeq2 -> GO/KEGG enrichment + GSEA -> between-group comparison
 ###############################################
 
 rule runDESeq2:

@@ -1,7 +1,7 @@
 ###############################################
-## lncRNA de novo 鉴定规则（仅 pipeline=lncrna）：
-## stringtie 组装（严格模式）→ gffcompare(classcode u) → CPC2/CNCI/长度编码势过滤
-## → Pfam/NR 过滤 → 最终 lncRNA 及其表达定量
+## lncRNA de novo identification rules (pipeline=lncrna only):
+## stringtie assembly (strict mode) -> gffcompare (classcode u) -> CPC2/CNCI/length coding-potential filtering
+## -> Pfam/NR filtering -> final lncRNA set and its expression quantification
 ## External executables and databases are resolved from config/software.yaml by run.sh.
 ###############################################
 
@@ -60,9 +60,9 @@ rule gtf_merge_compare:
     shell:
         """
         source {params.funcs}
-        ## 合并各样本 gtf
+        ## Merge per-sample GTFs
         {params.stringtie} --merge -G {input.ref} -F 0.1 -T 0.1 -o {output.merged} {input.gtfIN} >> {log} 2>&1
-        ## 与参考蛋白编码注释比较，取 classcode "u" 的潜在 lincRNA
+        ## Compare against the reference protein-coding annotation; keep candidate lincRNAs with classcode "u"
         runGFFcompare {input.ref} {output.merged} {input.genome} >> {log} 2>&1
         """
 
@@ -100,19 +100,19 @@ rule Coding_predict:
         export CNCI_dir={params.cnci_dir}
         export PFAM_DB={params.pfam_db}
         source {params.funcs}
-        ## CPC2 编码潜能预测
+        ## CPC2 coding-potential prediction
         if [ ! -f "merged.gtf.compare.classcode_u.fa.CPC2.noncodingID" ]; then
             runCPC2 {input.fa} >> {log} 2>&1
         fi
-        ## CNCI 编码潜能预测
+        ## CNCI coding-potential prediction
         if [ ! -f "merged.gtf.compare.classcode_u.fa.CNCI.noncodingID" ]; then
             runCNCI {input.fa} {threads} >> {log} 2>&1
         fi
-        ## 转录本长度过滤（>= 200 nt）
+        ## Transcript length filtering (>= 200 nt)
         cat {input.fa} | {params.bioawk} -c fastx 'length($seq)>=200{{print $name}}' > {params.outdir}/Tr_Len_Filtered.transciptIDs
-        ## 合并 CPC2/CNCI/长度三重过滤
+        ## Combine the CPC2/CNCI/length triple filtering
         cat {params.assembly_dir}/merged.gtf.compare.classcode_u.fa*noncodingID | fgrep -w -f {params.outdir}/Tr_Len_Filtered.transciptIDs | sort -u > {output.ids}
-        ## 回取序列（getFasta 生成 noncoding.transciptIDs.fa）
+        ## Retrieve sequences (getFasta generates noncoding.transciptIDs.fa)
         cat {input.gtfIN} | fgrep -w -f {output.ids} > {output.gtf_nc}
         getFasta {output.gtf_nc} {input.genome} >> {log} 2>&1
         """
@@ -142,7 +142,7 @@ rule Pfam_search:
         mkdir -p {params.outdir}
         {params.pfam_scan} -translate -fasta {input.fa} -dir {params.pfam_db} \\
             -outfile {output.raw} -as -cpu {threads} >> {log} 2>&1
-        ## 解析显著结构域命中（E-value < 1e-5）
+        ## Parse significant domain hits (E-value < 1e-5)
         cat {output.raw} | grep -v "^#" | grep -v '^[[:space:]]*$' | \\
             awk '($13 < 1e-5){{print $1}}' | awk -F"." -v OFS="." '{{$4=null;print}}' | sed 's/\\.$//g' | sort -u > {output.hitIDs}
         """
@@ -203,11 +203,11 @@ rule Final_lncRNA:
         """
         mkdir -p {params.outdir}
         source {params.funcs}
-        ## 去除有 Pfam/NR 命中的转录本
+        ## Remove transcripts with Pfam/NR hits
         cat {input.pfam} {input.nr} | sort -u > {output.hits}
         cat {input.gtf_noncode} | fgrep -w -v -f {output.hits} > {output.gtf}
         getFasta {output.gtf} {input.genome} >> {log} 2>&1
-        ## 参考注释 + 新 lncRNA 合并 gtf（用于下游定量）
+        ## Merge the reference annotation and novel lncRNAs into one GTF (used for downstream quantification)
         cat {params.ref_gtf} {output.gtf} | {params.bedtools} sort -i - > {output.ref_with_lnc}
         """
 

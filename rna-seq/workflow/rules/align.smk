@@ -1,8 +1,8 @@
 ###############################################
-## 质控与比对规则（所有管线共用）：
-##   trim（统一命名约定 + FastQC，修复 P1-1）→ MultiQC 全流程汇总（P2-9）
-##   → STAR（SortedByCoordinate 直出，P1-4）→ 链特异性推断
-## 依赖 common.smk 中的 SAMPLES / R() / _raw_reads / STAR_ARGS 等
+## QC and alignment rules (shared by all pipelines):
+##   trim (unified naming convention + FastQC, fix P1-1) -> MultiQC whole-pipeline summary (P2-9)
+##   -> STAR (direct SortedByCoordinate output, P1-4) -> strandedness inference
+## Depends on SAMPLES / R() / _raw_reads / STAR_ARGS etc. defined in common.smk
 ###############################################
 
 
@@ -31,7 +31,7 @@ rule trimAdapter_SE:
         mkdir -p {params.fastqc_dir}
         {params.trim_galore} -q 30 --stringency 3 -e 0.1 --gzip -j {threads} -o {params.outdir}/ {input.fq} \\
             --fastqc --fastqc_args "--outdir {params.fastqc_dir} " >> {log} 2>&1
-        ## trim 报告按原始文件名生成，统一重命名为以样本 id 为键的规范名
+        ## Trim reports are generated with the original file names; rename them uniformly to canonical names keyed by sample id
         mv "{params.outdir}/$(basename "{input.fq}")_trimming_report.txt" {output.report}
         """
 
@@ -179,7 +179,8 @@ rule Mapping_stat:
         runtime_sec=rruntime_sec("mapping_stat"),
     shell:
         """
-        ## 逐样本解析：样本 id 取自日志文件名（保留下划线）；trim 总数取规范报告的 R1 读数（PE 即读对数）
+        ## Parse per sample: sample id comes from the log file name (underscores kept); the trim total is the R1 count
+        ## from the canonical report (read pairs for PE data)
         echo -e "ID\\tTotal_Reads\\tClean_Reads\\tUniquely_mapped\\tUniquely_mapped_ratio" > {output}
         for log in {params.align_dir}/*_Log.final.out; do
             [ -e "$log" ] || continue

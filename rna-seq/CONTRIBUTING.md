@@ -1,46 +1,46 @@
-# 贡献指南（CONTRIBUTING）
+# Contribution Guide (CONTRIBUTING)
 
-## 1. 开发流程
+## 1. Development process
 
-1. **分支**：`main` 保持可运行状态；功能开发与修复在特性分支进行（`feat/<主题>`、`fix/<主题>`），自测通过后合并。
-2. **提交信息**：`<类型>: <中文概述>`，类型与仓库现有历史保持一致：
-   - `feat` 新功能 / `fix` 缺陷修复 / `refactor` 结构调整（不改行为）/ `docs` 文档 / `chore` 杂项
-   - 一个提交只做一件事；行为变更与纯重构分开提交（便于回溯定位）。
-3. **行尾**：脚本统一 LF（`.gitattributes` 已约束）；运行产物一律不入库（`.gitignore`）。
+1. **Branches**: `main` stays runnable; feature development and fixes happen on feature branches (`feat/<topic>`, `fix/<topic>`) and merge after self-testing passes.
+2. **Commit messages**: `<type>: <summary>`, with types consistent with the existing repository history:
+   - `feat` new feature / `fix` bug fix / `refactor` structural change (no behavior change) / `docs` documentation / `chore` miscellaneous
+   - One commit does one thing; behavior changes and pure refactors are committed separately (easier to trace).
+3. **Line endings**: scripts use LF uniformly (enforced by `.gitattributes`); run outputs are never committed (`.gitignore`).
 
-## 2. CHANGELOG 要求
+## 2. CHANGELOG requirements
 
-- **任何影响用户行为的变更**（新增/修改/移除 config 键、规则输入输出路径、脚本参数、运行方式）必须记入 `CHANGELOG.md` 未发布小节，遵循 Keep a Changelog 格式。
-- 纯文档或注释级改动可酌情合并记录。
+- **Any change that affects user behavior** (added/changed/removed config keys, rule input/output paths, script arguments, run procedure) must be recorded in the unreleased section of `CHANGELOG.md`, following the Keep a Changelog format.
+- Purely documentation or comment-level changes may be recorded together at your discretion.
 
-## 3. 文档同步 checklist（改规则必查）
+## 3. Documentation sync checklist (check for every rule change)
 
-修改 `workflow/rules/` 或 `workflow/Snakefile` 前，逐项核对：
+Before modifying `workflow/rules/` or `workflow/Snakefile`, verify each item:
 
-- [ ] 新增/修改了 **config 键**？→ 同步 `config/config.yaml` 注释模板 + `docs/使用说明.md` §4.3 配置表
-- [ ] 新增/修改了 **输出文件路径或目录**？→ 同步 `docs/使用说明.md` §6 结果解读 + `tests/check_outputs.py` 断言
-- [ ] 修改了 **规则入参或脚本调用参数**？→ 同步对应 `workflow/scripts/` 脚本的 Usage 注释 + 使用说明 FAQ
-- [ ] 新增/修改了 **软件或 R runtime 依赖**？→ 同步 `config/software.yaml`、`workflow/environment.yaml` 与使用说明；不要在 rule 中重新引入独立 `conda:`
-- [ ] 修改了 **R package / Rscript / R library** 需求？→ 更新 runtime preflight 与 `tests/test_runtime_config.sh`
-- [ ] 是否破坏 **旧版本产物兼容**？→ 在 CHANGELOG 用显著条目说明迁移方式
+- [ ] Added/changed **config keys**? -> sync the `config/config.yaml` comment template + the §4.3 configuration table in `docs/user-guide.md`
+- [ ] Added/changed **output file paths or directories**? -> sync §6 results layout in `docs/user-guide.md` + the assertions in `tests/check_outputs.py`
+- [ ] Changed **rule inputs or script call arguments**? -> sync the Usage comments of the corresponding `workflow/scripts/` script + the user guide FAQ
+- [ ] Added/changed **software or R runtime dependencies**? -> sync `config/software.yaml`, `workflow/environment.yaml`, and the user guide; do not reintroduce standalone `conda:` directives in rules
+- [ ] Changed **R package / Rscript / R library** requirements? -> update the runtime preflight and `tests/test_runtime_config.sh`
+- [ ] Does it break **compatibility with older outputs**? -> describe the migration path in a prominent CHANGELOG entry
 
-## 4. 测试要求
+## 4. Testing requirements
 
-提交影响流程逻辑的变更前，在 Linux 环境运行：
+Before submitting changes that affect pipeline logic, run on Linux:
 
 ```bash
-bash tests/lint.sh                          # 静态检查（bash/shellcheck/py/R/snakemake --lint）
-bash tests/test_runtime_config.sh           # 统一软件/R runtime 解析
-bash tests/test_r_runtime_propagation.sh    # 嵌套 R 调用继承检查
-bash tests/run_test.sh --pipeline deg       # 端到端回归（生成数据 → dry-run → 运行 → 断言）
+bash tests/lint.sh                          # static checks (bash/shellcheck/py/R/snakemake --lint)
+bash tests/test_runtime_config.sh           # unified software/R runtime resolution
+bash tests/test_r_runtime_propagation.sh    # nested R call inheritance checks
+bash tests/run_test.sh --pipeline deg       # end-to-end regression (generate data -> dry-run -> run -> assert)
 ```
 
-- `deg` 为默认验收管线（覆盖 align+quant+deg 全部规则）；改动比对/组装相关规则时另跑 `--pipeline as`。
-- 新增输出文件时，请在 `tests/check_outputs.py` 中补对应断言。
-- CI（GitHub Actions）会在 push/PR 时自动执行 lint 与 `--reads 20000` 的快速回归；本地无 CI 环境时以上两条命令为准。
+- `deg` is the default acceptance pipeline (covers all align+quant+deg rules); when touching alignment/assembly-related rules, also run `--pipeline as`.
+- When adding output files, add the corresponding assertions in `tests/check_outputs.py`.
+- `make check` / `make lint` / `make test` (in this directory) wrap the same checks; CI (GitHub Actions, repository-root `.github/workflows/ci.yml`) runs lint and a fast `--reads 20000` regression automatically on push/PR.
 
-## 5. 代码风格
+## 5. Code style
 
-- Snakefile/规则：与现有规则保持相同的缩进与 directive 顺序（input → output → log/params → threads/resources → shell）；shell 串中 `{}` 转义遵循 `{{}}`。
-- Shell 脚本：`set -u` 起步、路径加引号、`SCRIPT_DIR` 自解析；优先可移植写法（GNU coreutils 为主）。
-- Python：标准库优先（测试生成器/校验器不得引入第三方依赖）；R：保持现有 `getopt` 风格。
+- Snakefile/rules: keep the same indentation and directive order as existing rules (input -> output -> log/params -> threads/resources -> shell); `{}` escaping inside shell strings follows `{{}}`.
+- Shell scripts: start with `set -u`, quote paths, self-resolving `SCRIPT_DIR`; prefer portable constructs (GNU coreutils first).
+- Python: standard library first (test generators/validators must not add third-party dependencies); R: keep the existing `getopt` style.

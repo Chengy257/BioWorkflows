@@ -1,54 +1,54 @@
-# 贡献指南（CONTRIBUTING）
+# Contributing guide (CONTRIBUTING)
 
-## 1. 开发流程
+## 1. Development workflow
 
-1. **分支**：`master`/`main` 保持可运行状态；功能开发与修复在特性分支进行（`feat/<主题>`、`fix/<主题>`），自测通过后合并。
-2. **提交信息**：`<类型>: <中文概述>`（可带 scope，如 `feat(launcher): ...`；破坏性变更加 `!`，如 `feat(launcher)!: ...`），类型与仓库现有历史保持一致：
-   - `feat` 新功能 / `fix` 缺陷修复 / `refactor` 结构调整（不改行为）/ `docs` 文档 / `test` 测试 / `ci` CI / `chore` 杂项
-   - 一个提交只做一件事；行为变更与纯重构分开提交（便于回溯定位）。
-3. **行尾与产物**：脚本统一 LF（`.gitattributes` 已约束）；运行产物与测试数据一律不入库（`.gitignore`；`tests/run_test.sh` 默认自清理，`--keep` 产物勿提交）。
+1. **Branches**: keep `master`/`main` runnable; develop features and fixes on feature branches (`feat/<topic>`, `fix/<topic>`) and merge after self-testing passes.
+2. **Commit messages**: `<type>: <English summary>` (scope optional, e.g. `feat(launcher): ...`; add `!` for breaking changes, e.g. `feat(launcher)!: ...`); keep types consistent with the existing repository history:
+   - `feat` new feature / `fix` bug fix / `refactor` restructuring (no behavior change) / `docs` documentation / `test` tests / `ci` CI / `chore` misc
+   - One commit does one thing; commit behavior changes and pure refactors separately (easier to trace later).
+3. **Line endings and artifacts**: scripts use LF uniformly (enforced by `.gitattributes`); run outputs and test data are never committed (`.gitignore`; `tests/run_test.sh` cleans up after itself by default — do not commit `--keep` artifacts).
 
-## 2. CHANGELOG 要求
+## 2. CHANGELOG requirements
 
-- **任何影响用户行为的变更**（新增/修改/移除 config 键或 `software.yaml` 键、`run.sh` 选项、规则输入输出路径、脚本参数、运行方式、依赖钉版）必须记入 `CHANGELOG.md` 未发布小节，遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式（Added/Changed/Fixed/Removed/Deprecated 分节）。
-- 破坏性变更（`!`）需在条目中写明迁移方式；纯文档或注释级改动可酌情合并记录。
-- 发版时将未发布小节落为版本号 + 日期，并打语义化版本 tag。
+- **Any change that affects user behavior** (adding/modifying/removing config keys or `software.yaml`/`resources.yaml`/`species.yaml` keys, `run.sh` options, rule inputs/outputs, script arguments, how things run, dependency pins) must be recorded in the Unreleased section of `CHANGELOG.md`, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format (Added/Changed/Fixed/Removed/Deprecated sections).
+- Breaking changes (`!`) must describe the migration path in their entry; pure documentation or comment-level changes may be merged into a single entry at your discretion.
+- On release, turn the Unreleased section into a version number + date and cut a semantic version tag.
 
-## 3. 文档同步 checklist（改规则必查）
+## 3. Documentation sync checklist (check whenever touching rules)
 
-修改 `workflow/`、`run.sh` 或 `config/` 前，逐项核对：
+Before modifying `workflow/`, `run.sh`, or `config/`, verify each item:
 
-- [ ] 新增/修改了 **config 键**？→ 同步 `config/config.yaml` 注释、`config/config.template.yaml`、`docs/使用说明.md` §4 全键表（涉集群资源再加 §4.3 默认值表）
-- [ ] 新增/修改了 **规则 resources 默认值**？→ 同步 `docs/使用说明.md` §4.3 默认值表
-- [ ] 新增/修改了 **输出文件路径或目录**？→ 同步 `docs/使用说明.md` §7 目录树与结果速查表、`tests/run_test.sh` 的实跑断言
-- [ ] 新增/修改了 **样本表列或校验规则**？→ 同步 `config/samples.csv` 模板、`docs/使用说明.md` §3、`tests/run_tests.py` 对应断言
-- [ ] 修改了 **`run.sh` 选项或行为**？→ 同步 `run.sh` 内 usage 文本、`docs/使用说明.md` §2/§5/§6
-- [ ] 新增/修改了 **软件或 R 依赖**？→ 同步 `workflow/environment.yaml`（钉版）与 `config/software.yaml`；不要在 rule 中重新引入独立 `conda:` 指令（v0.4.0 起为 external-runtime 体系）
-- [ ] 是否破坏 **旧版本产物/用法兼容**？→ 在 CHANGELOG 用显著条目说明迁移方式，必要时更新 README 版本矩阵
+- [ ] Added/modified **config keys**? → sync the `config/config.yaml` comments, `config/config.template.yaml`, and the full key table in `docs/user-guide.md` §4 (plus the §4.3 defaults table when cluster resources are involved)
+- [ ] Added/modified **per-rule resource defaults**? → sync `config/resources.yaml` and the defaults table in `docs/user-guide.md` §4.3
+- [ ] Added/modified **output file paths or directories**? → sync the directory tree and results quick-reference in `docs/user-guide.md` §7 and the real-run assertions in `tests/run_test.sh`
+- [ ] Added/modified **sample-table columns or validation rules**? → sync the `config/samples.csv` template, `docs/user-guide.md` §3, and the matching assertions in `tests/run_tests.py`
+- [ ] Modified **`run.sh` options or behavior**? → sync the usage text inside `run.sh` and `docs/user-guide.md` §2/§5/§6
+- [ ] Added/modified **software or R dependencies**? → sync `workflow/environment.yaml` (pinned) and `config/software.yaml`; do not reintroduce standalone `conda:` directives in rules (external-runtime system since v0.4.0)
+- [ ] Does it break **compatibility with outputs/usage of older versions**? → describe the migration path in a prominent CHANGELOG entry; update the README version matrix if necessary
 
-## 4. 测试要求
+## 4. Testing requirements
 
-提交影响流程逻辑的变更前，按环境可用度运行：
+Before submitting changes that affect workflow logic, run what the environment allows:
 
 ```bash
-make check                            # 55 项单元测试 + bash -n 语法检查（无需 snakemake）
-make lint                             # 静态检查套件 tests/lint.sh（bash/shellcheck/py_compile/R parse/yaml/snakemake --lint，缺可选工具自动跳过）
-make test                             # CI 同款全量检查（= check + lint）
-bash tests/run_test.sh                # 合成数据 dry-run 回归（需 snakemake + python3/PyYAML；CI 传 --reads 2000）
-bash tests/run_test.sh --real-run     # 端到端实跑 + 产物断言（需完整分析环境，服务器验证用）
+make check                            # 62 unit tests + bash -n syntax checks (no snakemake needed)
+make lint                             # static suite tests/lint.sh (bash/shellcheck/py_compile/R parse/yaml/snakemake --lint; missing optional tools are skipped)
+make test                             # CI-equivalent full check (= check + lint)
+bash tests/run_test.sh                # synthetic-data dry-run regression (needs snakemake + python3/PyYAML; CI passes --reads 2000)
+bash tests/run_test.sh --real-run     # end-to-end run + output assertions (needs a full analysis environment; server validation)
 ```
 
-- 本地最低门槛为 `make check`；改了 Snakefile/rules/config 的 PR 在有 snakemake 的环境必须补 `bash tests/run_test.sh`。
-- `--real-run` 需含 bowtie2/fastqc/trim_galore/macs2/deeptools/R（ChIPseeker）的完整环境（即 `workflow/environment.yaml` 同款），在服务器上验证部署时使用。
-- 新增/修改输出文件时，在 `tests/run_test.sh` 实跑断言中补对应条目；新增配置校验逻辑时，在 `tests/run_tests.py` 补单元测试并保持 **55 项基线只增不减**。
-- CI（GitHub Actions，`.github/workflows/ci.yaml`）两个 job：lint（make check + tests/lint.sh）与合成数据 dry-run 回归（`bash tests/run_test.sh --reads 2000`）；本地无 CI 环境时以上命令为准。
+- The local minimum bar is `make check`; PRs touching Snakefile/rules/config must additionally run `bash tests/run_test.sh` in an environment with snakemake.
+- `--real-run` needs a full environment with bowtie2/fastqc/trim_galore/macs2/deeptools/R (ChIPseeker) (i.e. the same as `workflow/environment.yaml`); use it when validating deployments on servers.
+- When adding/modifying output files, add matching entries to the real-run assertions in `tests/run_test.sh`; when adding config-validation logic, add unit tests in `tests/run_tests.py` and keep the **unit-test baseline growing, never shrinking**.
+- CI (GitHub Actions, repository-root `.github/workflows/ci.yml`) runs the chip unit tests + lint + dry-run regression (`bash tests/run_test.sh --reads 2000`); when a CI environment is not available locally, the commands above are the reference.
 
-## 5. 代码风格
+## 5. Code style
 
-- **命名**：规则、config 键、脚本、函数统一 `snake_case`；样本/分组名沿用样本表字符集约束（字母数字与 `. _ -`）。
-- **集中校验**：config 与样本表校验只在解析期集中执行（`workflow/rules/common.smk` 的 `validate_config` / `load_sample_table`），错误信息**带行号、一次汇总报出**；不要把校验散落到各 rule 的 shell 里。
-- **注释语言**：config 模板、规则文件与校验错误信息以中文为主（面向最终用户）；`run.sh` 的 usage/help 文本保持英文（与 rna-seq 体系对齐），行内日志可中文。同一文件内风格保持一致。
-- **Snakemake**：与现有规则保持相同缩进与 directive 顺序（input → output → params/log → threads/resources → shell）；集群资源经 `res()` 读取并支持 config `resources:` 段覆盖，勿在 shell 串里硬编码内存/时长。
-- **Shell**：`set -Eeuo pipefail` 起步（维护脚本至少 `set -euo pipefail`）、路径加引号、`REPO_DIR` 自解析；优先可移植写法（GNU coreutils 为主）。
-- **Python**：标准库优先（测试生成器/校验器不得引入第三方依赖；`tests/make_testdata.py` 需固定种子、逐字节可复现）。
-- **格式**：缩进 4 空格（smk/py/sh）、yaml/md 2 空格、Makefile 用 tab（`.editorconfig` 已约定）。
+- **Naming**: rules, config keys, scripts, and functions use `snake_case` uniformly; sample/group names follow the sample-table character-set constraints (alphanumeric plus `. _ -`).
+- **Centralized validation**: config and sample-table validation run only at parse time (`validate_config` / `load_sample_table` in `workflow/rules/common.smk`), with error messages **aggregated in one report and carrying line numbers**; do not scatter validation into rule shells.
+- **Language**: comments, config templates, and user-facing messages are English throughout (project-wide English unification); keep the style consistent within each file.
+- **Snakemake**: keep the same indentation and directive order as existing rules (input → output → params/log → threads/resources → shell); cluster resources go through the `rthreads()`/`rmem()`/`rruntime()` helpers backed by `config/resources.yaml` (with the project-level `resources:` override and the legacy top-level `threads` cap), and memory/duration must not be hard-coded in shell strings.
+- **Shell**: start from `set -Eeuo pipefail` (maintenance scripts at least `set -euo pipefail`), quote paths, self-resolve `REPO_DIR`; prefer portable constructs (GNU coreutils first).
+- **Python**: standard library first (the test generator/validators must not pull in third-party dependencies; `tests/make_testdata.py` must keep a fixed seed and byte-identical reproducibility).
+- **Formatting**: 4-space indentation (smk/py/sh), 2-space (yaml/md), tabs in Makefiles (agreed in `.editorconfig`).

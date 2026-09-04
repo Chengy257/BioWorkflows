@@ -1,4 +1,4 @@
-# 本机/独立服务器执行 profile。
+# Local / standalone-server execution profile.
 cores: 8
 keep-going: true
 rerun-incomplete: true

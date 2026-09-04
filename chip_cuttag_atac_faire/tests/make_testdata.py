@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""生成微型 ChIP/CUT&Tag/ATAC 回归测试数据集（dry-run 回归与 --real-run 验证共用）。
+"""Generate the miniature ChIP/CUT&Tag/ATAC regression test dataset (shared by the
+dry-run regression and --real-run validation).
 
-纯标准库实现、固定随机种子（默认 42），同参数两次生成逐字节一致
-（gzip 头部 mtime 固定为 0）。数据不入库，在测试机上即时生成。
-产物（写入 --outdir 指定目录，路径均为相对数据工作目录的布局）：
+Pure standard library, fixed random seed (default 42); two runs with the same
+arguments are byte-identical (gzip header mtime pinned to 0). Data is not
+committed to the repository; it is generated on the test machine on demand.
+Outputs (written to the --outdir directory; paths follow the data working-directory layout):
 
-    ref/genome.fa             2 条 100 kb 染色体（chr1/chr2）
-    ref/genes.gtf             每染色体 30 个模拟基因（gene + exon 两级行，
-                              exon 带 gene_id/transcript_id，可过 ChIPseeker）
-    ref/genes.bed             BED6 基因模型（chrom/start/end/name/score/strand）
-    ref/chrom.sizes           染色体长度表（bigWig 用）
-    1.rawdata/{sample}_1.fq.gz 与 _2.fq.gz
-                              PE 模拟 reads（长度 50，片段 150-300bp，
-                              序列真实取自参考基因组——--real-run 可过 bowtie2）
-    samples.csv               5 样本 6 列样本表（sample_id,role,group,seqtype,layout,peak_type）
-    config.yaml               测试 config（相对路径、threads: 2、qc 三开关全 true）
+    ref/genome.fa             2 x 100 kb chromosomes (chr1/chr2)
+    ref/genes.gtf             30 mock genes per chromosome (gene + exon levels;
+                              exons carry gene_id/transcript_id so ChIPseeker accepts them)
+    ref/genes.bed             BED6 gene models (chrom/start/end/name/score/strand)
+    ref/chrom.sizes           chromosome length table (for bigWig)
+    1.rawdata/{sample}_1.fq.gz and _2.fq.gz
+                              simulated PE reads (length 50, fragments 150-300bp,
+                              sequences are real substrings of the reference genome,
+                              so --real-run passes bowtie2)
+    samples.csv               5-sample, 6-column sample table (sample_id,role,group,seqtype,layout,peak_type)
+    config.yaml               test config (relative paths, threads: 2, all three QC switches on)
 
-样本：chip_treat_rep1/rep2 + chip_control（narrow 组 g1）、
-      atac_treat_rep1/rep2（atac 组 g2）。
-富集设计：chr1 上预置 3 个 2kb 峰区，treat 样本 70% 片段取自峰区，
-control 全基因组均匀采样。
+Samples: chip_treat_rep1/rep2 + chip_control (narrow group g1),
+         atac_treat_rep1/rep2 (atac group g2).
+Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
+70% of fragments from peak regions, control samples sample uniformly genome-wide.
 
-用法:
-    python tests/make_testdata.py --outdir <目录> [--reads 50000] [--seed 42]
+Usage:
+    python tests/make_testdata.py --outdir <dir> [--reads 50000] [--seed 42]
 """
 import argparse
 import gzip
@@ -32,23 +35,25 @@ import os
 import random
 
 # ---------------------------------------------------------------------
-# 固定参数（与实施计划 Task 4.2 一致，改前需同步 run_tests.py 断言）
+# Fixed parameters (matches implementation plan Task 4.2; update the
+# run_tests.py assertions in lockstep before changing)
 # ---------------------------------------------------------------------
-CHROM_LEN = 100000        # 单条染色体长度（bp）
-N_CHROM = 2               # 染色体条数（chr1/chr2）
-GENES_PER_CHROM = 30      # 每染色体基因数
-READ_LEN = 50             # reads 长度
-FRAG_MIN, FRAG_MAX = 150, 300   # 片段长度范围（bp）
-GENE_START = 1000         # 首个基因起点（0-based）
-GENE_SPACING = 3000       # 基因间距
-GENE_LEN = 2000           # 基因跨度
-PEAK_REGIONS = [(20000, 22000), (50000, 52000), (80000, 82000)]  # chr1 富集峰区（0-based 半开）
-PEAK_PROB = 0.7           # treat 样本取自峰区的概率（control 均匀采样）
-ERROR_RATE = 0.005        # 替换型测序错误率（少量错误避免病态完全重复）
-SEED = 42                 # 默认随机种子
+CHROM_LEN = 100000        # per-chromosome length (bp)
+N_CHROM = 2               # number of chromosomes (chr1/chr2)
+GENES_PER_CHROM = 30      # genes per chromosome
+READ_LEN = 50             # read length
+FRAG_MIN, FRAG_MAX = 150, 300   # fragment length range (bp)
+GENE_START = 1000         # first gene start (0-based)
+GENE_SPACING = 3000       # gene spacing
+GENE_LEN = 2000           # gene span
+PEAK_REGIONS = [(20000, 22000), (50000, 52000), (80000, 82000)]  # chr1 enrichment peaks (0-based half-open)
+PEAK_PROB = 0.7           # probability a treat fragment comes from a peak region (control samples uniformly)
+ERROR_RATE = 0.005        # substitution-type sequencing error rate (a few errors avoid pathological exact duplicates)
+SEED = 42                 # default random seed
 
-# 样本集：(sample_id, role, group, seqtype, peak_type)
-# 命名与组名均满足 workflow 的 _NAME_RE（字母数字._-，无连续下划线 __）
+# Sample set: (sample_id, role, group, seqtype, peak_type)
+# Names and group names all satisfy the workflow's _NAME_RE (alphanumeric plus
+# . _ - , no consecutive underscores __)
 SAMPLES = [
     ("chip_treat_rep1", "treat",   "g1", "chip", "narrow"),
     ("chip_treat_rep2", "treat",   "g1", "chip", "narrow"),
@@ -60,44 +65,47 @@ SAMPLES = [
 BASES = "ACGT"
 _COMP = str.maketrans("ACGT", "TGCA")
 
-# 测试 config：键集覆盖 validate_config 全部必需键；路径相对数据工作目录。
-# qc.nsc_rsc=true 在 CI dry-run 中只构建 DAG 不执行 spp，安全。
+# Test config: the key set covers every key required by validate_config; paths
+# are relative to the data working directory.
+# qc.nsc_rsc=true only builds the DAG in the CI dry-run (spp is not executed), so it is safe.
 CONFIG_YAML = """\
 # =====================================================================
-# 合成测试数据集专用 config（由 tests/make_testdata.py 生成，勿手工编辑）
-# 所有路径相对数据工作目录；用法: bash run.sh -P <工作目录> -c <本文件> -n
+# Config dedicated to the synthetic test dataset (generated by
+# tests/make_testdata.py; do not edit by hand).
+# All paths are relative to the data working directory.
+# Usage: bash run.sh -P <workdir> -c <this file> -n
 # =====================================================================
 
-# ---------- 参考基因组（合成 2 x 100kb） ----------
-genome_fa: "ref/genome.fa"     # bowtie2 建索引输入
-gtf: "ref/genes.gtf"           # 峰注释用（ChIPseeker makeTxDbFromGFF 可解析）
-bed: "ref/genes.bed"           # 预留（deeptools 用）
-chromsize: "ref/chrom.sizes"   # bigWig 生成用
-genome_size: "180000"          # MACS2 -g 有效基因组大小：两条 100kb 染色体
+# ---------- Reference genome (synthetic 2 x 100kb) ----------
+genome_fa: "ref/genome.fa"     # bowtie2 index input
+gtf: "ref/genes.gtf"           # for peak annotation (parseable by ChIPseeker makeTxDbFromGFF)
+bed: "ref/genes.bed"           # reserved (used by deeptools)
+chromsize: "ref/chrom.sizes"   # for bigWig generation
+genome_size: "180000"          # MACS2 effective genome size: two 100kb chromosomes
 
-# ---------- 样本与资源 ----------
-grouplist: "samples.csv"       # 生成器同目录输出的样本表
+# ---------- Sample table and resources ----------
+grouplist: "samples.csv"       # sample table written next to the generator outputs
 threads: 2
 
-# ---------- 质量修剪（trim_galore） ----------
+# ---------- Quality trimming (trim_galore) ----------
 trim:
   quality: 25
   stringency: 3
   error_rate: 0.1
   extra: ""
 
-# ---------- 比对 ----------
+# ---------- Alignment ----------
 bowtie2_extra: "--end-to-end --very-sensitive --no-mixed --no-discordant --phred33 -I 10 -X 700"
 min_mapq: 30
 
-# ---------- 去重 ----------
+# ---------- Deduplication ----------
 dedup:
   chip: true
   cuttag: false
   atac: true
   faire: true
 
-# ---------- 峰调用 ----------
+# ---------- Peak calling ----------
 peak:
   keepdup: all
   qvalue: 0.05
@@ -107,24 +115,24 @@ peak:
     shift: -100
     extsize: 200
 
-# ---------- 注释与信号窗口 ----------
+# ---------- Annotation and signal windows ----------
 region_flank: 3000
 
-# ---------- QC（三开关全开，覆盖全部 QC 分支的 dry-run） ----------
+# ---------- QC (all three switches on, so the dry-run covers every QC branch) ----------
 qc:
-  nsc_rsc: true    # dry-run 不执行 spp 故安全；--real-run 需 phantompeakqualtools
+  nsc_rsc: true    # safe: dry-run does not execute spp; --real-run needs phantompeakqualtools
   frip: true
   deeptools: true
 """
 
 
 def revcomp(s):
-    """反向互补（R2 取片段另一端的反向互补链）。"""
+    """Reverse complement (R2 is taken from the other end of the fragment)."""
     return s.translate(_COMP)[::-1]
 
 
 def mutate(seq, rng):
-    """按 ERROR_RATE 引入替换型测序错误（保持序列可比对回参考基因组）。"""
+    """Introduce substitution-type sequencing errors at ERROR_RATE (keeps sequences mappable to the reference)."""
     if ERROR_RATE <= 0:
         return seq
     out = []
@@ -137,16 +145,17 @@ def mutate(seq, rng):
 
 
 def gzip_text(path):
-    """固定 mtime 的 gzip 文本写句柄（保证同参数两次生成逐字节一致，LF 行尾）。"""
+    """gzip text handle with a fixed mtime (guarantees byte-identical output across runs with the same args; LF line endings)."""
     raw = gzip.GzipFile(path, "wb", compresslevel=6, mtime=0)
     return io.TextIOWrapper(raw, encoding="ascii", newline="\n")
 
 
 def build_reference(seed):
-    """返回 (染色体序列 dict, 基因结构列表)。
+    """Return (chromosome-sequence dict, gene-structure list).
 
-    染色体序列由固定种子生成；基因位置为确定性布局（等距、正负链交替），
-    不消耗随机数——因此 genome.fa 与 --reads 参数无关，可独立复现。
+    Chromosome sequences come from the fixed seed; gene positions use a
+    deterministic layout (equidistant, alternating strands) that consumes no
+    random numbers — so genome.fa is independent of --reads and reproducible on its own.
     """
     rng = random.Random(seed)
     chroms = {f"chr{i + 1}": "".join(rng.choices(BASES, k=CHROM_LEN))
@@ -157,15 +166,15 @@ def build_reference(seed):
         idx = i % GENES_PER_CHROM
         strand = "+" if i % 2 == 0 else "-"
         gid = f"gene{i + 1}"
-        s0 = GENE_START + idx * GENE_SPACING          # 基因起点（0-based）
-        exons = [(s0, s0 + 800), (s0 + 1200, s0 + GENE_LEN)]  # 两外显子（0-based 半开）
+        s0 = GENE_START + idx * GENE_SPACING          # gene start (0-based)
+        exons = [(s0, s0 + 800), (s0 + 1200, s0 + GENE_LEN)]  # two exons (0-based half-open)
         genes.append({"id": gid, "chrom": chrom, "strand": strand,
                       "start": s0, "end": s0 + GENE_LEN, "exons": exons})
     return chroms, genes
 
 
 def write_reference(outdir, chroms, genes):
-    """写参考四件套 ref/{genome.fa, genes.gtf, genes.bed, chrom.sizes}（LF 行尾）。"""
+    """Write the reference file set ref/{genome.fa, genes.gtf, genes.bed, chrom.sizes} (LF line endings)."""
     ref_dir = os.path.join(outdir, "ref")
     os.makedirs(ref_dir, exist_ok=True)
 
@@ -177,7 +186,8 @@ def write_reference(outdir, chroms, genes):
             for i in range(0, len(s), 60):
                 fh.write(s[i:i + 60] + "\n")
 
-    # GTF：最简 gene + exon 两级行；exon 带 transcript_id 供 makeTxDbFromGFF 分组
+    # GTF: minimal gene + exon two-level records; exons carry transcript_id for
+    # makeTxDbFromGFF grouping
     with open(os.path.join(ref_dir, "genes.gtf"), "w",
               encoding="ascii", newline="\n") as fh:
         for g in genes:
@@ -189,7 +199,7 @@ def write_reference(outdir, chroms, genes):
                 fh.write(f'{g["chrom"]}\ttest\texon\t{s + 1}\t{e}\t'
                          f'.\t{g["strand"]}\t.\t{exon_attr}\n')
 
-    # BED6：chrom/start/end/name/score/strand（ChIPseeker/rtracklayer 兼容）
+    # BED6: chrom/start/end/name/score/strand (ChIPseeker/rtracklayer compatible)
     with open(os.path.join(ref_dir, "genes.bed"), "w",
               encoding="ascii", newline="\n") as fh:
         for g in genes:
@@ -203,13 +213,14 @@ def write_reference(outdir, chroms, genes):
 
 
 def sample_fragment(chroms, rng, role):
-    """按角色采样一个基因组片段：treat 以 PEAK_PROB 概率取自 chr1 峰区，
-    其余（含 control）全基因组均匀采样。序列必为参考基因组真实子串。"""
+    """Sample one genomic fragment by role: treat draws from a chr1 peak region
+    with probability PEAK_PROB; everything else (including control) samples the
+    genome uniformly. The sequence is always a real substring of the reference."""
     frag_len = rng.randint(FRAG_MIN, FRAG_MAX)
     if role == "treat" and rng.random() < PEAK_PROB:
         chrom = "chr1"
         rs, re_ = rng.choice(PEAK_REGIONS)
-        start = rng.randint(rs, re_ - frag_len)   # 片段完整落入峰区
+        start = rng.randint(rs, re_ - frag_len)   # fragment fully inside the peak region
     else:
         chrom = f"chr{rng.randint(1, N_CHROM)}"
         start = rng.randint(0, CHROM_LEN - frag_len)
@@ -217,10 +228,11 @@ def sample_fragment(chroms, rng, role):
 
 
 def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
-    """按样本生成 PE reads（1.rawdata/{sample}_1.fq.gz 与 _2.fq.gz）。
+    """Generate PE reads per sample (1.rawdata/{sample}_1.fq.gz and _2.fq.gz).
 
-    每样本独立 rng（seed + 样本序号），与样本生成顺序解耦；
-    R2 取片段另一端的反向互补，质量行固定为 'I' 重复。
+    Each sample uses its own rng (seed + sample index), decoupled from sample
+    generation order; R2 is the reverse complement of the fragment's other end,
+    quality lines are a fixed repeat of 'I'.
     """
     raw_dir = os.path.join(outdir, "1.rawdata")
     os.makedirs(raw_dir, exist_ok=True)
@@ -243,7 +255,7 @@ def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
 
 
 def write_samples(outdir):
-    """写 6 列样本表 samples.csv（表头与 workflow REQUIRED_COLUMNS 一致）。"""
+    """Write the 6-column sample table samples.csv (header matches the workflow's REQUIRED_COLUMNS)."""
     path = os.path.join(outdir, "samples.csv")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("sample_id,role,group,seqtype,layout,peak_type\n")
@@ -252,7 +264,7 @@ def write_samples(outdir):
 
 
 def write_config(outdir):
-    """写测试 config.yaml（相对路径，供 run.sh -c 使用）。"""
+    """Write the test config.yaml (relative paths, consumed via run.sh -c)."""
     path = os.path.join(outdir, "config.yaml")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(CONFIG_YAML)
@@ -263,14 +275,14 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--outdir", required=True,
-                    help="输出根目录（必填；目录已存在则复用）")
+                    help="output root directory (required; reused if it already exists)")
     ap.add_argument("--reads", type=int, default=50000,
-                    help="每样本 PE 读对数（默认 50000；CI 回归用 2000）")
+                    help="PE read pairs per sample (default 50000; CI regression uses 2000)")
     ap.add_argument("--seed", type=int, default=SEED,
-                    help=f"随机种子（默认 {SEED}，保证可复现）")
+                    help=f"random seed (default {SEED}, for reproducibility)")
     args = ap.parse_args()
     if args.reads < 1:
-        ap.error("--reads 必须是正整数")
+        ap.error("--reads must be a positive integer")
 
     os.makedirs(args.outdir, exist_ok=True)
     chroms, genes = build_reference(args.seed)
@@ -279,9 +291,9 @@ def main():
     write_samples(args.outdir)
     write_config(args.outdir)
 
-    print(f"[make_testdata] 染色体 {N_CHROM} × {CHROM_LEN}bp，基因 {len(genes)} 个，"
-          f"样本 {len(SAMPLES)} × {args.reads} PE 读对（seed={args.seed}）")
-    print(f"[make_testdata] 产物根目录: {os.path.abspath(args.outdir)}")
+    print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
+          f"{len(SAMPLES)} samples x {args.reads} PE read pairs (seed={args.seed})")
+    print(f"[make_testdata] output root: {os.path.abspath(args.outdir)}")
 
 
 if __name__ == "__main__":

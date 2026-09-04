@@ -1,4 +1,4 @@
-# ---- Python 虚拟环境与字节码 ----
+# ---- Python virtual environments and bytecode ----
 .venv/
 venv/
 __pycache__/
@@ -6,11 +6,14 @@ __pycache__/
 *.pyd
 *.egg-info/
 
-# ---- Snakemake 运行时元数据 ----
+# ---- Local test scaffolding ----
+.testscripts/
+
+# ---- Snakemake runtime metadata ----
 .snakemake/
 *.snakemake*
 
-# ---- 运行日志 / 标记 / 临时文件 ----
+# ---- Run logs / markers / temporary files ----
 logs/
 *.log
 *.logs.txt
@@ -18,7 +21,7 @@ logs/
 flag.log
 *.tmp
 
-# ---- 运行产物与参考数据目录（编号目录习惯）----
+# ---- Run outputs and reference directories (numbered-stage convention) ----
 0.index/
 1.rawdata/
 2.cleandata/
@@ -37,7 +40,7 @@ reference/
 results/
 temp.*
 
-# ---- 高通量数据文件（入库属例外，需显式 git add -f）----
+# ---- High-throughput data files (opt in explicitly with git add -f) ----
 *.fastq
 *.fastq.gz
 *.fq.gz
@@ -49,12 +52,13 @@ temp.*
 *.bdg
 *.npz
 
-# ---- 测试本地生成物（由 tests/make_testdata.py 即时生成）----
+# ---- Test-local artifacts (generated on the fly by tests/make_testdata.py) ----
 tests/data/
 tests/work/
 
-# ---- 本地私有配置（config.template.yaml + config.local.yaml 模式）----
+# ---- Private local config (config.template.yaml + config.local.yaml pattern) ----
 config/config.local.yaml
+config.local.yaml
 
 # ---- R ----
 .Rhistory
@@ -62,12 +66,12 @@ config/config.local.yaml
 *.Rproj
 .Rproj.user/
 
-# ---- 备份文件 / 本地迁移残留 ----
+# ---- Backups / local migration leftovers ----
 *.bak
 *.bak.*
 .local_backup/
 
-# ---- 编辑器 / 操作系统 / 工具 ----
+# ---- Editors / OS / tooling ----
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -76,4 +80,3 @@ desktop.ini
 .idea/
 .vscode/
 .glm-conductor/
-.testscripts/

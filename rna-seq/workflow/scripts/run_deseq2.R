@@ -36,7 +36,7 @@ runDEseq2 <- function(dds,sample_info,output_name,FDR,FoldChange){
         treat <- pairwise_combs[i,1]  # pair[1]
         ids <- c()
         result_group <- paste0(treat, "_vs_", ref)
-        ## 仅输出 处理组_vs_对照组 的比较（精确匹配，修复旧版 grepl 子串误配）
+        ## Only output treatment_vs_control comparisons (exact match; fixes the old grepl substring mismatch)
         if(ref == control_name) {
             print(paste("[",date(),"] DESeq2: preprocess ",result_group,"...",sep=""))
             res_contrast <- results(dds, contrast = c("group",treat, ref))
@@ -76,8 +76,8 @@ sample_plots <- function(dds,output_name,ntop){
 }
 
 group_contrast_plot <- function(res,data,name){
-    ## 火山图（修复 P1-8）：动态坐标范围（不截断数据点）、fontface、
-    ## 显式颜色映射、空类别容错、标注位置随数据缩放
+    ## Volcano plot (fix P1-8): dynamic coordinate ranges (no data points clipped), fontface,
+    ## explicit color mapping, tolerance for empty categories, label positions scaled with the data
     anno <- as.data.frame(table(data$type))
     freq_of <- function(lv){
         v <- anno$Freq[as.character(anno$Var1) == lv]
@@ -125,8 +125,8 @@ main <- function(count,sample,is_batch,Nthreads,output_name,FDR,FoldChange,Ntop)
     count_data <- read.csv(count,header = T,row.names = 1,sep="\t") # read in raw count data
     count_data <- count_data[rowSums(count_data)>0,]   ## remove un-expressed genes
     sample_info <- read.csv(sample,header = T,sep=",") ## read in sample info
-    ## 兼容历史数据：id 中的 '-' 改为 '_'（与 count 矩阵列名一致；
-    ## 校验器 validate_samples.py 已禁止新项目使用 '-'，此行为冗余保护）
+    ## Backward compatibility with historical data: '-' in ids replaced with '_' (consistent with count matrix column names;
+    ## the validate_samples.py validator already forbids '-' in new projects, so this is redundant protection)
     sample_info[,1] <- gsub("-","_",sample_info[,1])
     dds <- preprocess_data(count_data,sample_info,is_batch)
     print(dds)
@@ -136,7 +136,7 @@ main <- function(count,sample,is_batch,Nthreads,output_name,FDR,FoldChange,Ntop)
     #
     print(paste("[",date(),"] Running DESeq2...",sep=""))
     runDEseq2(dds,sample_info,output_name,FDR,FoldChange)
-    ## 记录 R sessionInfo（P2-9）
+    ## Record the R sessionInfo (P2-9)
     writeLines(capture.output(sessionInfo()), paste0(output_name,"sessionInfo.txt"))
     print(paste("[",date(),"] All done!",sep=""))
 }

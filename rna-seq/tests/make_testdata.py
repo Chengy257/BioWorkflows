@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""生成微型 RNA-seq 回归测试数据集（对应路线图 3.1）。
+"""Generate the miniature RNA-seq regression test dataset.
 
-纯标准库实现、固定随机种子，同一版本数据完全可复现（数据不入库，
-在测试机上即时生成）。产物（--outdir 指定，默认 tests/data/）：
+Pure standard library implementation with a fixed random seed; data is fully reproducible
+for a given version (the data is not committed, it is generated on the fly on the test
+machine). Outputs (--outdir, default tests/data/):
 
-    reference/genome.fa           2 条 100 kb 染色体
-    reference/genes.gtf           60 个模拟基因（gene/transcript/exon）
-    reference/genes.bed           BED12 基因模型（RSeQC infer_experiment 用）
-    reference/annotation_full.tsv gene_id 功能注释（DEGs 注释用）
-    rawdata/{sample}_1.fastq.gz   PE 模拟 reads（默认每样本 50000 对，
-    rawdata/{sample}_2.fastq.gz   从转录本采样 + 测序错误 + 10% 接头 + 5% 噪声）
-    truth_degenes.tsv             预期差异基因方向（drugA: 6 上调 ×8 / 6 下调 ×0.125）
-    samples.csv                   样本表（2 组 × 2 重复）
+    reference/genome.fa           2 x 100 kb chromosomes
+    reference/genes.gtf           60 simulated genes (gene/transcript/exon)
+    reference/genes.bed           BED12 gene models (used by RSeQC infer_experiment)
+    reference/annotation_full.tsv gene_id functional annotation (used for DEG annotation)
+    rawdata/{sample}_1.fastq.gz   simulated PE reads (default 50000 pairs per sample;
+    rawdata/{sample}_2.fastq.gz   sampled from transcripts + sequencing errors + 10% adapter + 5% noise)
+    truth_degenes.tsv             expected differential gene directions (drugA: 6 up x8 / 6 down x0.125)
+    samples.csv                   sample table (2 groups x 2 replicates)
 
-样本：ctrl_1/ctrl_2（对照组）与 drugA_1/drugA_2（处理组）。
+Samples: ctrl_1/ctrl_2 (control group) and drugA_1/drugA_2 (treatment group).
 
-用法:
+Usage:
     python3 make_testdata.py [--outdir tests/data] [--reads 50000] [--seed 20260903]
 """
 import argparse
@@ -49,7 +50,7 @@ def revcomp(s):
 
 
 def mutate(seq, rng):
-    """按 ERROR_RATE 引入替换型测序错误。"""
+    """Introduce substitution-type sequencing errors at ERROR_RATE."""
     if ERROR_RATE <= 0:
         return seq
     out = []
@@ -62,7 +63,7 @@ def mutate(seq, rng):
 
 
 def build_reference():
-    """返回 (染色体序列 dict, 基因结构列表)。"""
+    """Return (chromosome sequence dict, gene structure list)."""
     rng = random.Random(777)
     chroms = {f"chr{i + 1}": "".join(rng.choices(BASES, k=CHROM_LEN))
               for i in range(N_CHROM)}
@@ -85,7 +86,7 @@ def build_reference():
 
 
 def transcript_seq(chroms, gene):
-    """按转录本方向拼接外显子序列。"""
+    """Concatenate exon sequences in transcript orientation."""
     seq = chroms[gene["chrom"]]
     exons = gene["exons"]
     if gene["strand"] == "+":
@@ -114,7 +115,7 @@ def write_reference(outdir, chroms, genes):
 
     with open(os.path.join(ref_dir, "genes.bed"), "w") as fh:
         for g in genes:
-            blocks = sorted(g["exons"])           # BED 块按基因组坐标升序
+            blocks = sorted(g["exons"])           # BED blocks in ascending genomic coordinate order
             sizes = [e - s for s, e in blocks]
             starts = [s - g["tx_start"] for s, e in blocks]
             fh.write("\t".join(str(x) for x in [
@@ -128,7 +129,7 @@ def write_reference(outdir, chroms, genes):
 
 
 def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
-    """按表达量采样模拟 PE reads。"""
+    """Sample simulated PE reads according to expression levels."""
     raw_dir = os.path.join(outdir, "rawdata")
     os.makedirs(raw_dir, exist_ok=True)
     txs = [transcript_seq(chroms, g) for g in genes]
@@ -197,7 +198,7 @@ def write_samples(outdir):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--outdir", default=os.path.join(os.path.dirname(__file__), "data"))
-    ap.add_argument("--reads", type=int, default=50000, help="每样本 PE 读对数")
+    ap.add_argument("--reads", type=int, default=50000, help="PE read pairs per sample")
     ap.add_argument("--seed", type=int, default=20260903)
     args = ap.parse_args()
 
@@ -209,10 +210,10 @@ def main():
 
     with open(truth) as fh:
         n_truth = sum(1 for _ in fh) - 1
-    print(f"[make_testdata] 基因 {len(genes)}，染色体 {N_CHROM} × {CHROM_LEN}bp，"
-          f"样本 {len(SAMPLES)} × {args.reads} PE 读对")
-    print(f"[make_testdata] truth 差异基因 {n_truth} 个 -> {truth}")
-    print(f"[make_testdata] 产物根目录: {os.path.abspath(args.outdir)}")
+    print(f"[make_testdata] genes {len(genes)}, chromosomes {N_CHROM} x {CHROM_LEN}bp, "
+          f"samples {len(SAMPLES)} x {args.reads} PE read pairs")
+    print(f"[make_testdata] truth differential genes {n_truth} -> {truth}")
+    print(f"[make_testdata] output root: {os.path.abspath(args.outdir)}")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""零依赖测试：样本表解析、路由辅助函数、config 完整性。
+"""Dependency-free tests: sample-table parsing, routing helpers, config integrity.
 
-运行: python tests/run_tests.py（在仓库根目录）
-- 从 workflow/rules/common.smk 提取【真实源码】执行（非副本），保证测试与实现一致
-- pyyaml 可选：缺失时跳过 yaml 检查（CI 中会安装）
+Run: python tests/run_tests.py (from the repository root)
+- Extracts the [real source] from workflow/rules/common.smk and executes it
+  (not a copy), keeping tests in sync with the implementation
+- pyyaml is optional: YAML checks are skipped when it is missing (installed in CI)
 """
 import csv
 import os
@@ -24,10 +25,10 @@ def check(name, cond, detail=""):
 
 
 # ---------------------------------------------------------------------
-# 从 workflow/rules/common.smk 提取被测函数（真实源码）
+# Extract the functions under test from workflow/rules/common.smk (real source)
 # ---------------------------------------------------------------------
 class WorkflowError(Exception):
-    """snakemake.exceptions.WorkflowError 的替身（签名兼容：单 str 参数）"""
+    """Stand-in for snakemake.exceptions.WorkflowError (signature-compatible: single str arg)"""
 
 
 def extract_workflow_functions():
@@ -47,7 +48,7 @@ def extract_workflow_functions():
     block_b = segment("def _group_regex(", ["def _group_regex_dummy_never",
                                             "\n# -----",
                                             "\nBAM_TARGETS"])
-    # 截到 _group_regex 函数体结束（下一个顶层 def 或注释分隔）
+    # Cut at the end of the _group_regex body (next top-level def or comment divider)
     m = re.search(r"\n(?=def |# -|BAM_TARGETS)", block_b[len("def _group_regex("):])
     if m:
         block_b = block_b[: len("def _group_regex(") + m.start() + 1]
@@ -65,7 +66,7 @@ _group_regex = WF["_group_regex"]
 
 
 def write_csv(rows):
-    """rows[0] 为表头；返回临时文件路径"""
+    """rows[0] is the header; returns the temp file path"""
     fd, path = tempfile.mkstemp(suffix=".csv")
     with os.fdopen(fd, "w", newline="", encoding="utf-8") as fh:
         csv.writer(fh).writerows(rows)
@@ -76,9 +77,9 @@ def expect_error(name, rows, needle):
     path = write_csv(rows)
     try:
         load_sample_table(path)
-        check(name, False, "未抛出 WorkflowError")
+        check(name, False, "WorkflowError was not raised")
     except WorkflowError as e:
-        check(name, needle in str(e), f"报错信息不含 {needle!r}: {e}")
+        check(name, needle in str(e), f"error message does not contain {needle!r}: {e}")
     finally:
         os.unlink(path)
 
@@ -86,46 +87,46 @@ def expect_error(name, rows, needle):
 HEADER = ["sample_id", "role", "group", "seqtype", "layout", "peak_type"]
 
 # ---------------------------------------------------------------------
-print("== 1. 样本表解析（真实示例文件） ==")
+print("== 1. Sample-table parsing (real example file) ==")
 samples, groups, seqtype_of = load_sample_table(
     os.path.join(REPO, "config", "samples.csv"))
-check("example: 样本数 8 且去重保序",
+check("example: 8 samples, deduplicated, order preserved",
       samples == ["myc", "IgG", "H3K27me3_rep1", "IgG_cuta",
                   "atac_leaf_1", "atac_leaf_2", "faire_root", "Input_faire"],
       str(samples))
-check("example: myc_vs_IgG 结构",
+check("example: myc_vs_IgG structure",
       groups["myc_vs_IgG"]["treat"] == ["myc"]
       and groups["myc_vs_IgG"]["control"] == ["IgG"]
       and groups["myc_vs_IgG"]["seqtype"] == "chip"
       and groups["myc_vs_IgG"]["peak_type"] == "narrow")
-check("example: atac_leaf 无对照合法",
+check("example: atac_leaf without control is valid",
       groups["atac_leaf"]["control"] == [] and groups["atac_leaf"]["seqtype"] == "atac")
-check("example: faire 组 seqtype 映射", seqtype_of["faire_root"] == "faire")
+check("example: faire group seqtype mapping", seqtype_of["faire_root"] == "faire")
 
 s2, g2, st2 = load_sample_table(os.path.join(REPO, "example", "samples.csv"))
-check("example/samples.csv: 真实数据 2 样本可解析",
+check("example/samples.csv: real 2-sample table parses",
       s2 == ["myc", "IgG"] and g2["myc_vs_IgG"]["peak_type"] == "narrow")
 
-print("== 2. 样本表校验错误路径 ==")
-expect_error("缺列报错", HEADER[:4] + [["a", "treat", "g", "chip"]], "missing columns")
-expect_error("role 非法", [HEADER, ["a", "TREATMENT", "g", "chip", "PE", "narrow"]], "role")
-expect_error("seqtype 非法", [HEADER, ["a", "treat", "g", "chipseq", "PE", "narrow"]], "seqtype")
-expect_error("layout SE 拒绝", [HEADER, ["a", "treat", "g", "chip", "SE", "narrow"]], "PE")
-expect_error("chip 无峰型拒绝", [HEADER, ["a", "treat", "g", "chip", "PE", "none"]], "narrow or broad")
-expect_error("atac 指定峰型拒绝", [HEADER, ["a", "treat", "g", "atac", "PE", "narrow"]], "peak_type")
-expect_error("组内峰型不一致拒绝",
+print("== 2. Sample-table validation error paths ==")
+expect_error("missing columns reported", HEADER[:4] + [["a", "treat", "g", "chip"]], "missing columns")
+expect_error("invalid role", [HEADER, ["a", "TREATMENT", "g", "chip", "PE", "narrow"]], "role")
+expect_error("invalid seqtype", [HEADER, ["a", "treat", "g", "chipseq", "PE", "narrow"]], "seqtype")
+expect_error("SE layout rejected", [HEADER, ["a", "treat", "g", "chip", "SE", "narrow"]], "PE")
+expect_error("chip without peak type rejected", [HEADER, ["a", "treat", "g", "chip", "PE", "none"]], "narrow or broad")
+expect_error("atac with explicit peak type rejected", [HEADER, ["a", "treat", "g", "atac", "PE", "narrow"]], "peak_type")
+expect_error("mixed peak types within group rejected",
              [HEADER, ["a", "treat", "g", "chip", "PE", "narrow"],
               ["b", "control", "g", "chip", "PE", "broad"]], "same seqtype/peak_type/layout")
-expect_error("组无 treat 拒绝", [HEADER, ["b", "control", "g", "chip", "PE", "narrow"]], "treat")
-expect_error("同样本跨 seqtype 拒绝",
+expect_error("group without treat rejected", [HEADER, ["b", "control", "g", "chip", "PE", "narrow"]], "treat")
+expect_error("same sample across seqtypes rejected",
              [HEADER, ["a", "treat", "g1", "chip", "PE", "narrow"],
               ["a", "treat", "g2", "atac", "PE", "none"]], "different seqtypes")
-expect_error("空表拒绝", [HEADER], "no data rows")
-expect_error("样本名含逗号拒绝", [HEADER, ["a,b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
-expect_error("样本名含双下划线拒绝", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
-expect_error("分组名含空格拒绝", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "illegal characters")
+expect_error("empty table rejected", [HEADER], "no data rows")
+expect_error("comma in sample name rejected", [HEADER, ["a,b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
+expect_error("double underscore in sample name rejected", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
+expect_error("space in group name rejected", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "illegal characters")
 
-print("== 3. ATAC 峰调用模式白名单 ==")
+print("== 3. ATAC peak-calling mode whitelist ==")
 with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
     wf_src = fh.read()
 mode_block = wf_src[wf_src.index('if config["peak"]["atac"]["mode"]'):]
@@ -137,18 +138,18 @@ for bad in ["BAMPE", "bam", ""]:
     ns = {"config": {"peak": {"atac": {"mode": bad}}}, "WorkflowError": WorkflowError}
     try:
         exec(compile(mode_block, "mode_check", "exec"), ns)
-        check(f"mode={bad!r} 拒绝", False, "未抛出 WorkflowError")
+        check(f"mode={bad!r} rejected", False, "WorkflowError was not raised")
     except WorkflowError:
-        check(f"mode={bad!r} 拒绝", True)
+        check(f"mode={bad!r} rejected", True)
 for good in ["bampe", "shifted"]:
     ns = {"config": {"peak": {"atac": {"mode": good}}}, "WorkflowError": WorkflowError}
     try:
         exec(compile(mode_block, "mode_check", "exec"), ns)
-        check(f"mode={good!r} 放行", True)
+        check(f"mode={good!r} accepted", True)
     except WorkflowError as e:
-        check(f"mode={good!r} 放行", False, str(e))
+        check(f"mode={good!r} accepted", False, str(e))
 
-print("== 4. config 集中校验（validate_config，真实源码提取） ==")
+print("== 4. Centralized config validation (validate_config, extracted from real source) ==")
 vc_block = wf_src[wf_src.index("def validate_config("):]
 _end = vc_block.find("\nvalidate_config(config)")
 if _end == -1:
@@ -180,33 +181,33 @@ def vc_case(name, mutate, needles, expect_error=True):
     mutate(cfg)
     try:
         validate_config(cfg)
-        check(name, not expect_error, "未按预期抛出 WorkflowError")
+        check(name, not expect_error, "WorkflowError was not raised as expected")
     except WorkflowError as e:
         if expect_error:
             check(name, all(n in str(e) for n in needles),
-                  f"报错缺少 {needles}: {e}")
+                  f"error is missing {needles}: {e}")
         else:
-            check(name, False, f"不应报错: {e}")
+            check(name, False, f"should not fail: {e}")
 
 
-vc_case("合法完整 config 放行（参考文件缺失仅警告）",
+vc_case("valid complete config accepted (missing reference files warn only)",
         lambda c: None, [], expect_error=False)
-vc_case("缺 trim 键报错", lambda c: c.pop("trim"), ["missing required config key: trim"])
-vc_case("dedup 非布尔报错",
+vc_case("missing trim key reported", lambda c: c.pop("trim"), ["missing required config key: trim"])
+vc_case("non-boolean dedup reported",
         lambda c: c["dedup"].__setitem__("chip", 1), ["dedup.chip"])
-vc_case("qc 开关非布尔报错",
+vc_case("non-boolean qc switch reported",
         lambda c: c["qc"].__setitem__("frip", "yes"), ["qc.frip"])
-vc_case("min_mapq 负数报错",
+vc_case("negative min_mapq reported",
         lambda c: c.__setitem__("min_mapq", -1), ["min_mapq"])
-vc_case("region_flank 缺键报错",
+vc_case("missing region_flank key reported",
         lambda c: c.pop("region_flank"), ["missing required config key: region_flank"])
-vc_case("region_flank 非整数报错",
+vc_case("non-integer region_flank reported",
         lambda c: c.__setitem__("region_flank", "3000"), ["region_flank"])
-vc_case("peak.qvalue 超区间报错",
+vc_case("peak.qvalue out of range reported",
         lambda c: c["peak"].__setitem__("qvalue", 5), ["peak.qvalue"])
-vc_case("trim.quality 负数报错",
+vc_case("negative trim.quality reported",
         lambda c: c["trim"].__setitem__("quality", -1), ["trim.quality"])
-vc_case("trim.error_rate 超区间报错",
+vc_case("trim.error_rate out of range reported",
         lambda c: c["trim"].__setitem__("error_rate", 2), ["trim.error_rate"])
 
 
@@ -215,27 +216,29 @@ def _two_errors(c):
     c["dedup"].pop("atac")
 
 
-vc_case("多错误一次汇总报出",
+vc_case("multiple errors aggregated in one report",
         _two_errors, ["2 issues", "gtf", "dedup.atac"])
 
-print("== 5. 通配符约束正则 ==")
+print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
-check("regex: 精确匹配（含转义）",
+check("regex: exact match (with escaping)",
       re.fullmatch(rx, "myc_vs_IgG") and re.fullmatch(rx, "atac.leaf"))
-check("regex: 不匹配未列分组与变形",
+check("regex: unlisted groups and variants do not match",
       not re.fullmatch(rx, "other") and not re.fullmatch(rx, "atacXleaf"))
-check("regex: 空列表永不匹配", re.fullmatch(_group_regex([]), "anything") is None)
+check("regex: empty list never matches", re.fullmatch(_group_regex([]), "anything") is None)
 
-print("== 6. mqc shell 规则体实测（snakemake 同款 format 渲染 + bash 执行） ==")
+print("== 6. mqc shell rule bodies executed for real (snakemake-style format rendering + bash) ==")
 import subprocess  # noqa: E402
 
 
 def render_rule_body(smk_path, rule_name, fmt, literals=None):
-    """提取 rule 的 shell 体并渲染，模拟 snakemake 的解析链：
-    ① shell 体按 Python 字面量语义解码（ast.literal_eval，等价于 snakemake
-    对源码字符串的转义/续行处理，且对工作区 CRLF 检出免疫）；
-    ② 具名输出/点号 token 先字面替换（snakemake 特有语法）；
-    ③ 其余按 str.format 语义渲染（{{}} 折叠为 {}）。"""
+    """Extract a rule's shell body and render it, mimicking snakemake's parsing chain:
+    (1) the shell body is decoded with Python literal semantics (ast.literal_eval,
+    equivalent to snakemake's escape/line-continuation handling of source strings,
+    and immune to CRLF checkouts in the working tree);
+    (2) named outputs / dotted tokens are replaced literally first (snakemake-specific
+    syntax);
+    (3) the rest is rendered with str.format semantics ({{}} collapses to {})."""
     with open(smk_path, encoding="utf-8") as fh:
         src = fh.read()
     m = re.search(rf'^rule {rule_name}:.*?shell:\n\s*"""\n(.*?)"""',
@@ -254,7 +257,7 @@ def render_rule_body(smk_path, rule_name, fmt, literals=None):
 
 
 def run_bash(body, cwd):
-    # bash -c 直接执行命令体，避免 Windows 路径在 MSYS bash 下的转换问题
+    # bash -c executes the body directly, avoiding Windows path mangling under MSYS bash
     return subprocess.run(["bash", "-c", "set -eo pipefail\n" + body], cwd=cwd,
                           capture_output=True, text=True, timeout=60)
 
@@ -281,7 +284,7 @@ ok = (r.returncode == 0 and os.path.exists(mqc)
       and "# id: 'frip_table'" in open(mqc, encoding="utf-8").read()
       and open(mqc, encoding="utf-8").read().count("sample\tgroup") == 1
       and "myc\t" in open(mqc, encoding="utf-8").read())
-check("frip_summary mqc：渲染+执行+格式正确", ok,
+check("frip_summary mqc: renders + executes + format correct", ok,
       f"rc={r.returncode} stderr={r.stderr[:200]}")
 
 # --- spp_summary ---
@@ -306,19 +309,19 @@ ok = (r.returncode == 0
       and "# id: 'nsc_rsc_table'" in content
       and "sample\tfragment_length\tNSC\tRSC" in content
       and "s1\t150\t1.15\t0.95" in content and "s2\t" in content)
-check("spp_summary mqc：渲染+执行+格式正确", ok,
+check("spp_summary mqc: renders + executes + format correct", ok,
       f"rc={r.returncode} stderr={r.stderr[:200]}")
 
 import shutil  # noqa: E402
 shutil.rmtree(tmp, ignore_errors=True)
 
-print("== 7. config 完整性 ==")
+print("== 7. Config integrity ==")
 try:
     import yaml  # noqa: F401
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
-    print("  SKIP  pyyaml 未安装，跳过 yaml 解析检查")
+    print("  SKIP  pyyaml not installed; skipping YAML parsing checks")
 
 if HAS_YAML:
     with open(os.path.join(REPO, "config", "config.yaml"), encoding="utf-8") as fh:
@@ -332,30 +335,31 @@ if HAS_YAML:
     required_top = ["genome_fa", "gtf", "bed", "chromsize", "genome_size",
                     "grouplist", "threads", "bowtie2_extra", "min_mapq",
                     "region_flank", "dedup", "peak", "qc", "trim"]
-    check("config: 顶层键齐全（含 species 预设合并）", all(k in cfg for k in required_top),
+    check("config: all top-level keys present (incl. species preset merge)",
+          all(k in cfg for k in required_top),
           str([k for k in required_top if k not in cfg]))
     try:
         validate_config(cfg)
-        check("config: 仓库默认 config 通过 validate_config", True)
+        check("config: repository default config passes validate_config", True)
     except WorkflowError as e:
-        check("config: 仓库默认 config 通过 validate_config", False, str(e))
-    check("config: species 键存在且已知",
+        check("config: repository default config passes validate_config", False, str(e))
+    check("config: species key present and known",
           cfg.get("species") in ("osa", "hsa"), str(cfg.get("species")))
-    check("config: dedup 四 assay 齐全",
+    check("config: dedup covers all four assays",
           set(cfg["dedup"]) == {"chip", "cuttag", "atac", "faire"})
-    check("config: peak 子键齐全",
+    check("config: peak sub-keys present",
           {"keepdup", "qvalue", "broad_cutoff", "atac"} <= set(cfg["peak"]))
-    check("config: qc 开关齐全",
+    check("config: qc switches present",
           {"nsc_rsc", "frip", "deeptools"} <= set(cfg["qc"]))
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
-    check("resources.yaml: 顶层 resources 键", "resources" in res_cfg)
+    check("resources.yaml: top-level resources key", "resources" in res_cfg)
     _bad_res = [k for k, v in (res_cfg.get("resources") or {}).items()
                 if not isinstance(v, dict) or not {"threads", "mem_mb", "runtime_min"} <= set(v)]
-    check("resources.yaml: 每条规则含 threads/mem_mb/runtime_min", not _bad_res, str(_bad_res))
+    check("resources.yaml: every rule entry has threads/mem_mb/runtime_min", not _bad_res, str(_bad_res))
 
-print("== 8. per规则资源声明 ==")
+print("== 8. Per-rule resource declarations ==")
 # --- resource helpers: extract the real source from common.smk, inject config ---
 with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
     _src = fh.read()
@@ -372,22 +376,23 @@ def _make_helpers(cfg):
 
 
 _t, _m, _r = _make_helpers({})
-check("rmem 无覆盖段回落默认值", _m("frip") == 4096)
-check("rruntime 无覆盖段回落默认值", _r("frip") == 60)
+check("rmem falls back to defaults without an override block", _m("frip") == 4096)
+check("rruntime falls back to defaults without an override block", _r("frip") == 60)
 _t_cov, _m_cov, _r_cov = _make_helpers(
     {"resources": {"bowtie2_mapping": {"mem_mb": 32768}}})
-check("rmem 覆盖 mem_mb 生效", _m_cov("bowtie2_mapping") == 32768)
-check("rmem 覆盖段缺 key 回落", _r_cov("bowtie2_mapping") == 240)
-check("rmem 其他规则不受影响", _m_cov("frip") == 4096)
-check("rthreads 全局 legacy 线程帽生效", _make_helpers({"threads": 4})[0]("bowtie2_index") == 4)
-check("rthreads 未设帽时用规则默认", _t("bowtie2_index") == 8)
+check("rmem override of mem_mb takes effect", _m_cov("bowtie2_mapping") == 32768)
+check("rmem override block missing key falls back", _r_cov("bowtie2_mapping") == 240)
+check("rmem leaves other rules untouched", _m_cov("frip") == 4096)
+check("rthreads honors the legacy global thread cap", _make_helpers({"threads": 4})[0]("bowtie2_index") == 4)
+check("rthreads uses the rule default when no cap is set", _t("bowtie2_index") == 8)
 try:
     _m("no_such_rule")
-    check("未知规则名报 WorkflowError", False)
+    check("unknown rule name raises WorkflowError", False)
 except WorkflowError:
-    check("未知规则名报 WorkflowError", True)
+    check("unknown rule name raises WorkflowError", True)
 
-# --- 静态扫描：每个含规则的 .smk 中 rule 数与 runtime_sec 声明数一致（防漏声明） ---
+# --- Static scan: in every .smk containing rules, the rule count must match the
+# --- runtime_sec declaration count (guards against missing declarations)
 _mismatch = []
 _rules_dir = os.path.join(REPO, "workflow", "rules")
 for _fname in sorted(os.listdir(_rules_dir)):
@@ -397,13 +402,13 @@ for _fname in sorted(os.listdir(_rules_dir)):
         _text = fh.read()
     _n_rules = len(re.findall(r"(?m)^rule \w+:", _text))
     if _n_rules == 0:
-        continue  # common.smk 等纯 helper 文件无规则块
+        continue  # pure helper files such as common.smk have no rule blocks
     _n_rt = len(re.findall(r"(?m)^\s+runtime_sec=", _text))
     if _n_rules != _n_rt:
         _mismatch.append(f"{_fname}: rule={_n_rules} runtime_sec={_n_rt}")
-check("全部 rule 块均声明 runtime_sec（含 meta.smk）", not _mismatch, "; ".join(_mismatch))
+check("every rule block declares runtime_sec (incl. meta.smk)", not _mismatch, "; ".join(_mismatch))
 
-print("== 9. 合成测试数据生成器 ==")
+print("== 9. Synthetic test-data generator ==")
 import gzip  # noqa: E402
 import hashlib  # noqa: E402
 
@@ -412,7 +417,8 @@ _gen_out1 = tempfile.mkdtemp(prefix="testdata_a_")
 _gen_out2 = tempfile.mkdtemp(prefix="testdata_b_")
 
 try:
-    # 生成器以子进程运行（当前解释器），--reads 2000 保持快速；产物在 tempfile，finally 清理
+    # The generator runs as a subprocess (current interpreter); --reads 2000 keeps it
+    # fast; outputs go to a tempdir, cleaned up in finally
     _gen = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out1,
                            "--reads", "2000"],
                           capture_output=True, text=True, timeout=300)
@@ -420,7 +426,7 @@ try:
     _raw_dir = os.path.join(_gen_out1, "1.rawdata")
     if os.path.isdir(_raw_dir):
         _fq_count = len([f for f in os.listdir(_raw_dir) if f.endswith(".fq.gz")])
-    check("生成器 exit 0 且 5 样本 ×PE 共 10 个 fq.gz",
+    check("generator exits 0 with 5 samples x PE = 10 fq.gz files",
           _gen.returncode == 0 and _fq_count == 10,
           f"rc={_gen.returncode} fq.gz={_fq_count} stderr={_gen.stderr[-300:]}")
 
@@ -428,24 +434,24 @@ try:
     if os.path.exists(_fq1):
         with gzip.open(_fq1, "rt") as fh:
             _lines = [fh.readline().rstrip("\n") for _ in range(4)]
-        check("FASTQ 四行结构且 reads 长 50",
+        check("FASTQ four-line structure with 50bp reads",
               _lines[0].startswith("@") and _lines[2].startswith("+")
               and len(_lines[1]) == 50 and len(_lines[3]) == 50,
               str(_lines)[:120])
     else:
-        check("FASTQ 四行结构且 reads 长 50", False, "chip_treat_rep1_1.fq.gz 缺失")
+        check("FASTQ four-line structure with 50bp reads", False, "chip_treat_rep1_1.fq.gz missing")
 
     _csv_path = os.path.join(_gen_out1, "samples.csv")
     _rows = open(_csv_path, encoding="utf-8").read().strip().splitlines()
-    check("样本表 1 表头 + 5 数据行",
+    check("sample table: 1 header + 5 data rows",
           len(_rows) == 6 and _rows[0].startswith("sample_id,role,group"),
-          f"行数={len(_rows)} 表头={_rows[0][:40]!r}")
+          f"rows={len(_rows)} header={_rows[0][:40]!r}")
 
-    check("参考四件套齐全",
+    check("reference file set complete",
           all(os.path.exists(os.path.join(_gen_out1, "ref", f))
               for f in ("genome.fa", "genes.gtf", "genes.bed", "chrom.sizes")),
           str(os.listdir(os.path.join(_gen_out1, "ref")))
-          if os.path.isdir(os.path.join(_gen_out1, "ref")) else "ref/ 缺失")
+          if os.path.isdir(os.path.join(_gen_out1, "ref")) else "ref/ missing")
 
     _hdrs, _seqs = [], []
     with open(os.path.join(_gen_out1, "ref", "genome.fa"), encoding="ascii") as fh:
@@ -456,11 +462,12 @@ try:
             else:
                 _seqs[-1].append(line.strip())
     _seqs = ["".join(s) for s in _seqs]
-    check("基因组两条染色体各 100000bp",
+    check("genome has two 100000bp chromosomes",
           _hdrs == ["chr1", "chr2"] and all(len(s) == 100000 for s in _seqs),
           f"headers={_hdrs} lens={[len(s) for s in _seqs]}")
 
-    # 确定性：同参数第二次生成，genome.fa 逐字节一致（md5 相同）
+    # Determinism: generate a second time with the same arguments; genome.fa must be
+    # byte-identical (same md5)
     if _gen.returncode == 0:
         _gen2 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out2,
                                 "--reads", "2000"],
@@ -474,18 +481,18 @@ try:
         _fa2 = os.path.join(_gen_out2, "ref", "genome.fa")
         _det_ok = (_gen2.returncode == 0 and os.path.exists(_fa2)
                    and _md5(_fa1) == _md5(_fa2))
-        check("确定性：同参数两次生成 genome.fa md5 一致", _det_ok,
+        check("determinism: genome.fa md5 identical across two runs with the same args", _det_ok,
               f"rc2={_gen2.returncode} stderr2={_gen2.stderr[-200:]}")
     else:
-        check("确定性：同参数两次生成 genome.fa md5 一致", False, "首次生成失败，跳过")
-except Exception as exc:  # 生成器组异常不得中断其余结果汇总
-    check("生成器断言组异常终止", False, repr(exc))
+        check("determinism: genome.fa md5 identical across two runs with the same args", False, "first generation failed; skipped")
+except Exception as exc:  # generator-group exceptions must not abort the remaining summary
+    check("generator assertion group aborted abnormally", False, repr(exc))
 finally:
     shutil.rmtree(_gen_out1, ignore_errors=True)
     shutil.rmtree(_gen_out2, ignore_errors=True)
 
 print()
 if FAILED:
-    print(f"结果: {len(FAILED)} 项失败 -> {FAILED}")
+    print(f"Result: {len(FAILED)} check(s) failed -> {FAILED}")
     sys.exit(1)
-print("结果: 全部通过")
+print("Result: all passed")

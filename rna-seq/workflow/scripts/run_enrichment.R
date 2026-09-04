@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 ## Usage:
 ##   Rscript run_enrichment.R <gene list> <output dir> <species: osa|hsa> <kegg organism code>
-## R runtime and library paths are provided by config/software.yaml；物种与 OrgDb 路径由 enrich.sh 从 config 传入
+## R runtime and library paths are provided by config/software.yaml; species and OrgDb paths are passed in from config by enrich.sh
 args <- commandArgs(T)
 pkgs <- c('clusterProfiler','ggplot2','aPEAR','svglite','magrittr','dplyr')
 lapply(pkgs, function(x){
@@ -9,7 +9,7 @@ lapply(pkgs, function(x){
 
 spe <- "osa"
 if (length(args) >= 3) spe <- args[3]
-kegg_org <- ifelse(spe == "hsa", "hsa", "dosa")   # 默认按物种推导，可被第 5 参数覆盖
+kegg_org <- ifelse(spe == "hsa", "hsa", "dosa")   # derived from the species by default; can be overridden by the 5th argument
 if (length(args) >= 4 && !is.na(args[4]) && args[4] != "") kegg_org <- args[4]
 
 if (spe == "hsa") {
@@ -26,14 +26,14 @@ if (spe == "hsa") {
 }
 
 genelist <- read.table(args[1])[,1]
-if (spe == "hsa") genelist <- sub("\\..*$", "", genelist)   ## 去掉 ENSEMBL 版本号
+if (spe == "hsa") genelist <- sub("\\..*$", "", genelist)   ## strip the ENSEMBL version suffix
 
 output_dir <- args[2]
 out <- paste(output_dir, "/", sep = "")
 prefix <- basename(args[1])
 
 ###############################################
-## KEGG 查询依赖 KEGG REST API（需外网）；失败时跳过 KEGG，不影响 GO 结果
+## KEGG queries rely on the KEGG REST API (internet access required); on failure KEGG is skipped and GO results are unaffected
 R.utils::setOption("clusterProfiler.download.method", "auto")
 ###############################################
 for (ont in c("MF", "BP", "CC", "KEGG")) {

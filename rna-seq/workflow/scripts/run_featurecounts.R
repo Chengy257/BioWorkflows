@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-## featureCounts 定量（Rsubread）+ FPKM/TPM 计算，输出 5 列表格
+## featureCounts quantification (Rsubread) + FPKM/TPM calculation, outputs a 5-column table
 ## R runtime and library paths are provided by config/software.yaml
 suppressWarnings({
 pkgs <- c('argparser','Rsubread','limma','edgeR','getopt')
