@@ -25,6 +25,17 @@ Architecture consolidation release: flattened output layout, dedicated scheduler
 - `workflow/environment.yaml` solves again (validated with a dry-run Conda solve): `python` is pinned to 3.10 because `rseqc=5.0.1` ships no newer Python builds, and `r-base` is set to the 4.3 series.
 - **aPEAR is now optional**: the package was removed from both CRAN (archived 2025-01) and Bioconductor, and is not packaged on bioconda, so it can no longer be a required dependency. The deg pipeline's enrichment-network plots and path-cluster tables are skipped with a warning when aPEAR is absent (`run_deg_compare.R` no longer hard-fails at `library()`); the preflight R-package check no longer requires it, and it was removed from `workflow/environment.yaml`. Install it manually from an archive if you want those plots.
 
+### Known issues (CI, not yet fixed)
+
+- GitHub CI (`rna-seq` job) end-to-end regression fails at `trimAdapter_PE` (all samples):
+  trim_galore exits non-zero inside the Conda environment on the runner. The root cause
+  is not yet identified because the rule log (`results/logs/trim/*.log.txt`) is not
+  captured by CI on failure. Everything before it passes: environment solve/creation,
+  runtime resolver tests, lint, sample validation, DAG construction, and the dry-run.
+  Next diagnostic step when resumed: upload rule logs as a CI artifact (or
+  `cat` the trim log on failure), then fix trim_galore/cutadapt in the env.
+- chip_cuttag_atac_faire CI job is green (unit tests + lint + dry-run regression).
+
 ## [0.8.0] - 2026-09-03
 
 Unified software and R runtime: the workflow reuses the user's existing server environment by default and no longer creates a dedicated Conda environment per rule.
