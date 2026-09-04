@@ -47,7 +47,9 @@ PIPELINE_TOOLS = {
 
 R_PACKAGES = {
     "upstream": ["argparser", "Rsubread", "limma", "edgeR", "getopt"],
-    "deg": ["argparser", "Rsubread", "limma", "edgeR", "getopt", "DESeq2", "ggplot2", "BiocParallel", "gplots", "RColorBrewer", "amap", "clusterProfiler", "enrichplot", "aPEAR", "svglite", "magrittr", "dplyr", "VennDiagram", "UpSetR", "R.utils"],
+    # aPEAR is intentionally absent: removed upstream (CRAN + Bioconductor); the
+    # deg pipeline skips its network plots when it is not installed.
+    "deg": ["argparser", "Rsubread", "limma", "edgeR", "getopt", "DESeq2", "ggplot2", "BiocParallel", "gplots", "RColorBrewer", "amap", "clusterProfiler", "enrichplot", "svglite", "magrittr", "dplyr", "VennDiagram", "UpSetR", "R.utils"],
     "as": [],
     "lncrna": ["argparser", "Rsubread", "limma", "edgeR", "getopt"],
 }

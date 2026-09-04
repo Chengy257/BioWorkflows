@@ -3,7 +3,8 @@
 ##   Rscript run_enrichment.R <gene list> <output dir> <species: osa|hsa> <kegg organism code>
 ## R runtime and library paths are provided by config/software.yaml; species and OrgDb paths are passed in from config by enrich.sh
 args <- commandArgs(T)
-pkgs <- c('clusterProfiler','ggplot2','aPEAR','svglite','magrittr','dplyr')
+## aPEAR is optional (see below); its network plot degrades to a warning when absent
+pkgs <- c('clusterProfiler','ggplot2','svglite','magrittr','dplyr')
 lapply(pkgs, function(x){
    suppressMessages(library(x, character.only = T))})
 

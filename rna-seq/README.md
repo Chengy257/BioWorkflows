@@ -9,7 +9,7 @@ A **Snakemake** end-to-end analysis pipeline for bulk RNA-seq (reference-genome 
 | pipeline (selected via the first `run.sh` argument) | Content |
 |---|---|
 | `upstream` | FastQC -> Trim Galore (incl. FastQC) -> strandedness inference -> STAR alignment -> featureCounts quantification -> TPM/count matrices |
-| `deg` | upstream + DESeq2 differential expression -> GO/KEGG enrichment (clusterProfiler + aPEAR) -> GSEA -> between-group comparison |
+| `deg` | upstream + DESeq2 differential expression -> GO/KEGG enrichment (clusterProfiler; optional aPEAR network plots) -> GSEA -> between-group comparison |
 | `as` | upstream (STAR with assembly-optimized parameters) + StringTie transcript assembly/merge/gffcompare -> isoform quantification |
 | `lncrna` | upstream + StringTie assembly -> coding-potential filtering (CPC2/CNCI/length/Pfam/NR) -> lncRNA expression matrix |
 

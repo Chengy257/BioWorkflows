@@ -36,7 +36,7 @@ Without a ready environment, `workflow/environment.yaml` provides an **optional 
 
 ```bash
 mamba env create -f workflow/environment.yaml
-Rscript -e 'install.packages("aPEAR", repos="https://cloud.r-project.org")'
+aPEAR is optional: the package was removed from CRAN and Bioconductor, and the workflow skips its enrichment-network plots when it is absent
 ```
 
 This command is executed explicitly by the user; Snakemake itself never creates or modifies software environments.
