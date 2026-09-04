@@ -7,7 +7,7 @@
 PYTHON ?= python3
 SNAKEMAKE ?= snakemake
 
-SHELL_SCRIPTS := main_run.sh $(wildcard workflow/scripts/*.sh) $(wildcard scripts/*.sh)
+SHELL_SCRIPTS := run.sh $(wildcard workflow/scripts/*.sh) $(wildcard scripts/*.sh)
 
 .PHONY: check lint dryrun test
 
@@ -20,6 +20,6 @@ lint:
 
 dryrun:
 	$(SNAKEMAKE) -n -s workflow/Snakefile --configfile config/config.yaml \
-		--cores 4
+		--profile workflow/profile/default
 
 test: check lint

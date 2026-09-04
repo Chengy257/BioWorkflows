@@ -61,7 +61,7 @@ chip_cuttag_atac_faire/
 ├── scripts/                # 独立 QC 工具（ChIPQC/DROMPAplus，待归档）
 ├── config/config.yaml      # 默认配置；config.template.yaml 为覆盖模板
 ├── config/samples.csv      # 样本表模板（四 assay 混型 schema）
-├── main_run.sh             # 启动脚本（本机/PBS 集群、config.local 叠加）
+├── run.sh                  # 启动脚本（本机/PBS/SGE/SLURM、config.local 叠加、运维 CLI）
 ├── tests/run_tests.py      # 零依赖单元测试（44 项）
 ├── Makefile                # make check / lint / dryrun
 ├── .github/workflows/ci.yaml  # CI：测试 + shellcheck + snakemake --lint
@@ -74,7 +74,7 @@ chip_cuttag_atac_faire/
 > ⚠️ **v0.4.0 过渡说明（环境路线变更）**：per-rule conda 体系（`envs/` 与规则内 `conda:` 指令）已移除。
 > 运行环境统一按 `workflow/environment.yaml` 创建（`conda env create -f workflow/environment.yaml`），
 > 或经 `config/software.yaml` 复用服务器已有环境（`conda_prefix` / `conda_name`）。
-> `main_run.sh` 已删除 `-b/-e/-E` 选项，运行时不再附加任何 conda 部署 flag（下文版本矩阵中的 flag 说明随之过时）；
+> `run.sh` 运行时不附加任何 conda 部署 flag（下文版本矩阵中的 flag 说明随之过时）；
 > 完整变更记录见 v0.4.0 CHANGELOG（本文档将在 v0.4.0 Phase 5 全面重写）。
 
 - Linux + conda/mamba + Snakemake，版本矩阵：
@@ -86,13 +86,13 @@ chip_cuttag_atac_faire/
 | <7 或 ≥9 | ⛔ 未验证 | 需实测 |
 
 - 其余工具（trim_galore、fastqc、multiqc、bowtie2、samtools、picard、macs2、bedtools、deeptools、R/ChIPseeker 等）按上方过渡说明统一安装，无需逐个手动部署
-- 可选：PBS 集群（`main_run.sh -p`）；Docker（DROMPAplus 独立工具）
+- 可选：PBS/SGE/SLURM 集群（`run.sh --profile`）；Docker（DROMPAplus 独立工具）
 
 ## 4. 快速开始
 
 ### 4.1 准备原始数据
 
-fastq 放入工作目录 `1.rawdata/`，命名 `{sample}_1.fq.gz` / `{sample}_2.fq.gz`（常见 R1/R2 后缀可用 `main_run.sh -r` 自动重命名）。
+fastq 放入工作目录 `1.rawdata/`，命名 `{sample}_1.fq.gz` / `{sample}_2.fq.gz`（常见 R1/R2 后缀可用 `run.sh -r` 自动重命名）。
 
 ### 4.2 编写样本表
 
@@ -133,10 +133,10 @@ config 在流程解析期集中校验（`workflow/rules/common.smk` 的 `validat
 
 ```bash
 # 方式一：启动脚本（推荐；需已进入统一环境）
-bash main_run.sh -w /path/to/workdir            # 本机运行
-bash main_run.sh -w /path/to/workdir -n         # dry-run 预检 DAG
-bash main_run.sh -w /path/to/workdir \
-    -p "qsub -V -N chipseq -l ncpus={threads} -j oe" -j 3 -t 120   # PBS 集群
+bash run.sh /path/to/workdir                      # 本机/自动探测调度器
+bash run.sh /path/to/workdir -n                   # dry-run 预检 DAG
+bash run.sh /path/to/workdir --profile pbs -j 3   # PBS 集群
+bash run.sh /path/to/workdir --check-software     # 运行时预检（工具/R/R 包），完整选项见 run.sh --help
 
 # 方式二：直接 snakemake（需已在统一环境中，无 conda 部署 flag）
 cd /path/to/workdir
@@ -145,9 +145,11 @@ snakemake -s /path/to/repo/workflow/Snakefile --configfile /path/to/repo/config/
 ```
 
 集群使用要点：
-- `{threads}` 由 snakemake 按每个任务的实际线程数填充（与 `config.yaml` 的 `threads` 及各规则声明自动对齐），请勿写固定数字；
-- `-e` 指定共享 conda 环境目录（`--conda-prefix`），多个项目复用同一套环境，避免每个工作目录重建约数 GB 的 11 个环境；
-- 默认已开启 `--rerun-incomplete` 与 `--latency-wait 90`（`-t` 可调），覆盖 PBS + 共享文件系统的断点重跑与输出可见性延迟两类常见假失败。
+- `--profile auto` 自动探测调度器：`sbatch` → SLURM；`qsub` 时按 `SGE_ROOT` 区分 SGE（有）/PBS（无）；均无则本机 default；
+- 集群资源默认按各规则 `resources` 声明（mem_mb/runtime）提交，可用 `--memory`/`--runtime` 全局覆盖；
+- 默认已开启 keep-going、rerun-incomplete 与 latency-wait 90（`--latency-wait` 可调），覆盖共享文件系统输出可见性延迟；
+- 工作目录下的 `config.local.yaml` 会被自动叠加（后加载者覆盖前者）；
+- 完整选项见 `run.sh --help`。
 
 ### 4.5 查看结果
 
