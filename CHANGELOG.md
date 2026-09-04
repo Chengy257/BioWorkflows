@@ -6,10 +6,43 @@
 
 ### 待办
 
-- 服务器最小样本端到端实跑（CI 首跑 + conda 环境求解 + MACS2 无对照 control_lambda 确认）
-- DiffBind 差异分析补完（需 contrast/设计公式决策）
+- 服务器最小样本端到端实跑（CI 首跑 + conda 环境求解 + MACS2 无对照 control_lambda 确认；验证入口 `bash tests/run_test.sh --real-run`）
+- DiffBind 差异分析补完（需 contrast/设计公式决策；v0.4.0 起空壳脚本归档于 `legacy/diffbind/`）
 - bowtie2 `.bt2l` 大基因组索引支持
 - snakemake 8.x 的 executor-plugin 风格 profile（`snakemake-executor-plugin-cluster-generic`）
+
+## [0.4.0] - 2026-09-04
+
+向姊妹项目 rna-seq（v0.8.0）工程体系全面对齐：目录布局、环境管理、启动体验、资源模型、测试与文档。
+设计文档见 `docs/superpowers/specs/2026-09-04-rna-seq-alignment-design.md`，实施计划见 `docs/superpowers/plans/2026-09-04-rna-seq-alignment.md`。
+
+### Added（对齐 rna-seq v0.8.0）
+
+- **统一环境体系三件套**：`workflow/environment.yaml`（钉版一体化主环境，合并原 11 个 per-rule envs 的全部版本约束）、`config/software.yaml`（environment.type=system/conda_prefix/conda_name + R runtime + 工具路径覆盖）、`workflow/scripts/runtime_config.py`（`export` 注入 `CHIP_*` 环境变量 / `check` preflight 双子命令）
+- **software_versions 规则 + collect_versions.py**：运行期把实际工具版本、git commit、运行时模式记录到 `5.QC/software_versions.yaml`（复现审计与方法节依据）
+- **run.sh 完整运维 CLI**（535 行，替代 main_run.sh）：`--profile auto|default|pbs|sge|slurm`（auto 探测：sbatch→slurm；qsub 按 SGE_ROOT 消歧 PBS/SGE）、per-rule 资源占位符集群提交串、`--memory/--runtime/--queue/--partition` 覆盖、`--check-software/--check-r` preflight、`--validate-only`、`--unlock`、`--retries`、`--log` tee + trap 计时、`--` 透传、`-r` 原始数据重命名、config.local.yaml 自动叠加
+- **per-rule 资源模型**：22 条规则全部声明 `mem_mb/runtime_min/runtime_sec`（4 条规则补 threads:1）；`config.yaml` 新增 `resources:` 覆盖段（按规则名覆盖）；`res()` helper 支持项目级调参
+- **四套 profile**：`workflow/profile/{default,pbs,sge,slurm}/config.yaml`（资源占位符统一；pbs walltime 用秒避免格式歧义）
+- **MultiQC 定制**：`workflow/multiqc_config.yaml`（标题/流程标识/说明），multiqc 规则 `-c` 接线
+- **测试与 CI**：`tests/lint.sh`（六段静态检查，缺工具自动跳过）；`tests/make_testdata.py`（确定性合成数据生成器：2×100kb 参考基因组 + chr1 三峰区富集的 chip/atac PE reads + 样本表 + 测试 config，seed 固定逐字节可复现）；`tests/run_test.sh`（合成数据 dry-run 回归默认 + `--real-run` 服务器实跑开关 + 产物断言）；CI 重写为双 job（lint + dry-run 回归，后者无需 conda 环境）
+- **文档四件**：`docs/使用说明.md`（8 章操作手册）、`CONTRIBUTING.md`、`README.md` 全面重写（保留 mermaid/QC 阈值表/结果速查亮点）、`example/` 真实项目模板（2 样本表 + 项目 config + 一条命令指引）
+
+### Changed（破坏性）
+
+- **目录布局迁移至 Snakemake 标准**：`workflow.smk` → `workflow/Snakefile`（纯编排）；约 200 行共享定义（样本表解析/config 校验/查询函数/目标汇总）拆至 `workflow/rules/common.smk`；rules/ 与 R 脚本迁入 `workflow/{rules,scripts}/`；样本表模板 → `config/samples.csv`；profile → `workflow/profile/`（全部 git mv 保留历史）
+- **启动入口更替**：`main_run.sh` 移除，统一 `bash run.sh`（位置参数=工作目录，`-P/-w` 均可）；旧 `-b/-e/-E` conda 部署选项随环境路线切换移除
+- **样本表解析失败行为**：`grouplist` 三级解析（绝对 > 工作目录 > 仓库）都找不到文件时直接报错（不再静默回落仓库根示例文件）；默认值改指 `config/samples.csv` 模板
+- 5 个未接入 DAG 的独立 QC 空壳脚本（DiffBind/ChIPQC/DROMPAplus 等）归档 `legacy/diffbind/`（映射表见 `legacy/README.md`）
+- 单元测试 45 → **55 项**（删 envs 完整性 1 项；增资源声明 5 项 + 合成数据生成器 6 项）
+
+### Removed
+
+- **per-rule conda 体系**（!）：`envs/` 11 个环境文件与规则内 19 处 `conda:` 指令全部移除，改统一环境路线；服务器需一次性 `mamba env create -f workflow/environment.yaml` 或经 `config/software.yaml` 复用已有环境（三条落地路径见使用说明 §1）
+
+### Fixed
+
+- 工具名映射保真：preflight/版本记录的 deeptools → `bamCoverage`（代表二进制）、spp → `run_spp.R`（与 spp_qc.smk 实际调用一致，消除保证性误报）
+- meta.smk 的 python 解释器经 `CHIP_PYTHON` 注入（对齐 rna-seq）；PBS `.o` 日志回收加 profile 守卫（不再误吞 slurm 输出）
 
 ## [0.3.0] - 2026-09-03
 
