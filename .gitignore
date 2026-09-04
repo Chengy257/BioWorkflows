@@ -1,0 +1,77 @@
+# ---- Python 虚拟环境与字节码 ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+
+# ---- Snakemake 运行时元数据 ----
+.snakemake/
+*.snakemake*
+
+# ---- 运行日志 / 标记 / 临时文件 ----
+logs/
+*.log
+*.logs.txt
+*.flag
+flag.log
+*.tmp
+
+# ---- 运行产物与参考数据目录（编号目录习惯）----
+0.index/
+1.rawdata/
+2.cleandata/
+3.align/
+4.peak/
+4.assembly/
+4.expression/
+4.LncRNA/
+5.DEG/
+5.expression/
+5.QC*/
+6.DEGcompare/
+6.motif/
+reference/
+results/
+temp.*
+
+# ---- 高通量数据文件（入库属例外，需显式 git add -f）----
+*.fastq
+*.fastq.gz
+*.fq.gz
+*.bam
+*.bam.bai
+*.bai
+*.bw
+*.bigwig
+*.bdg
+*.npz
+
+# ---- 测试本地生成物（由 tests/make_testdata.py 即时生成）----
+tests/data/
+tests/work/
+
+# ---- 本地私有配置（config.template.yaml + config.local.yaml 模式）----
+config/config.local.yaml
+
+# ---- R ----
+.Rhistory
+.RData
+*.Rproj
+.Rproj.user/
+
+# ---- 备份文件 / 本地迁移残留 ----
+*.bak
+*.bak.*
+.local_backup/
+
+# ---- 编辑器 / 操作系统 / 工具 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/
+.glm-conductor/
