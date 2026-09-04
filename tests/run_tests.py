@@ -378,6 +378,87 @@ for _fname in sorted(os.listdir(_rules_dir)):
         _mismatch.append(f"{_fname}: rule={_n_rules} runtime_sec={_n_rt}")
 check("全部 rule 块均声明 runtime_sec（含 meta.smk）", not _mismatch, "; ".join(_mismatch))
 
+print("== 9. 合成测试数据生成器 ==")
+import gzip  # noqa: E402
+import hashlib  # noqa: E402
+
+_gen_py = os.path.join(REPO, "tests", "make_testdata.py")
+_gen_out1 = tempfile.mkdtemp(prefix="testdata_a_")
+_gen_out2 = tempfile.mkdtemp(prefix="testdata_b_")
+
+try:
+    # 生成器以子进程运行（当前解释器），--reads 2000 保持快速；产物在 tempfile，finally 清理
+    _gen = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out1,
+                           "--reads", "2000"],
+                          capture_output=True, text=True, timeout=300)
+    _fq_count = 0
+    _raw_dir = os.path.join(_gen_out1, "1.rawdata")
+    if os.path.isdir(_raw_dir):
+        _fq_count = len([f for f in os.listdir(_raw_dir) if f.endswith(".fq.gz")])
+    check("生成器 exit 0 且 5 样本 ×PE 共 10 个 fq.gz",
+          _gen.returncode == 0 and _fq_count == 10,
+          f"rc={_gen.returncode} fq.gz={_fq_count} stderr={_gen.stderr[-300:]}")
+
+    _fq1 = os.path.join(_raw_dir, "chip_treat_rep1_1.fq.gz")
+    if os.path.exists(_fq1):
+        with gzip.open(_fq1, "rt") as fh:
+            _lines = [fh.readline().rstrip("\n") for _ in range(4)]
+        check("FASTQ 四行结构且 reads 长 50",
+              _lines[0].startswith("@") and _lines[2].startswith("+")
+              and len(_lines[1]) == 50 and len(_lines[3]) == 50,
+              str(_lines)[:120])
+    else:
+        check("FASTQ 四行结构且 reads 长 50", False, "chip_treat_rep1_1.fq.gz 缺失")
+
+    _csv_path = os.path.join(_gen_out1, "samples.csv")
+    _rows = open(_csv_path, encoding="utf-8").read().strip().splitlines()
+    check("样本表 1 表头 + 5 数据行",
+          len(_rows) == 6 and _rows[0].startswith("sample_id,role,group"),
+          f"行数={len(_rows)} 表头={_rows[0][:40]!r}")
+
+    check("参考四件套齐全",
+          all(os.path.exists(os.path.join(_gen_out1, "ref", f))
+              for f in ("genome.fa", "genes.gtf", "genes.bed", "chrom.sizes")),
+          str(os.listdir(os.path.join(_gen_out1, "ref")))
+          if os.path.isdir(os.path.join(_gen_out1, "ref")) else "ref/ 缺失")
+
+    _hdrs, _seqs = [], []
+    with open(os.path.join(_gen_out1, "ref", "genome.fa"), encoding="ascii") as fh:
+        for line in fh:
+            if line.startswith(">"):
+                _hdrs.append(line[1:].strip())
+                _seqs.append([])
+            else:
+                _seqs[-1].append(line.strip())
+    _seqs = ["".join(s) for s in _seqs]
+    check("基因组两条染色体各 100000bp",
+          _hdrs == ["chr1", "chr2"] and all(len(s) == 100000 for s in _seqs),
+          f"headers={_hdrs} lens={[len(s) for s in _seqs]}")
+
+    # 确定性：同参数第二次生成，genome.fa 逐字节一致（md5 相同）
+    if _gen.returncode == 0:
+        _gen2 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out2,
+                                "--reads", "2000"],
+                               capture_output=True, text=True, timeout=300)
+
+        def _md5(path):
+            with open(path, "rb") as fh:
+                return hashlib.md5(fh.read()).hexdigest()
+
+        _fa1 = os.path.join(_gen_out1, "ref", "genome.fa")
+        _fa2 = os.path.join(_gen_out2, "ref", "genome.fa")
+        _det_ok = (_gen2.returncode == 0 and os.path.exists(_fa2)
+                   and _md5(_fa1) == _md5(_fa2))
+        check("确定性：同参数两次生成 genome.fa md5 一致", _det_ok,
+              f"rc2={_gen2.returncode} stderr2={_gen2.stderr[-200:]}")
+    else:
+        check("确定性：同参数两次生成 genome.fa md5 一致", False, "首次生成失败，跳过")
+except Exception as exc:  # 生成器组异常不得中断其余结果汇总
+    check("生成器断言组异常终止", False, repr(exc))
+finally:
+    shutil.rmtree(_gen_out1, ignore_errors=True)
+    shutil.rmtree(_gen_out2, ignore_errors=True)
+
 print()
 if FAILED:
     print(f"结果: {len(FAILED)} 项失败 -> {FAILED}")
