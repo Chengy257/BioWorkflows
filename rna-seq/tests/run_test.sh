@@ -4,9 +4,12 @@
 #   Generate miniature test data -> dry-run -> end-to-end run -> output assertions -> (optional) DAG regeneration
 #
 # Usage:
-#   bash tests/run_test.sh [--pipeline deg|upstream|as] [--reads 50000] [--keep]
+#   bash tests/run_test.sh [--pipeline deg|upstream|as] [--reads 50000] [--dry-run-only] [--keep]
 #     --pipeline  pipeline to test, default deg (covers all align+quant+deg rules)
 #     --reads     PE read pairs per sample, default 50000
+#     --dry-run-only  stop after the dry-run (skip the end-to-end run and the output
+#                     assertions that need real outputs); deterministic local gate for
+#                     machines without the full R runtime
 #     --keep      keep tests/data and tests/work (cleaned up at the end by default)
 # Requires: an already configured unified RNA-seq software environment (snakemake/analysis tools/R packages) and python3;
 #           SGE/SLURM is not required.
@@ -22,11 +25,13 @@ WORK_DIR="$TESTS_DIR/work"
 PIPELINE=deg
 READS=50000
 KEEP=0
+DRY_RUN_ONLY=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --pipeline) PIPELINE="$2"; shift 2 ;;
         --reads)    READS="$2"; shift 2 ;;
         --keep)     KEEP=1; shift ;;
+        --dry-run-only) DRY_RUN_ONLY=1; shift ;;
         -h|--help)  grep '^#' "$0" | head -20; exit 0 ;;
         *) echo "[ERROR] unknown argument: $1" >&2; exit 1 ;;
     esac
@@ -89,6 +94,16 @@ EOF
 echo "[test] 4/5 dry-run"
 bash "$REPO_DIR/run.sh" -p "$PIPELINE" -P "$WORK_DIR" -c "$WORK_DIR/config.yaml" \
     --software "$WORK_DIR/software.yaml" -j 2 --dry-run --quiet
+
+if [[ "$DRY_RUN_ONLY" == "1" ]]; then
+    echo "[test] dry-run-only mode: skipping the end-to-end run, output assertions, and DAG regeneration"
+    echo "[test] all checks passed (pipeline=$PIPELINE reads=$READS dry-run-only)"
+    if [[ "$KEEP" != "1" ]]; then
+        rm -rf "$WORK_DIR" "$DATA_DIR"
+        echo "[test] cleaned tests/work and tests/data (use --keep to retain them)"
+    fi
+    exit 0
+fi
 
 echo "[test] 5/5 end-to-end run (reusing the current unified software environment)"
 bash "$REPO_DIR/run.sh" -p "$PIPELINE" -P "$WORK_DIR" -c "$WORK_DIR/config.yaml" \

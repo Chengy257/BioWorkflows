@@ -24,6 +24,20 @@ annotation_tsv: "/path/to/reference/osa/annotation_full.tsv"
 
 star_extra_args: ""
 
+## Adapter trimming (Trim Galore); defaults reproduce the historical hardcoded command
+trim:
+  quality: 30
+  stringency: 3
+  error_rate: 0.1
+  extra: ""
+
+## Optional UMI 5' clipping inside STAR (--clip5pNbases); 8bp random UMI +
+## fixed T anchor at position 9 -> read1_len: 9, read2_len: 9. No deduplication.
+umi:
+  enabled: false
+  read1_len: 0
+  read2_len: 0
+
 lncrna:
   gtf: ""
   gtf_PcGs: "/path/to/reference/osa/MSU_RAP_combined_CDS_PcGs.gtf"

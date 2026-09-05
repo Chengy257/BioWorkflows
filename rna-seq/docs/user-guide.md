@@ -79,14 +79,26 @@ rna-seq/
 ```bash
 mkdir -p myproject && cd myproject
 mkdir -p 1.rawdata
-# Place raw data: paired-end {sample}_1.fastq.gz + {sample}_2.fastq.gz (or .fq.gz)
-#                 single-end {sample}.fastq.gz (or .fq.gz)
+# Place raw data under 1.rawdata/ using one of the accepted naming schemes below
 cp /path/to/repo/config/config.yaml .
 cp /path/to/repo/config/software.yaml .
 cp /path/to/repo/example/samples_231107XTL.csv samples.csv   # or build your own sample table
 ```
 
 ⚠️ **Sample ID naming rules**: must not contain `-`, spaces, or `/`; avoid names that are prefixes of each other (the validator warns about prefix conflicts).
+
+**Accepted raw FASTQ naming schemes** (detection is by exact file name under `1.rawdata/`; paired-end patterns win over single-end, listed by priority):
+
+| Priority | Layout | R1 / single-end file | R2 file (paired-end only) |
+|---:|---|---|---|
+| 1 | PE | `{sample}_1.fastq.gz` | `{sample}_2.fastq.gz` |
+| 2 | PE | `{sample}_1.fq.gz` | `{sample}_2.fq.gz` |
+| 3 | PE | `{sample}_R1.fastq.gz` | `{sample}_R2.fastq.gz` |
+| 4 | PE | `{sample}_R1.fq.gz` | `{sample}_R2.fq.gz` |
+| 5 | SE | `{sample}.fastq.gz` | — |
+| 6 | SE | `{sample}.fq.gz` | — |
+
+Notes: the common sequencer-delivery names `{sample}_R1/_R2.fq(.gz)` are recognized natively, so no symlinks are needed for them. Only gzip-compressed files (`.gz`) are accepted — compress or symlink uncompressed deliveries first. A lone `{sample}_R1...` file is not treated as single-end: if the mate is missing, the workflow fails with the supported-names error instead of silently switching layout.
 
 ### 4.2 Sample group table
 
@@ -116,6 +128,8 @@ Copy `config/config.yaml` into the project directory and **replace the `/path/to
 | `species` | `osa` / `hsa`; reference resources not set explicitly fall back to the species presets in `config/species.yaml` |
 | `bed` / `genome` / `gtf` / `annotation_tsv` | Reference resources (explicit top-level settings take priority over species.yaml) |
 | `star_extra_args` | Extra STAR arguments |
+| `trim.*` | Trim Galore parameters: `quality` (`-q`), `stringency`, `error_rate` (`-e`), `extra` (extra arguments appended verbatim); defaults `30 / 3 / 0.1 / ""` reproduce the historical hardcoded command (see §4.3.4) |
+| `umi.*` | Optional STAR 5' UMI clipping: `enabled` (default `false`), `read1_len`, `read2_len` (bases clipped per read; renders `--clip5pNbases`, see §4.3.4) |
 | `lncrna.*` | lncRNA analysis parameters, only `gtf`, `gtf_PcGs`, `threads` remain; software and databases moved to `software.yaml` |
 
 At parse time the workflow hard-validates the merged configuration (`validate_config` in `workflow/rules/common.smk`): required keys, numeric checks (`FoldChange`/`padj`), `batch_correction` must be `T`/`F`, and unknown `resources` fields are rejected — all issues are reported in one aggregated error. Reference paths still containing `/path/to/` placeholders produce warnings.
@@ -207,6 +221,27 @@ Scheduler requests (threads / mem_mb / runtime_min per rule) live in the dedicat
 | `lnc_count_merge` | 1 | 4000 | 60 |
 
 Thread compatibility rule: when `resources.<rule>.threads` is not set, a normal rule's built-in threads are capped by the top-level `threads`; `pfam` / `nr` keep falling back to the legacy `lncrna.threads` without an explicit override. Explicit `resources.<rule>.threads` always wins.
+
+### 4.3.4 Adapter trimming (`trim:`) and UMI clipping (`umi:`)
+
+Both sections are optional; a config without them reproduces the historical hardcoded commands exactly (old configs keep working unchanged).
+
+```yaml
+trim:
+  quality: 30        # -q: terminal low-quality base cutoff
+  stringency: 3      # --stringency: minimum adapter overlap (bp)
+  error_rate: 0.1    # -e: maximum adapter mismatch rate
+  extra: ""          # extra Trim Galore/cutadapt arguments, e.g. "--length 20"
+
+umi:
+  enabled: false     # clip fixed-length 5' UMI bases off every read inside STAR
+  read1_len: 0       # bases to clip from read 1 (0 disables clipping)
+  read2_len: 0       # bases to clip from read 2 (0 reuses read1_len)
+```
+
+- `trim:` mirrors the chip workflow's section of the same name. The four values are wired into both `trimAdapter_SE` and `trimAdapter_PE`; `extra` is appended last, so per-project cutadapt options (e.g. `--clip_r1 5 --clip_r2 5` for inline UMI handling) can be injected without touching the workflow.
+- With `umi.enabled: true` and `read1_len > 0`, each sample's STAR command gains `--clip5pNbases`: paired-end data renders two comma-separated values (`--clip5pNbases 9,9` — STAR 2.7.10b requires both) and single-end data one value. Data basis of the verified libraries (oligo_dT UMI mRNA): the first 8 bases of R1/R2 are a random UMI and position 9 is a fixed T anchor, so use `read1_len: 9, read2_len: 9` (the insert sequence starts at position 10). The clip applies at mapping time only — **no deduplication is performed** (`umi_tools extract`/`dedup` integration was evaluated and deferred; see `docs/TODO.md`).
+- Setting `--clip5pNbases` in `star_extra_args` while `umi:` clipping is enabled fails config validation with a conflict error; keep the clipping in one place.
 
 ### 4.4 The `run.sh` launcher
 
@@ -321,7 +356,7 @@ The historical review/roadmap documents were archived out of the repository (not
 ## 8. FAQ
 
 **Q1: Can single-end sequencing run?**
-Yes. Put `{sample}.fastq.gz` (or `.fq.gz`) in rawdata; the pipeline auto-detects SE/PE from exact file names, and both naming schemes work in all pipelines.
+Yes. Put `{sample}.fastq.gz` (or `.fq.gz`) in rawdata; the pipeline auto-detects SE/PE from exact file names, and both naming schemes work in all pipelines. Sequencer-delivery `{sample}_R1/_R2.fq(.gz)` names are also accepted for paired-end data (see the naming table in §4.1).
 
 **Q2: How are batch effects handled?**
 Set `batch_correction: "T"` in the config and add a third `batch` column to the sample table; DESeq2 then runs with the `~ batch + group` design (default `"F"` disables it).
@@ -347,5 +382,6 @@ make check                                # runtime resolver + R runtime propaga
 make lint                                 # static checks (missing tools skip their section automatically)
 make test                                 # everything CI runs (= check + lint)
 bash tests/run_test.sh --pipeline deg    # end-to-end regression: synthetic data -> dry-run -> run -> assertions
+bash tests/run_test.sh --pipeline deg --dry-run-only   # dry-run gate only, for machines without the full R runtime
 ```
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 100 kb chromosomes, 60 simulated genes, 2 groups x 2 samples) plus an expected-differential-gene truth table; assertions include mapping_stat consistency and numeric checks, count matrix shape, and DEG direction checks. The `lncrna` pipeline depends on external tools and is not covered by automated tests. Before changing pipeline code, read the documentation sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).

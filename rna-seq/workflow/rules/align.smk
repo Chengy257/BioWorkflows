@@ -20,6 +20,7 @@ rule trimAdapter_SE:
         outdir=lambda wc, output: os.path.dirname(output.fq_out),
         fastqc_dir=lambda wc, output: os.path.dirname(output.fastqc_html),
         trim_galore=tool("trim_galore", "trim_galore"),
+        trim_args=trim_args(),
     threads:
         rthreads("trim")
     resources:
@@ -29,7 +30,7 @@ rule trimAdapter_SE:
     shell:
         """
         mkdir -p {params.fastqc_dir}
-        {params.trim_galore} -q 30 --stringency 3 -e 0.1 --gzip -j {threads} -o {params.outdir}/ {input.fq} \\
+        {params.trim_galore} {params.trim_args} --gzip -j {threads} -o {params.outdir}/ {input.fq} \\
             --fastqc --fastqc_args "--outdir {params.fastqc_dir} " >> {log} 2>&1
         ## Trim reports are generated with the original file names; rename them uniformly to canonical names keyed by sample id
         mv "{params.outdir}/$(basename "{input.fq}")_trimming_report.txt" {output.report}
@@ -54,6 +55,7 @@ rule trimAdapter_PE:
         outdir=lambda wc, output: os.path.dirname(output.fq1_out),
         fastqc_dir=lambda wc, output: os.path.dirname(output.fastqc1_html),
         trim_galore=tool("trim_galore", "trim_galore"),
+        trim_args=trim_args(),
     threads:
         rthreads("trim")
     resources:
@@ -63,7 +65,7 @@ rule trimAdapter_PE:
     shell:
         """
         mkdir -p {params.fastqc_dir}
-        {params.trim_galore} -q 30 --stringency 3 -e 0.1 --gzip -j {threads} -o {params.outdir}/ --paired {input.fq1} {input.fq2} \\
+        {params.trim_galore} {params.trim_args} --gzip -j {threads} -o {params.outdir}/ --paired {input.fq1} {input.fq2} \\
             --fastqc --fastqc_args "--outdir {params.fastqc_dir} " >> {log} 2>&1
         mv "{params.outdir}/$(basename "{input.fq1}")_trimming_report.txt" {output.report1}
         mv "{params.outdir}/$(basename "{input.fq2}")_trimming_report.txt" {output.report2}
@@ -141,7 +143,7 @@ rule runSTAR:
         runtime_min=rruntime("star_align"),
         runtime_sec=rruntime_sec("star_align"),
     params:
-        star_args=STAR_ARGS,
+        star_args=lambda wc: star_args_for(wc.sample),
         reads=lambda wc: trimmed_reads(wc.sample),
         prefix=lambda wc: R(f"3.align/{wc.sample}_"),
         align_dir=lambda wc, output: os.path.dirname(output.bam),
