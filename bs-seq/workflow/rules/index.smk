@@ -12,7 +12,7 @@ rule bismark_genome_prep:
     input:
         fasta=config["genome"],
     output:
-        R("0.index/bismark_genome/Bisulfite_Genome/GA_conversion/BS_conv.1.bt2.lf"),
+        R("0.index/bismark_genome/Bisulfite_Genome/GA_conversion/BS_GA.1.bt2"),
     params:
         genome_dir=lambda wc, output: os.path.dirname(os.path.dirname(os.path.dirname(str(output)))),
     log: R("logs/bismark_genome_prep.log"),

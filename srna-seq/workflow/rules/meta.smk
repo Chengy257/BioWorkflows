@@ -42,5 +42,6 @@ rule multiqc:
         runtime_sec=rruntime_sec("multiqc"),
     shell:
         """
-        multiqc --force -o {params.outdir} -c {params.mqc_config} {input} > {log} 2>&1
+        multiqc --force -o {params.outdir} -c {params.mqc_config} \
+            --filename multiqc_report.html {input} > {log} 2>&1
         """

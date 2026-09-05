@@ -7,13 +7,21 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - python=3.10
+  # python 3.9, not 3.10: the umi-tools sdist bootstraps setuptools 10.0
+  # (2015) in its setup.py, which cannot build under python >= 3.10; on 3.9
+  # `pip install umi-tools==1.1.5` works (validated 2026-09-05).
+  - python=3.9
   - pyyaml
   - snakemake-minimal=7.32.4
   - star=2.7.10b
   - samtools=1.17
   - cutadapt=4.6
-  - umi-tools=1.1.4
+  - pip
+  - pip:
+      # umi-tools was removed from bioconda (package page 404; only the
+      # Rust rewrite umi-tools-rs remains there). The PyPI wheel keeps the
+      # exact `umi_tools` CLI this workflow invokes; see docs/env-validation.md.
+      - umi-tools==1.1.5
   - ea-utils    # fastq-sort; unpinned (few builds). If unsolvable, see
                 # docs/TODO.md: switch rule fastq_sort to seqkit sort -n.
   - fastqc=0.11.9

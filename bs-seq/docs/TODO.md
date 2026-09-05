@@ -2,32 +2,40 @@
 
 > Items identified during v0.1 and deferred to a later release; none are scheduled yet.
 
-## 1. Bismark output naming (verify at Phase D real-run validation)
+## 1. Bismark output naming (reconciled against pinned 0.24.0, 2026-09-05/06)
 
-The v0.1 rules declare Bismark's *derived* output names, which depend on the
-input file name (`{sample}.bam.deduplicated.bam`) and on tool-version
-behavior. Confirm each of the following against the pinned environment
-(`tests/run_test.sh --real-run --keep`) and reconcile the declared outputs
-and final targets before release:
+The v0.1 rules declare Bismark's *derived* output names. All items below were
+reconciled in 13 WSL real-run rounds against bismark 0.24.0 (bs-seq-pinned
+env, `tests/run_test.sh --real-run`); the rules, `TARGETS`, and the README
+naming table now declare the observed names:
 
-- [ ] Deduplication report name: `deduplicate_bismark` is expected to write
-  `{sample}.bam.dedup_report.txt` beside the deduplicated BAM (the human
-  readable report also goes to the log); confirm the exact on-disk name.
-- [ ] Nucleotide-stats name: `bam2nuc` is expected to derive
-  `{sample}.bam.deduplicated.nucleotide_stats.txt` from the input BAM name;
-  confirm the derived name.
-- [ ] Per-sample report HTML name: `bismark2report --output {sample}` may
-  produce `{sample}.html` rather than `{sample}_seq_context.html`; align the
-  declared output and the final targets with whatever the tool writes.
-- [ ] `coverage2cytosine` `.gz` suffix behavior: whether a `-o {prefix}.gz`
-  output argument makes the tool gzip by itself or the extra `gzip -f` step
-  is required; keep the fallback until confirmed on the pinned version.
-- [ ] `bismark --basename {sample}` support (needs Bismark >= 0.23): confirm
-  it yields `{sample}.bam` + `{sample}_report.txt` inside `--od`; documented
-  fallback is a post-rename of `{sample}_pe.bam`.
-- [ ] `bismark2summary` writes its HTML into the working directory; the
-  workflow `cd`s into `5.QC/` to keep `results/` clean (a `--basename`
-  alternative exists).
+- [x] Deduplication report: `deduplicate_bismark` writes
+  `{sample}.deduplicated.bam` (input `.bam` extension replaced) and
+  `{sample}.deduplication_report.txt` into `--output_dir`.
+- [x] Nucleotide stats: `bam2nuc` writes `{sample}.deduplicated.nucleotide_stats.txt`
+  (input extension replaced by `nucleotide_stats.txt`) into `--dir`; the
+  genome-wide composition is `0.index/bismark_genome/genomic_nucleotide_frequencies.txt`.
+  NOTE: the `bam2nuc_sample` genome-folder path fix (totals sit one dirname up,
+  not three) was applied after the last recorded real-run and is verified at
+  DAG level only.
+- [x] Per-sample report HTML: `bismark2report --output {sample}` writes
+  `{sample}.html`.
+- [x] `coverage2cytosine`: `-o {prefix}` + `--merge_CpG` writes
+  `{prefix}.CpG_report.merged_CpG_evidence.cov` (plain); the rule gzips it to
+  the declared `.cov.gz`.
+- [x] `bismark --basename {sample}` (0.24) writes `{sample}_pe.bam`/`_se.bam`
+  and `{sample}_PE_report.txt`/`_SE_report.txt`; the rule renames the BAM and
+  copies the report to the layout-neutral contract paths, keeping the native
+  copies (plus a `{sample}_pe.bam` symlink) for `bismark2summary`.
+- [x] `bismark2summary` takes alignment BAMs whose basenames end in `_pe`/`_se`
+  and reads the native report beside each; the rule passes absolute
+  `_pe`/`_se` symlink paths and `-o bismark2summary` after `cd` into `5.QC/`.
+  Dedup/splitting stats are skipped unless reports sit beside the BAM under
+  the tool's own names (v0.1 limitation).
+- [ ] Per-sample `--parallel` alignment: Bismark 0.24 rejects `--basename`
+  together with `--multicore`; v0.1 aligns single-threaded per sample and
+  parallelizes across samples via Snakemake (the legacy script used ParaFly
+  the same way). Revisit when Bismark lifts the restriction.
 
 ## 2. Differential methylation / DMR
 
@@ -45,18 +53,17 @@ and final targets before release:
 
 ## 4. Environments and CI
 
-- [ ] Validate the pinned all-in-one environment solves at Phase D
-  (plan Task D1): `mamba env create -f workflow/environment.yaml`
-  (snakemake-minimal 7.32.4 / bismark 0.24.0 / bowtie2 2.5.2 / samtools 1.17 /
-  trim-galore 0.6.10 / fastqc 0.11.9 / multiqc 1.21). If a pin fails to
-  solve, adjust it with the smallest change first and record the change in
-  `CHANGELOG.md`.
+- [x] Pinned all-in-one environment solves (validated 2026-09-05 in WSL as
+  `bs-seq-pinned`; a pre-existing legacy user env named `bs-seq` was left
+  untouched). Record: `mamba env create -f workflow/environment.yaml`.
 - [ ] Wire the lightweight CI job (plan Task D3, repository-root
   `.github/workflows/ci.yml`): the `tests/lint.sh` suite plus the
   synthetic-data dry-run regression `bash tests/run_test.sh --reads 2000`.
-  Until it lands, `make test` + `bash tests/run_test.sh --reads 2000`
-  locally are the reference bar.
-- [ ] After the first pinned-environment real run, revisit the §1 derived
+  CANCELLED for v0.1 by user adjudication (2026-09-06, early scope closure);
+  re-open with the next release. Until it lands, `make test` +
+  `bash tests/run_test.sh --reads 2000` locally are the reference bar.
+- [x] After the first pinned-environment real run, revisit the §1 derived
   names above and the `snakemake --lint` baseline (conda-env advice +
-  helper-style warnings are filtered in `tests/lint.sh`); tighten the filter
-  only if the baseline actually changes.
+  helper-style warnings are filtered in `tests/lint.sh`); the §1 names are
+  reconciled (see above); the lint baseline was re-checked green under
+  snakemake 7.32.4.

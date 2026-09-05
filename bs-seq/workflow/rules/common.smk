@@ -216,10 +216,10 @@ def align_input(sample):
 
 def align_input_arg(sample):
     """Bismark command-line argument string for one sample's FASTQ input:
-    --1/--2 pairs for PE, a positional path for SE."""
+    bismark -1/-2 flags for PE, a positional path for SE."""
     files = align_input(sample)
     if len(files) == 2:
-        return f"--1 {files[0]} --2 {files[1]}"
+        return f"-1 {files[0]} -2 {files[1]}"
     return files[0]
 
 
@@ -280,9 +280,9 @@ def rruntime_sec(name):
 #
 # Derived Bismark naming convention (keep the rule modules in sync):
 # deduplicate_bismark inherits the full alignment basename, so the dedup
-# BAM is {sample}.bam.deduplicated.bam; the methylation extractor output
+# BAM is {sample}.deduplicated.bam; the methylation extractor output
 # inherits that deduplicated basename again, i.e.
-# {sample}.bam.deduplicated.bismark.cov.gz (+ the _seq_context.html
+# {sample}.deduplicated.bismark.cov.gz (+ the _seq_context.html
 # report), and coverage2cytosine --merge_CpG writes
 # {sample}.CpG_merged.tsv.gz. The C3-C5 modules must emit exactly these
 # paths.
@@ -292,8 +292,8 @@ TARGETS = [
     R("5.QC/multiqc/multiqc_report.html"),
     R("5.QC/software_versions.yaml"),
 ]
-TARGETS += [expand(R("4.dedup/{sample}.bam.deduplicated.bam"), sample=SAMPLES)]
-TARGETS += [expand(R("5.methylation/{sample}/{sample}.bam.deduplicated.bismark.cov.gz"), sample=SAMPLES)]
-TARGETS += [expand(R("5.methylation/{sample}/{sample}_seq_context.html"), sample=SAMPLES)]
+TARGETS += [expand(R("4.dedup/{sample}.deduplicated.bam"), sample=SAMPLES)]
+TARGETS += [expand(R("5.methylation/{sample}/{sample}.deduplicated.bismark.cov.gz"), sample=SAMPLES)]
+TARGETS += [expand(R("5.methylation/{sample}/{sample}.html"), sample=SAMPLES)]
 if config["methylation_extractor"]["merge_cpg"]:
-    TARGETS += [expand(R("5.methylation/{sample}/{sample}.CpG_merged.tsv.gz"), sample=SAMPLES)]
+    TARGETS += [expand(R("5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz"), sample=SAMPLES)]

@@ -29,8 +29,8 @@ def _multiqc_inputs():
                 ]
         files += [
             R(f"3.align/{sample}_report.txt"),
-            R(f"4.dedup/{sample}.dedup_report.txt"),
-            R(f"5.methylation/{sample}/{sample}.bam.deduplicated.splitting_report.txt"),
+            R(f"4.dedup/{sample}.deduplication_report.txt"),
+            R(f"5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt"),
         ]
     return files
 
@@ -75,5 +75,6 @@ rule multiqc:
         runtime_sec=rruntime_sec("multiqc"),
     shell:
         """
-        multiqc --force -o {params.outdir} -c {params.mqc_config} {input} > {log} 2>&1
+        multiqc --force -o {params.outdir} -c {params.mqc_config} \
+            --filename multiqc_report.html {input} > {log} 2>&1
         """

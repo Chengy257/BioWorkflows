@@ -25,17 +25,18 @@ A **Snakemake** workflow for bisulfite sequencing (BS-seq) methylation calling. 
 
 Bismark tools derive most output file names from the **input** file name, so the bs-seq result paths follow a derived-name chain rather than a flat per-stage scheme. The workflow declares these contract paths (kept in sync between the rule modules and `TARGETS` in `workflow/rules/common.smk`):
 
-| Step | Input (basename) | Derived outputs |
+| Step | Input (basename) | Declared contract output (verified against Bismark 0.24.0, 2026-09-05) |
 |---|---|---|
-| `bismark_align` (`--basename {sample}`) | trim-aware FASTQs | `results/3.align/{sample}.bam` + `results/3.align/{sample}_report.txt` |
-| `deduplicate_bismark` | `3.align/{sample}.bam` | `results/4.dedup/{sample}.bam.deduplicated.bam` (+ a dedup report beside it; the sample-keyed contract path is `results/4.dedup/{sample}.dedup_report.txt`) |
-| `bismark_methylation_extractor` | `4.dedup/{sample}.bam.deduplicated.bam` | `results/5.methylation/{sample}/{sample}.bam.deduplicated.bismark.cov.gz`, `.../{sample}.bam.deduplicated.bedGraph.gz`, `.../{sample}.bam.deduplicated.splitting_report.txt`, `.../{sample}.bam.deduplicated.M-bias.txt` — every output inherits the `.bam.deduplicated` infix of the input BAM |
-| `coverage2cytosine --merge_CpG` | `{sample}.bam.deduplicated.bismark.cov.gz` | `results/5.methylation/{sample}/{sample}.CpG_merged.tsv.gz` (the `-o {sample}.CpG_merged` product, gzipped) |
-| `bam2nuc` | `4.dedup/{sample}.bam.deduplicated.bam` | `results/5.methylation/{sample}/{sample}.nucleotide_stats.txt` |
-| `bismark2report --output {sample}` | the per-sample Bismark reports | `results/5.methylation/{sample}/{sample}_seq_context.html` |
-| `bismark2summary` | all per-sample alignment reports | `results/5.QC/bismark2summary.html` (written into the working directory of the call; the rule `cd`s into `5.QC/` to keep `results/` clean) |
+| `bismark_align` (`--basename {sample}`) | trim-aware FASTQs | `results/3.align/{sample}.bam` + `results/3.align/{sample}_report.txt`; the tool writes `{sample}_pe.bam`/`_se.bam` and `{sample}_PE_report.txt`/`_SE_report.txt`, which are renamed/copied — the native report copy and a `{sample}_pe.bam` symlink are kept beside the BAM for `bismark2summary` discovery |
+| `deduplicate_bismark` | `3.align/{sample}.bam` | `results/4.dedup/{sample}.deduplicated.bam` + `results/4.dedup/{sample}.deduplication_report.txt` |
+| `bismark_methylation_extractor` | `4.dedup/{sample}.deduplicated.bam` | `results/5.methylation/{sample}/{sample}.deduplicated.bismark.cov.gz`, `.../{sample}.deduplicated.bedGraph.gz`, `.../{sample}.deduplicated_splitting_report.txt` (underscore), `.../{sample}.deduplicated.M-bias.txt` |
+| `coverage2cytosine --merge_CpG` | `{sample}.deduplicated.bismark.cov.gz` | `results/5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz` (the tool writes `...merged_CpG_evidence.cov`; the rule gzips it; the large `{sample}.CpG_merged.CpG_report.txt` cytosine report stays beside it as a side effect) |
+| `bam2nuc` (genome) | prepared genome folder | `results/0.index/bismark_genome/genomic_nucleotide_frequencies.txt` |
+| `bam2nuc` (sample) | `4.dedup/{sample}.deduplicated.bam` | `results/5.methylation/{sample}/{sample}.deduplicated.nucleotide_stats.txt` |
+| `bismark2report --output {sample}` | the per-sample Bismark reports | `results/5.methylation/{sample}/{sample}.html` |
+| `bismark2summary` | alignment BAMs (via `_pe`/`_se` symlinks) | `results/5.QC/bismark2summary.html` (`-o bismark2summary`; the rule `cd`s into `5.QC/` with absolute paths) |
 
-A few of these names are tool-derived (Bismark appends/keeps parts of the input basename) and are **verified against the pinned Bismark 0.24.0 at Phase D real-run validation** — in particular the exact dedup-report name, the exact extractor side-file names, and whether `bismark2report` writes `{sample}_seq_context.html` or `{sample}.html`. The open items and their fallbacks are tracked in [docs/TODO.md](docs/TODO.md) §1.
+These names were **reconciled against the pinned Bismark 0.24.0 in the 2026-09-05/06 WSL real-run validation** (13 reconciliation rounds). Remaining caveats — `bam2nuc_sample`'s genome-folder path fix applied after the last recorded run, per-sample `--parallel` alignment deferred (Bismark 0.24 rejects `--basename` + `--multicore` together; parallelism comes from Snakemake scheduling samples, like the legacy ParaFly model), and `bismark2summary` skipping dedup/splitting stats unless reports sit beside the BAM — are tracked in [docs/TODO.md](docs/TODO.md) §1.
 
 ## Environment setup
 

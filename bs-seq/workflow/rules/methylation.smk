@@ -2,17 +2,16 @@
 # reports, and the run-level Bismark summary.
 #
 # Downstream of rules/align.smk: the extractor runs on the deduplicated BAM
-# and inherits its full basename, so every extractor output carries the
-# ".bam.deduplicated" infix (the derived-name convention locked in TARGETS,
-# common.smk, and the align.smk header):
-#   5.methylation/{sample}/{sample}.bam.deduplicated.bismark.cov.gz
-#   5.methylation/{sample}/{sample}.bam.deduplicated.bedGraph.gz
-#   5.methylation/{sample}/{sample}.bam.deduplicated.splitting_report.txt
-#   5.methylation/{sample}/{sample}.bam.deduplicated.M-bias.txt
-# The extractor also drops its own splitter report
-# ({sample}.bam.deduplicated_splitting_report.txt) beside them; that extra
-# file is a side effect, not a declared output. coverage2cytosine
-# --merge_CpG writes 5.methylation/{sample}/{sample}.CpG_merged.tsv.gz; the
+# ({sample}.deduplicated.bam) and inherits its basename, so every extractor
+# output carries the ".deduplicated" infix (the derived-name convention
+# locked in TARGETS, common.smk, and the align.smk header):
+#   5.methylation/{sample}/{sample}.deduplicated.bismark.cov.gz
+#   5.methylation/{sample}/{sample}.deduplicated.bedGraph.gz
+#   5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt
+#   5.methylation/{sample}/{sample}.deduplicated.M-bias.txt
+# The extractor may also drop a side-effect splitter report next to them
+# (not a declared output). coverage2cytosine --merge_CpG writes
+# 5.methylation/{sample}/{sample}.CpG_merged.tsv.gz; the
 # definition is unconditional but only requested when
 # methylation_extractor.merge_cpg is true (via TARGETS in common.smk).
 #
@@ -20,21 +19,21 @@
 # docs/TODO.md) must confirm: the exact extractor output names, the exact
 # coverage2cytosine -o / ".gz" naming (the trailing `gzip -f` line is the
 # safe fallback and stays until confirmed), the bismark2report html name
-# ({sample}_seq_context.html here vs the {sample}.html the tool may write),
-# and that bismark2summary writes bismark2summary.html into the working
+# ({sample}.html: bismark2report -o X writes X.html),
+# that bismark2summary (-o bismark2summary) writes into the working
 # directory (hence the `cd` into 5.QC/ below; a --basename alternative is
 # documented in docs/TODO.md).
 
 rule methylation_extractor:
     input:
-        bam=R("4.dedup/{sample}.bam.deduplicated.bam"),
-        genome=R("0.index/bismark_genome/Bisulfite_Genome/GA_conversion/BS_conv.1.bt2.lf"),
+        bam=R("4.dedup/{sample}.deduplicated.bam"),
+        genome=R("0.index/bismark_genome/Bisulfite_Genome/GA_conversion/BS_GA.1.bt2"),
     output:
         # Derived names: the extractor inherits the full dedup basename.
-        cov=R("5.methylation/{sample}/{sample}.bam.deduplicated.bismark.cov.gz"),
-        bedgraph=R("5.methylation/{sample}/{sample}.bam.deduplicated.bedGraph.gz"),
-        splitting=R("5.methylation/{sample}/{sample}.bam.deduplicated.splitting_report.txt"),
-        mbias=R("5.methylation/{sample}/{sample}.bam.deduplicated.M-bias.txt"),
+        cov=R("5.methylation/{sample}/{sample}.deduplicated.bismark.cov.gz"),
+        bedgraph=R("5.methylation/{sample}/{sample}.deduplicated.bedGraph.gz"),
+        splitting=R("5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt"),
+        mbias=R("5.methylation/{sample}/{sample}.deduplicated.M-bias.txt"),
     params:
         genome_dir=lambda wc, input: os.path.dirname(os.path.dirname(
             os.path.dirname(str(input.genome)))),
@@ -52,16 +51,16 @@ rule methylation_extractor:
         bismark_methylation_extractor {params.pe_flag} \
             --genome {params.genome_dir} --gzip --bedGraph \
             --buffer_size {params.buffer_size} {params.cx_flag} \
-            --output {params.outdir} {input.bam} > {log} 2>&1
+            --output_dir {params.outdir} {input.bam} > {log} 2>&1
         """
 
 
 rule coverage2cytosine:
     input:
-        cov=R("5.methylation/{sample}/{sample}.bam.deduplicated.bismark.cov.gz"),
-        genome=R("0.index/bismark_genome/Bisulfite_Genome/GA_conversion/BS_conv.1.bt2.lf"),
+        cov=R("5.methylation/{sample}/{sample}.deduplicated.bismark.cov.gz"),
+        genome=R("0.index/bismark_genome/Bisulfite_Genome/GA_conversion/BS_GA.1.bt2"),
     output:
-        R("5.methylation/{sample}/{sample}.CpG_merged.tsv.gz"),
+        R("5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz"),
     params:
         genome_dir=lambda wc, input: os.path.dirname(os.path.dirname(
             os.path.dirname(str(input.genome)))),
@@ -74,21 +73,24 @@ rule coverage2cytosine:
         runtime_sec=rruntime_sec("coverage2cytosine"),
     shell:
         """
-        coverage2cytosine --genome {params.genome_dir} --merge_CpG \
+        coverage2cytosine --genome_folder {params.genome_dir} --merge_CpG \
             -o {params.prefix} --dir {params.outdir} {input.cov} > {log} 2>&1
-        gzip -f {params.outdir}/{params.prefix}
+        ## coverage2cytosine writes {{prefix}}.CpG_report.merged_CpG_evidence.cov
+        ## (--merge_CpG); gzip it to the declared .cov.gz output. The main
+        ## {{prefix}}.CpG_report.txt cytosine report stays beside it (side effect).
+        gzip -f {params.outdir}/{params.prefix}.CpG_report.merged_CpG_evidence.cov
         """
 
 
 rule bismark2report:
     input:
         align_report=R("3.align/{sample}_report.txt"),
-        dedup_report=R("4.dedup/{sample}.dedup_report.txt"),
-        splitting=R("5.methylation/{sample}/{sample}.bam.deduplicated.splitting_report.txt"),
-        mbias=R("5.methylation/{sample}/{sample}.bam.deduplicated.M-bias.txt"),
-        nuc=R("5.methylation/{sample}/{sample}.nucleotide_stats.txt"),
+        dedup_report=R("4.dedup/{sample}.deduplication_report.txt"),
+        splitting=R("5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt"),
+        mbias=R("5.methylation/{sample}/{sample}.deduplicated.M-bias.txt"),
+        nuc=R("5.methylation/{sample}/{sample}.deduplicated.nucleotide_stats.txt"),
     output:
-        R("5.methylation/{sample}/{sample}_seq_context.html"),
+        R("5.methylation/{sample}/{sample}.html"),
     params:
         outdir=lambda wc, output: os.path.dirname(str(output)),
     log: R("logs/bismark2report/{sample}.log"),
@@ -113,15 +115,21 @@ rule bismark2summary:
         # discovers the per-sample reports itself when run inside 5.QC/;
         # the dedup entry exists purely to order the job after dedup.
         reports=expand(R("3.align/{sample}_report.txt"), sample=SAMPLES),
-        dedup=expand(R("4.dedup/{sample}.dedup_report.txt"), sample=SAMPLES),
+        dedup=expand(R("4.dedup/{sample}.deduplication_report.txt"), sample=SAMPLES),
     output:
         R("5.QC/bismark2summary.html"),
     params:
         outdir=lambda wc, output: os.path.dirname(str(output)),
-        # Absolute paths: after the `cd` below, the relative report/log paths
-        # would no longer resolve from the working directory.
-        abs_reports=" ".join(os.path.abspath(p)
-                             for p in expand(R("3.align/{sample}_report.txt"), sample=SAMPLES)),
+        # bismark2summary takes ALIGNMENT BAM files whose basenames end in
+        # _pe/_se (absolute paths; after the `cd` below the relative paths
+        # would no longer resolve) and reads each native report
+        # <base>_PE_report.txt / _SE_report.txt beside the BAM — the symlink
+        # + native-name copy kept by rules/align.smk. Dedup/splitting stats
+        # are skipped unless reports sit beside the BAM under the tool's
+        # own names (v0.1 limitation, docs/TODO.md).
+        abs_bams=" ".join(
+            os.path.abspath(R(f"3.align/{s}_{'pe' if layout_of(s) == 'PE' else 'se'}.bam"))
+            for s in SAMPLES),
         abs_log=lambda wc: os.path.abspath(R("logs/bismark2summary.log")),
     log: R("logs/bismark2summary.log"),
     threads: rthreads("bismark2summary")
@@ -130,5 +138,5 @@ rule bismark2summary:
         runtime_sec=rruntime_sec("bismark2summary"),
     shell:
         """
-        cd {params.outdir} && bismark2summary {params.abs_reports} > {params.abs_log} 2>&1
+        cd {params.outdir} && bismark2summary -o bismark2summary {params.abs_bams} > {params.abs_log} 2>&1
         """

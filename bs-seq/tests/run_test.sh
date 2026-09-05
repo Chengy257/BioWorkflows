@@ -102,7 +102,7 @@ echo "[test] 5/5 Assertions"
 FAIL=0
 if [[ "$REAL_RUN" == 1 ]]; then
     EXPECTED=(
-        "results/5.methylation/s1/s1.bam.deduplicated.bismark.cov.gz"
+        "results/5.methylation/s1/s1.deduplicated.bismark.cov.gz"
         "results/5.QC/bismark2summary.html"
         "results/5.QC/multiqc/multiqc_report.html"
         "results/5.QC/software_versions.yaml"

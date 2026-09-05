@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. Format based on
 
 ## [0.1.0] - 2026-09-05
 
+### Changed (2026-09-05/06, environment solve validation in WSL)
+- environment.yaml: python 3.10 -> 3.9 and umi-tools via pip (`umi-tools==1.1.5`) — the classic
+  `umi-tools` conda package was removed from bioconda (only the Rust rewrite `umi-tools-rs` remains),
+  and the umi-tools sdist cannot build under python >= 3.10 (it bootstraps setuptools 10.0 from 2015).
+  `umi_tools` 1.1.5 validated working in the recreated env (STAR 2.7.10b, snakemake 7.32.4).
+- multiqc pinned to `--filename multiqc_report.html` (config-file `title:` renames the report otherwise;
+  multiqc >=1.21). The seclip real-run smoke was NOT executed (user-adjudicated early scope closure
+  2026-09-06); lint + dry-run regression remain the v0.1 reference bar.
+
 Initial scaffold of the seclip-seq subproject (single-end enhanced CLIP, Snakemake 7): config layer, scheduler profiles, boilerplate, and the synthetic test-data contract. Workflow rules, launcher, and tests land in subsequent tasks.
 
 ### Added

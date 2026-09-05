@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. Format based on
 
 ## [0.1.0] - 2026-09-05
 
+### Changed (2026-09-05/06, WSL real-run reconciliation against bismark 0.24.0)
+- Bismark tool flag surface reconciled to 0.24: `--genome_folder`/`--output_dir` (not `--genome`/`--od`),
+  `-1/-2` mate flags, no `--pe` on bismark (paired-ness inferred), `-p` on deduplicate,
+  no per-job `--parallel` (mutually exclusive with `--basename` in 0.24; parallelism across samples via Snakemake).
+- Derived-name chain redeclared to the observed names (see README "Bismark output naming" and docs/TODO.md §1):
+  `{sample}.deduplicated.bam` + `{sample}.deduplication_report.txt`; extractor outputs
+  `{sample}.deduplicated.bismark.cov.gz` / `.bedGraph.gz` / `_splitting_report.txt` / `.M-bias.txt`;
+  coverage2cytosine `{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz`;
+  bam2nuc `genomic_nucleotide_frequencies.txt` + `{sample}.deduplicated.nucleotide_stats.txt`;
+  bismark2report `{sample}.html`; bismark2summary `bismark2summary.html` (fed `_pe`/`_se` BAM symlinks).
+- Genome sentinel `Bisulfite_Genome/GA_conversion/BS_GA.1.bt2` (0.24 bowtie2 conversion naming).
+- multiqc pinned to `--filename multiqc_report.html` on the command line (config-file `title:` renames the
+  report otherwise; multiqc >=1.21 behavior).
+- Real-run status at v0.1 close (user-adjudicated early scope closure 2026-09-06): 13 reconciliation rounds;
+  15/20 jobs green in the last recorded run incl. trim/align/dedup/extraction/merge/summary/multiqc; the
+  `bam2nuc_sample` genome-folder path fix and the bismark2report naming were applied after that run and are
+  DAG-verified (dry-run) but not re-run end-to-end (recorded honestly; see docs/TODO.md §1).
+
 Initial scaffold of the bs-seq subproject (Bismark bisulfite-seq calling + QC, Snakemake 7): config layer, scheduler profiles, boilerplate, and the synthetic test-data contract. Workflow rules, launcher, and tests land in subsequent tasks.
 
 ### Added
