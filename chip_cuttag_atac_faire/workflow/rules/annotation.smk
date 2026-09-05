@@ -9,6 +9,7 @@ rule peak_annotation:
         pdf=R("4.peak/anno_result/Peakanno_PeakDistributions.pdf"),
     params:
         script=os.path.join(WORKFLOW_DIR, "scripts", "annoPeak_batch.R"),
+        rscript=RSCRIPT,
         peaklist=lambda wc: ",".join(group_peak_file(g) for g in GROUPS),
         outdir=lambda wc, output: os.path.dirname(str(output)),
         flank=config["region_flank"],
@@ -21,5 +22,5 @@ rule peak_annotation:
         R("logs/peak_annotation.log"),
     shell:
         """
-        Rscript {params.script} {input.gtf} {params.peaklist} {params.outdir} {params.flank} > {log} 2>&1
+        {params.rscript} {params.script} {input.gtf} {params.peaklist} {params.outdir} {params.flank} > {log} 2>&1
         """

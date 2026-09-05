@@ -56,7 +56,7 @@ pdf(file.path(outdir, "Peakanno_PeakDistributions.pdf"), height = 8, width = 8)
   plotAnnoBar(peakAnnoList)
   plotDistToTSS(peakAnnoList, title = "Distribution of binding loci relative to TSS")
   plotAvgProf(tagMatrixList, xlim = c(-flank, flank), conf = 0.95, resample = 500, facet = "row")
-  tagHeatmap(tagMatrixList)
+  tagHeatmap(tagMatrixList, xlim = c(-flank, flank))
 dev.off()
 
 message("Peak annotation done: ", outdir)

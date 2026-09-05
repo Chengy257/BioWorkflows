@@ -15,6 +15,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Changed
 
+- **Raw FASTQ naming variants supported**: `trim_adapter` no longer requires the literal `1.rawdata/{sample}_1.fq.gz` + `{sample}_2.fq.gz` — `raw_fastq_pair()` in `common.smk` resolves each sample's pair with priority `{id}_1/_2.fq.gz` -> `{id}_1/_2.fastq.gz` -> `{id}_R1/_R2.fq.gz` -> `{id}_R1/_R2.fastq.gz` (first complete pair wins; a missing pair raises a clear `WorkflowError` listing all supported patterns; the pipeline remains paired-end only), removing the need for manual renaming/symlinks at deployments.
+- **R invocation routed through the configured R runtime**: `peak_annotation` now calls `{params.rscript}` (`RSCRIPT` from the `CHIP_RSCRIPT` environment, exported by `run.sh` from `software.yaml r.rscript`), instead of a bare `Rscript` that resolved to whatever R was on the cluster node's PATH (found on the enhancer_lncRNA_2026 deployment, 2026-09-05: the bare call picked up R 4.1.3 and crashed with `rlang.so: undefined symbol: EXTPTR_PROT`).
 - **`5.QC_deeptools/` renamed to `5.QC/deeptools/`**.
 - **English unification**: all comments, user-facing messages, and documentation across the project were converted to English.
 - **Relicensed from MIT to Apache-2.0**.
@@ -24,6 +26,8 @@ All notable changes to this project are documented in this file. The format is b
 - P0: fixed the `res()` helper signature crash (resources now flow exclusively through the `rthreads`/`rmem`/`rruntime` helpers).
 - Fixed the `config.local.yaml` overlay: the auto-detected project-local overlay is reliably appended last to the `--configfile` chain.
 - `bigwig`: `bedGraphToBigWig` validates C-collation chromosome order (Chr1 < Chr10 < Chr11 < Chr12 < Chr2) regardless of the chrom.sizes line order, but the rule sorted with `bedtools sort -g` (which follows the chrom.sizes line order); whenever the two orders differ the rule fails at the Chr12 -> Chr2 boundary. Replaced with `LC_COLLATE=C sort -k1,1 -k2,2n` as the bedGraphToBigWig error message recommends (found on the enhancer_lncRNA_2026 deployment, 2026-09-05).
+- `annoPeak_batch.R`: passed the required `xlim = c(-flank, flank)` to ChIPseeker `tagHeatmap()` (mirroring the preceding `plotAvgProf` call); without it the script aborted on the last PDF plot with `argument "xlim" is missing, with no default`, failing the whole `peak_annotation` rule after the first three plots had rendered (found on the enhancer_lncRNA_2026 deployment, 2026-09-05, job 304546).
+- `run.sh --validate-only` works again under the pinned snakemake 7.32.4: `--list-rules` (the snakemake 8 name) was replaced with `--list`; under 7.x it failed with `unrecognized arguments: --list-rules`.
 
 ### TODO
 
