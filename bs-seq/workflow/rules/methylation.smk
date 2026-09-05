@@ -118,6 +118,11 @@ rule bismark2summary:
         R("5.QC/bismark2summary.html"),
     params:
         outdir=lambda wc, output: os.path.dirname(str(output)),
+        # Absolute paths: after the `cd` below, the relative report/log paths
+        # would no longer resolve from the working directory.
+        abs_reports=" ".join(os.path.abspath(p)
+                             for p in expand(R("3.align/{sample}_report.txt"), sample=SAMPLES)),
+        abs_log=lambda wc: os.path.abspath(R("logs/bismark2summary.log")),
     log: R("logs/bismark2summary.log"),
     threads: rthreads("bismark2summary")
     resources:
@@ -125,5 +130,5 @@ rule bismark2summary:
         runtime_sec=rruntime_sec("bismark2summary"),
     shell:
         """
-        cd {params.outdir} && bismark2summary {input.reports} > {log} 2>&1
+        cd {params.outdir} && bismark2summary {params.abs_reports} > {params.abs_log} 2>&1
         """

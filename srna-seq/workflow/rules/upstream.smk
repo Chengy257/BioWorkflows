@@ -31,6 +31,8 @@ rule trim:
             -e {params.error_rate} --length {params.min_len} -a {params.adapter} \
             {params.extra} --gzip -j {threads} -o {params.outdir}/ {input.fq} \
             --fastqc --fastqc_args "--outdir {params.fastqc_dir}" > {log} 2>&1
+        ## Trim Galore (0.6.x) names the report after the INPUT file full basename; rename it to the contract path above.
+        mv -f "{params.outdir}/$(basename "{input.fq}")_trimming_report.txt" {output.report} 2>/dev/null || true
         """
 
 

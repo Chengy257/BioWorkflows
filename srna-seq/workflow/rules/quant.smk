@@ -66,6 +66,10 @@ rule cascade_summary:
         raw_counts=expand(R("5.QC/raw_counts/{sample}.txt"), sample=SAMPLES),
         counts=expand(R("4.expression/{klass}/{sample}_counts.txt"),
                       klass=_CLASSES, sample=SAMPLES) if _CLASSES else [],
+        # Read by path in cascade_summary.py (genome_unmapped column); declares
+        # the DAG edge so the summary is ordered after genome_align.
+        genome_unmapped=expand(R("3.align/genome/{sample}_unmapped.fq"),
+                               sample=SAMPLES) if _GENOME_CONFIGURED else [],
     output:
         summary=R("5.QC/cascade_summary.tsv"),
         mqc=R("5.QC/cascade_summary_mqc.tsv"),

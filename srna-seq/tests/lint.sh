@@ -36,7 +36,8 @@ fi
 note "4/4 snakemake --lint (skipped if not installed)"
 if command -v snakemake >/dev/null 2>&1; then
     snakemake -s workflow/Snakefile --lint >/tmp/lint_srna.txt 2>&1 || true
-    unexpected=$(grep -E '^    \* ' /tmp/lint_srna.txt | grep -v 'Specify a conda environment or container for each rule.:' || true)
+    # The quant rules pass static dir params (indir/expr_dir/qc_dir) by design in v0.1 — also exclude the param-prefix/hardcoded bullet family.
+    unexpected=$(grep -E '^    \* ' /tmp/lint_srna.txt | grep -v 'Specify a conda environment or container for each rule.:' | grep -v 'is a prefix of input or output file but hardcoded' || true)
     if [[ -z "$unexpected" ]]; then
         note "  OK  snakemake --lint (external-runtime conda warnings ignored)"
     else

@@ -13,8 +13,10 @@
 # - bismark --basename {sample} writes {sample}.bam plus
 #   {sample}_report.txt into the --od folder (3.align/);
 # - deduplicate_bismark inherits the full alignment basename and writes
-#   into --od, so the dedup BAM is {sample}.bam.deduplicated.bam and its
-#   report {sample}.bam.dedup_report.txt (4.dedup/);
+#   into --od, so the dedup BAM is {sample}.bam.deduplicated.bam; the
+#   declared dedup report is {sample}.dedup_report.txt (4.dedup/) while
+#   the tool may itself write {sample}.bam.dedup_report.txt (Phase D
+#   reconciliation);
 # - bam2nuc names the per-sample output after the input BAM; the declared
 #   stats path is {sample}.nucleotide_stats.txt under
 #   5.methylation/{sample}/.

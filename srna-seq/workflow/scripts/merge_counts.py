@@ -21,7 +21,8 @@ def read_counts(path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--indir", required=True, help="results/4.expression root")
-    ap.add_argument("--classes", nargs="+", required=True)
+    # nargs="*": an empty cascade still writes the header-only outputs.
+    ap.add_argument("--classes", nargs="*", required=True)
     ap.add_argument("--samples", nargs="+", required=True)
     args = ap.parse_args()
     combined = {}

@@ -25,10 +25,15 @@ DEFAULT_TOOLS = {
     "bowtie_build": "bowtie-build",
 }
 
+# Preflight scope: exactly the srna-seq executables (no R). The shared
+# framework reads the "rscript" entry for resolution/export, but srna-seq
+# has no R stage, so the preflight never demands Rscript.
+_PIPELINE_TOOLS = [name for name in DEFAULT_TOOLS if name != "rscript"]
+
 SPEC = WorkflowSpec(
     env_prefix="SRNA",
     default_tools=DEFAULT_TOOLS,
-    pipeline_tools={"default": list(DEFAULT_TOOLS)},
+    pipeline_tools={"default": _PIPELINE_TOOLS},
     r_packages={},
     tool_defaults={"python": "python3"},
     orgdb={},

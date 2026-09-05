@@ -35,7 +35,8 @@ def mapped_total(counts_path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--indir", required=True, help="results/4.expression root")
-    ap.add_argument("--classes", nargs="+", required=True)
+    # nargs="*": an empty cascade still writes the zero-class summary.
+    ap.add_argument("--classes", nargs="*", required=True)
     ap.add_argument("--samples", nargs="+", required=True)
     ap.add_argument("--trim-reports", nargs="+", required=True)
     ap.add_argument("--raw-counts", type=int, nargs="+", required=True,
