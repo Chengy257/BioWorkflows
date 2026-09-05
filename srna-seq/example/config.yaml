@@ -1,0 +1,63 @@
+## =====================================================================
+## srna-seq example project configuration
+## Legacy rice small-RNA example (root/leaf, two replicates each): a
+## filled copy of config/config.template.yaml. Copy it into the project
+## working directory as config.yaml (run.sh auto-detects it there) and
+## replace the /path/to/ reference placeholders with real server paths.
+## Keys not listed here inherit the repo defaults from config/config.yaml.
+## =====================================================================
+
+## ---- Outputs and samples ----
+results_dir: "results"
+SampleListFile: "samples.csv"   # the example/samples.csv copy in the working directory
+threads: 24                     # legacy project ran with a 24-thread cap (PBS ncpus=24)
+
+## ---- Species and reference resources ----
+species: "osa"                  # rice (IRGSP-1.0 preset in config/species.yaml)
+## Replace the placeholders below with real cluster paths. The legacy
+## project (srna-seq.sh, workdir /home/chengyu/project/lab/231107_XTL/sRNA)
+## pre-built its bowtie indices by hand under
+##   /home/chengyu/project/lab/231107_XTL/sRNA/0.index/{rRNA,snoRNA,snRNA,
+##   tRNA,miRNA,mRNA,Rhizo,genome}
+## this workflow builds every index itself from the FASTAs listed below.
+
+## ---- Adapter trimming (Trim Galore; legacy parameters) ----
+trim:
+  quality: 25                   # -q 25 (legacy)
+  min_len: 15                   # --length 15 (legacy)
+  adapter: "AGATCGGAAGAGC"      # -a AGATCGGAAGAGC (legacy)
+  stringency: 3                 # --stringency 3 (legacy)
+  error_rate: 0.1               # -e 0.1 (legacy)
+  extra: ""
+
+## ---- sncRNA cascade filter (legacy class order) ----
+## Legacy order: rRNA -> snoRNA -> snRNA -> tRNA -> miRNA -> mRNA -> Rhizo.
+## A read is assigned to the first class it maps to; unmapped reads chain
+## into the next stage. Remove an entry (do not just blank its fasta: the
+## osa preset would refill it) to drop a class from the run.
+cascade:
+  - name: rRNA
+    fasta: "/path/to/reference/osa/rRNA.fa"      # legacy index: .../0.index/rRNA
+  - name: snoRNA
+    fasta: "/path/to/reference/osa/snoRNA.fa"    # legacy index: .../0.index/snoRNA
+  - name: snRNA
+    fasta: "/path/to/reference/osa/snRNA.fa"     # legacy index: .../0.index/snRNA
+  - name: tRNA
+    fasta: "/path/to/reference/osa/tRNA.fa"      # legacy index: .../0.index/tRNA
+  - name: miRNA
+    fasta: "/path/to/reference/osa/miRNA.fa"     # legacy index: .../0.index/miRNA
+    # mature-miRNA source fasta referenced (commented) in the legacy script:
+    #   /home/chengyu/references/osa/ncRNAs/Oryza_sativa_mature_pmiren.fa
+  - name: mRNA                                  # mRNA/cDNA references (e.g. from genome annotation)
+    fasta: "/path/to/reference/osa/mRNA.fa"     # legacy index: .../0.index/mRNA
+  - name: rhizo                                 # AM-fungus / other exogenous index; optional
+    fasta: "/path/to/reference/osa/Rhizo.fa"    # legacy index: .../0.index/Rhizo (legacy stage name "Rhizo")
+
+## ---- Genome alignment ----
+## Aligns the TRIMMED reads (not the cascade remainder), as in the legacy script.
+genome:
+  fasta: "/path/to/reference/osa/genome.fa"     # legacy index: .../0.index/genome
+
+## ---- bowtie1 alignment options ----
+bowtie:
+  extra: ""                     # legacy ran plain bowtie defaults; e.g. "-v 1 --best --strata"
