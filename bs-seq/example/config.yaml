@@ -1,0 +1,44 @@
+## =====================================================================
+## bs-seq example project configuration
+## Bisulfite sequencing example (two samples): a filled copy of
+## config/config.template.yaml. Copy it into the project working
+## directory as config.yaml (run.sh auto-detects it there) and replace
+## the /path/to/ genome placeholder with a real server path.
+## Keys not listed here inherit the repo defaults from config/config.yaml.
+## =====================================================================
+
+## ---- Outputs and samples ----
+results_dir: "results"
+SampleListFile: "samples.csv"   # the example/samples.csv copy in the working directory
+threads: 12                     # legacy/global thread cap on every rule
+
+## ---- Species and reference resources ----
+species: "osa"                  # rice (IRGSP-1.0 preset in config/species.yaml);
+                                # "hsa" = human GRCh38.p14, "none" = no preset
+## Replace the placeholder below with a real cluster path. An explicit
+## non-empty genome wins over the species preset; with species "none"
+## the genome key is mandatory. The FASTA must be unmodified
+## (non-bisulfite-converted): bismark_genome_preparation does the
+## conversion itself, cached under results/0.index/bismark_genome/.
+# genome: "/path/to/reference/osa/genome.fa"
+
+## ---- Adapter trimming (Trim Galore) ----
+trim:
+  enabled: true                 # false = align the raw reads directly (legacy behavior)
+  quality: 20                   # 3' quality-trimming cutoff (-q)
+  min_len: 20                   # discard trimmed reads shorter than this (--length)
+  adapter: "AGATCGGAAGAGC"      # adapter sequence (-a / -A in paired-end mode)
+  stringency: 3                 # adapter overlap required to trigger trimming (--stringency)
+  error_rate: 0.1               # fraction of mismatches allowed in an adapter match (-e)
+  extra: ""                     # extra trim_galore arguments appended verbatim
+
+## ---- Bismark alignment ----
+bismark:
+  align_extra: "--phred33-quals"   # keep the phred encoding in sync with your FASTQs
+
+## ---- Methylation extraction (bismark_methylation_extractor) ----
+methylation_extractor:
+  cx_report: false              # true = also write the full CX-context cytosine report (large)
+  merge_cpg: true               # per-sample coverage2cytosine --merge_CpG ({sample}.CpG_merged.tsv.gz)
+  buffer_frac: 4                # extractor --buffer_size = mem_mb / buffer_frac (in GB); lower it
+                                # (or raise the rule's mem_mb in resources.yaml) if jobs OOM

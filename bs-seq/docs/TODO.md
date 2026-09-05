@@ -42,3 +42,21 @@ and final targets before release:
   unit-test suite (e.g. pytest) for the pure-Python pieces — the workflow
   scripts and the `common.smk` validation/species-merge logic — so refactors
   do not depend on the full snakemake dry-run.
+
+## 4. Environments and CI
+
+- [ ] Validate the pinned all-in-one environment solves at Phase D
+  (plan Task D1): `mamba env create -f workflow/environment.yaml`
+  (snakemake-minimal 7.32.4 / bismark 0.24.0 / bowtie2 2.5.2 / samtools 1.17 /
+  trim-galore 0.6.10 / fastqc 0.11.9 / multiqc 1.21). If a pin fails to
+  solve, adjust it with the smallest change first and record the change in
+  `CHANGELOG.md`.
+- [ ] Wire the lightweight CI job (plan Task D3, repository-root
+  `.github/workflows/ci.yml`): the `tests/lint.sh` suite plus the
+  synthetic-data dry-run regression `bash tests/run_test.sh --reads 2000`.
+  Until it lands, `make test` + `bash tests/run_test.sh --reads 2000`
+  locally are the reference bar.
+- [ ] After the first pinned-environment real run, revisit the §1 derived
+  names above and the `snakemake --lint` baseline (conda-env advice +
+  helper-style warnings are filtered in `tests/lint.sh`); tighten the filter
+  only if the baseline actually changes.
