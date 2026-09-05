@@ -1,0 +1,15 @@
+## =====================================================================
+## Species resource preset map (loaded by workflow/Snakefile)
+## The top-level species key selects one entry; the genome preset only
+## takes effect when the project configuration does not set a genome path
+## explicitly. Paths are placeholders; override them with real cluster
+## paths in the project configuration at deployment time.
+## =====================================================================
+
+osa:
+  label: "Rice Oryza sativa (IRGSP-1.0)"
+  genome: "/path/to/reference/osa/genome.fa"
+
+hsa:
+  label: "Human Homo sapiens (GRCh38.p14)"
+  genome: "/path/to/reference/hsa/GRCh38.p14.genome.fa"

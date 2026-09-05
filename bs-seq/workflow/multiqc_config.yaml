@@ -1,0 +1,5 @@
+title: "BS-seq QC Summary"
+subtitle: "Trim Galore / Bismark alignment / methylation extraction"
+intro_text: "Whole-pipeline QC summary: trimming statistics come from Trim Galore, alignment and methylation-extraction statistics from Bismark, and read-quality profiles from FastQC."
+report_header_info:
+  - Workflow: "bs-seq (Snakemake)"
