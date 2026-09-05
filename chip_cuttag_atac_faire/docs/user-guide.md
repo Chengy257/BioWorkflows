@@ -108,7 +108,7 @@ The working directory (data) and the analysis code directory (this repository) a
 
 **Step 2: add the raw data**
 
-Name the fastq files `{sample}_1.fq.gz` / `{sample}_2.fq.gz` and place them in `1.rawdata/`. Common `_R1.fastq.gz`/`_1.fastq.gz`-style suffixes can be renamed in batch by the launcher:
+Place the paired raw fastq files in `1.rawdata/`. Each sample's pair is auto-detected by priority: `{sample}_1.fastq.gz` + `{sample}_2.fastq.gz`, `{sample}_1.fq.gz` + `{sample}_2.fq.gz`, `{sample}_R1.fastq.gz` + `{sample}_R2.fastq.gz`, or `{sample}_R1.fq.gz` + `{sample}_R2.fq.gz` (the first complete pair wins; a sample without any complete pair fails validation listing all supported variants). The optional batch rename below is only needed to normalize mixed deliveries:
 
 ```bash
 cp my_*.fastq.gz ~/work/chip_demo/1.rawdata/

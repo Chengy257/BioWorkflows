@@ -48,7 +48,7 @@ rna-seq/
 
 Full steps: [docs/user-guide.md](docs/user-guide.md). Summary:
 
-1. **Create the project**: put `1.rawdata/` (`{sample}_1/_2.fastq.gz` or single-end `{sample}.fastq.gz`) and a sample table (template `config/samples.csv`, must include the control group) in the project directory.
+1. **Create the project**: put `1.rawdata/` (paired-end `{sample}_1/_2(.fastq|.fq).gz` or `{sample}_R1/_R2(.fastq|.fq).gz`, single-end `{sample}.fastq.gz`/`{sample}.fq.gz`; the first complete pair wins, see `docs/user-guide.md` §4.1) and a sample table (template `config/samples.csv`, must include the control group) in the project directory.
 2. **Write the configuration**: copy `config/config.yaml` (or the minimal `config/config.template.yaml`) and `config/software.yaml` into the project directory. The first configures analysis/reference resources, the second the server software environment; with an existing unified Conda environment, usually only `environment.conda_prefix` needs to be filled in. Configuration layers in order: repo defaults -> project config (`-c` or positional) -> `config.local.yaml` in the project directory (auto-detected) or `-l/--extra-config FILE`.
 3. **Check the environment**: `bash run.sh -p deg -P /path/to/myproject --software /path/to/myproject/software.yaml --check-software`.
 4. **Run**: `bash run.sh deg /path/to/myproject myproject/config.yaml 10`; a `bash run.sh -p deg -P /path/to/myproject -c /path/to/myproject/config.yaml --dry-run` preview of the DAG is recommended first.

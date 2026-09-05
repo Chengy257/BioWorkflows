@@ -12,8 +12,9 @@
   `{sample}_R1/_R2.fq.gz` and `.fastq.gz` suffix variants commonly delivered by
   sequencing vendors were not recognized.
 - **Fix**: `raw_fastq_pair()` in `workflow/rules/common.smk` resolves each
-  sample's raw pair with priority `{id}_1/_2.fq.gz` -> `{id}_1/_2.fastq.gz` ->
-  `{id}_R1/_R2.fq.gz` -> `{id}_R1/_R2.fastq.gz` (first complete pair wins);
+  sample's raw pair with priority `{id}_1/_2.fastq.gz` -> `{id}_1/_2.fq.gz` ->
+  `{id}_R1/_R2.fastq.gz` -> `{id}_R1/_R2.fq.gz` (first complete pair wins;
+  identical to the rna-seq workflow's resolution order);
   `trim_adapter` consumes it via input functions, and a missing pair raises a
   clear `WorkflowError` listing every supported pattern (the pipeline remains
   paired-end only).

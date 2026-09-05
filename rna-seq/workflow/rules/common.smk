@@ -136,16 +136,21 @@ def validate_config(cfg):
             for field in entry:
                 if field not in ("threads", "mem_mb", "runtime_min"):
                     errors.append(f"resources.{rule}.{field}: unknown field (supported: threads/mem_mb/runtime_min)")
-    if (
-        isinstance(umi, dict)
-        and umi.get("enabled")
-        and (umi.get("read1_len") or 0) > 0
-        and "--clip5pNbases" in str(cfg.get("star_extra_args") or "")
-    ):
-        errors.append(
-            "conflicting UMI clipping: umi.read*_len and --clip5pNbases in star_extra_args "
-            "would both be appended to the STAR command; keep only one of them"
-        )
+    if isinstance(umi, dict) and umi.get("enabled"):
+        # A malformed read1_len is already flagged by the umi type checks
+        # above; the conflict probe must not crash on it before the
+        # aggregated report is raised.
+        read1_len = umi.get("read1_len")
+        if (
+            isinstance(read1_len, int)
+            and not isinstance(read1_len, bool)
+            and read1_len > 0
+            and "--clip5pNbases" in str(cfg.get("star_extra_args") or "")
+        ):
+            errors.append(
+                "conflicting UMI clipping: umi.read*_len and --clip5pNbases in star_extra_args "
+                "would both be appended to the STAR command; keep only one of them"
+            )
     if errors:
         raise ValueError(
             f"config validation failed ({len(errors)} issues):\n  " + "\n  ".join(errors)

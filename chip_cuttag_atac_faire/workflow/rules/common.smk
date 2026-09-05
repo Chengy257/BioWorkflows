@@ -230,19 +230,20 @@ def raw_fastq_pair(sample):
     """Resolve the raw paired-end FASTQ paths for one sample from 1.rawdata/.
 
     Supported naming variants, checked in this priority order (the first
-    complete pair wins):
-      {id}_1.fq.gz + {id}_2.fq.gz
+    complete pair wins; identical to the rna-seq workflow's resolution
+    order so mixed repository deployments behave consistently):
       {id}_1.fastq.gz + {id}_2.fastq.gz
-      {id}_R1.fq.gz + {id}_R2.fq.gz
+      {id}_1.fq.gz + {id}_2.fq.gz
       {id}_R1.fastq.gz + {id}_R2.fastq.gz
+      {id}_R1.fq.gz + {id}_R2.fq.gz
     Raises WorkflowError when no complete pair exists (the pipeline is
     paired-end only; single-end files alone are not accepted).
     """
     for suffix1, suffix2 in (
-        ("_1.fq.gz", "_2.fq.gz"),
         ("_1.fastq.gz", "_2.fastq.gz"),
-        ("_R1.fq.gz", "_R2.fq.gz"),
+        ("_1.fq.gz", "_2.fq.gz"),
         ("_R1.fastq.gz", "_R2.fastq.gz"),
+        ("_R1.fq.gz", "_R2.fq.gz"),
     ):
         fq1 = f"1.rawdata/{sample}{suffix1}"
         fq2 = f"1.rawdata/{sample}{suffix2}"
@@ -250,9 +251,9 @@ def raw_fastq_pair(sample):
             return fq1, fq2
     raise WorkflowError(
         f"sample {sample!r}: no paired-end raw FASTQ pair found under 1.rawdata/. "
-        f"Supported naming variants are {{id}}_1.fq.gz + {{id}}_2.fq.gz, "
-        f"{{id}}_1.fastq.gz + {{id}}_2.fastq.gz, {{id}}_R1.fq.gz + {{id}}_R2.fq.gz, "
-        f"or {{id}}_R1.fastq.gz + {{id}}_R2.fastq.gz (both mates required; "
+        f"Supported naming variants are {{id}}_1.fastq.gz + {{id}}_2.fastq.gz, "
+        f"{{id}}_1.fq.gz + {{id}}_2.fq.gz, {{id}}_R1.fastq.gz + {{id}}_R2.fastq.gz, "
+        f"or {{id}}_R1.fq.gz + {{id}}_R2.fq.gz (both mates required; "
         "the pipeline is paired-end only)."
     )
 
