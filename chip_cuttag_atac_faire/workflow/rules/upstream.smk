@@ -4,8 +4,11 @@
 
 rule trim_adapter:
     input:
-        fq1="1.rawdata/{sample}_1.fq.gz",
-        fq2="1.rawdata/{sample}_2.fq.gz",
+        # Raw FASTQ naming variants (_1/_2 or _R1/_R2, .fq.gz or .fastq.gz)
+        # are resolved by raw_fastq_pair() in common.smk (first complete pair
+        # wins; clear error when nothing matches).
+        fq1=lambda wc: raw_fastq_pair(wc.sample)[0],
+        fq2=lambda wc: raw_fastq_pair(wc.sample)[1],
     output:
         fq1=R("2.cleandata/{sample}_1_val_1.fq.gz"),
         fq2=R("2.cleandata/{sample}_2_val_2.fq.gz"),

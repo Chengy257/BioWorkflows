@@ -38,6 +38,27 @@ species: "osa"                  # osa | hsa
 ## ---- STAR ----
 star_extra_args: ""             # extra STAR arguments (the assembly pipeline defaults to assembly-optimized parameters, see workflow/rules/common.smk)
 
+## ---- Adapter trimming (Trim Galore) ----
+## Optional; the values below reproduce the historical hardcoded command, so
+## the whole section can also be deleted without changing behavior.
+trim:
+  quality: 30                   # -q: terminal low-quality base cutoff
+  stringency: 3                 # --stringency: minimum adapter overlap (bp)
+  error_rate: 0.1               # -e: maximum adapter mismatch rate
+  extra: ""                     # extra Trim Galore/cutadapt arguments, e.g. "--length 20"
+
+## ---- UMI 5' clipping (optional, applied inside STAR) ----
+## With enabled: true and read1_len > 0, per-sample STAR commands gain
+## --clip5pNbases (PE: "9,9" -- two comma-separated values are required by
+## STAR 2.7.10b; SE: a single value). Data basis of the verified UMI libraries:
+## 8bp random UMI + a fixed T anchor at position 9 -> read1_len: 9, read2_len: 9.
+## Clipping only; no deduplication. Conflicts with --clip5pNbases in
+## star_extra_args fail validation.
+# umi:
+#   enabled: false
+#   read1_len: 0
+#   read2_len: 0
+
 ## Software executables, Conda runtime, Rscript/R libraries, and large tool databases
 ## are configured separately in config/software.yaml (or project software.yaml).
 

@@ -12,6 +12,10 @@ species: "osa"                  # osa | hsa; presets live in config/species.yaml
 results_dir: "results"          # all derived artifacts go here; raw inputs stay at the working-directory root
 
 ## ---- Sample table and global resources ----
+# Raw FASTQ lookup (trim_adapter): files are resolved per sample_id from
+# 1.rawdata/ as {id}_1.fastq.gz + {id}_2.fastq.gz, {id}_1.fq.gz + {id}_2.fq.gz,
+# {id}_R1.fastq.gz + {id}_R2.fastq.gz, or {id}_R1.fq.gz + {id}_R2.fq.gz
+# (first complete pair wins; paired-end only).
 grouplist: "config/samples.csv" # sample table; defaults to the repository template (parseable for lint/docs), override in the working directory
 threads: 12                     # legacy global thread cap for every rule; per-rule values live in config/resources.yaml
 

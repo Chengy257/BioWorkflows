@@ -88,7 +88,7 @@ Core options:
   -l, --extra-config FILE   Extra config layered last; config.local.yaml in the
                             project directory is picked up automatically
   -n, --dry-run             Build the DAG and show planned jobs without executing
-      --validate-only       Parse workflow and configs (snakemake --list-rules) only
+      --validate-only       Parse workflow and configs (snakemake --list) only
       --check-software      Check required executables, R, and R packages; then exit
       --check-r             Check configured Rscript, R version, libraries, and packages; then exit
       --skip-software-check Skip runtime preflight before a real workflow run
@@ -470,9 +470,10 @@ if [[ "$QUIET" != true ]]; then
 fi
 if [[ "$VALIDATE_ONLY" == true ]]; then
     # Sample-table and config validation runs at Snakefile parse time:
-    # --list-rules triggers a full parse and then exits.
-    info "Validate-only: parsing workflow and configs (snakemake --list-rules)."
-    snakemake -s "$SNAKEFILE" "${CONFIGFILE_ARGS[@]}" --profile "$PROFILE_DIR" --list-rules
+    # --list (the snakemake 7 name; --list-rules is 8.x only) triggers a full
+    # parse and then exits.
+    info "Validate-only: parsing workflow and configs (snakemake --list)."
+    snakemake -s "$SNAKEFILE" "${CONFIGFILE_ARGS[@]}" --profile "$PROFILE_DIR" --list
     info "Validation completed successfully."
     exit 0
 fi

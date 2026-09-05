@@ -94,6 +94,37 @@ def validate_config(cfg):
                 errors.append(f"{key} must be an integer >= 1, got {v!r}")
     if cfg.get("batch_correction") not in ("T", "F"):
         errors.append(f"batch_correction must be 'T' or 'F', got {cfg.get('batch_correction')!r}")
+    trim = cfg.get("trim")
+    if trim is not None:
+        if not isinstance(trim, dict):
+            errors.append(f"trim must be a mapping of {{quality, stringency, error_rate, extra}}, got {trim!r}")
+        else:
+            for key, lo in (("quality", 0), ("stringency", 1)):
+                if key in trim:
+                    v = trim[key]
+                    if isinstance(v, bool) or not isinstance(v, int) or v < lo:
+                        errors.append(f"trim.{key} must be an integer >= {lo}, got {v!r}")
+            if "error_rate" in trim:
+                try:
+                    er = float(trim["error_rate"])
+                    if not 0 < er <= 1:
+                        errors.append(f"trim.error_rate must be in (0, 1], got {er!r}")
+                except (TypeError, ValueError):
+                    errors.append(f"trim.error_rate must be numeric, got {trim['error_rate']!r}")
+            if "extra" in trim and not isinstance(trim["extra"], str):
+                errors.append(f"trim.extra must be a string, got {trim['extra']!r}")
+    umi = cfg.get("umi")
+    if umi is not None:
+        if not isinstance(umi, dict):
+            errors.append(f"umi must be a mapping of {{enabled, read1_len, read2_len}}, got {umi!r}")
+        else:
+            if "enabled" in umi and not isinstance(umi["enabled"], bool):
+                errors.append(f"umi.enabled must be true/false, got {umi['enabled']!r}")
+            for key in ("read1_len", "read2_len"):
+                if key in umi:
+                    v = umi[key]
+                    if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+                        errors.append(f"umi.{key} must be an integer >= 0, got {v!r}")
     resources = cfg.get("resources") or {}
     if not isinstance(resources, dict):
         errors.append(f"resources must be a mapping of rule -> {{threads, mem_mb, runtime_min}}, got {resources!r}")
@@ -105,6 +136,21 @@ def validate_config(cfg):
             for field in entry:
                 if field not in ("threads", "mem_mb", "runtime_min"):
                     errors.append(f"resources.{rule}.{field}: unknown field (supported: threads/mem_mb/runtime_min)")
+    if isinstance(umi, dict) and umi.get("enabled"):
+        # A malformed read1_len is already flagged by the umi type checks
+        # above; the conflict probe must not crash on it before the
+        # aggregated report is raised.
+        read1_len = umi.get("read1_len")
+        if (
+            isinstance(read1_len, int)
+            and not isinstance(read1_len, bool)
+            and read1_len > 0
+            and "--clip5pNbases" in str(cfg.get("star_extra_args") or "")
+        ):
+            errors.append(
+                "conflicting UMI clipping: umi.read*_len and --clip5pNbases in star_extra_args "
+                "would both be appended to the STAR command; keep only one of them"
+            )
     if errors:
         raise ValueError(
             f"config validation failed ({len(errors)} issues):\n  " + "\n  ".join(errors)
@@ -128,10 +174,16 @@ validate_config(config)
 
 
 def _raw_reads(sample):
-    """Detect paired-end first, then single-end FASTQ files using exact names."""
+    """Detect paired-end first, then single-end FASTQ files using exact names.
+
+    Besides the project-native {id}_1/_2 names, the common sequencer-delivery
+    names {id}_R1/_R2 (.fastq.gz / .fq.gz) are accepted; the _1/_2 patterns
+    keep priority so existing projects resolve identically."""
     for pattern_1, pattern_2 in (
         ("1.rawdata/{0}_1.fastq.gz", "1.rawdata/{0}_2.fastq.gz"),
         ("1.rawdata/{0}_1.fq.gz", "1.rawdata/{0}_2.fq.gz"),
+        ("1.rawdata/{0}_R1.fastq.gz", "1.rawdata/{0}_R2.fastq.gz"),
+        ("1.rawdata/{0}_R1.fq.gz", "1.rawdata/{0}_R2.fq.gz"),
     ):
         if os.path.exists(pattern_1.format(sample)) and os.path.exists(pattern_2.format(sample)):
             return "PE", [pattern_1.format(sample), pattern_2.format(sample)]
@@ -141,7 +193,8 @@ def _raw_reads(sample):
     raise ValueError(
         "sample {0}: no raw FASTQ files were found under 1.rawdata/. "
         "Supported names are {0}_1.fastq.gz + {0}_2.fastq.gz, "
-        "{0}_1.fq.gz + {0}_2.fq.gz for paired-end data, or "
+        "{0}_1.fq.gz + {0}_2.fq.gz, {0}_R1.fastq.gz + {0}_R2.fastq.gz, or "
+        "{0}_R1.fq.gz + {0}_R2.fq.gz for paired-end data, or "
         "{0}.fastq.gz / {0}.fq.gz for single-end data.".format(sample)
     )
 
@@ -316,3 +369,36 @@ STAR_ARGS_ASSEMBLY = (
 STAR_ARGS = (STAR_ARGS_ASSEMBLY if PIPELINE == "as" else STAR_ARGS_STANDARD) + config.get(
     "star_extra_args", ""
 )
+
+
+# Trim Galore arguments for both trim rules. Defaults reproduce the historical
+# hardcoded command (-q 30 --stringency 3 -e 0.1); the optional trim: section
+# overrides them (mirroring the chip workflow), with trim.extra appended last.
+def trim_args():
+    trim = config.get("trim") or {}
+    args = (
+        f"-q {trim.get('quality', 30)} "
+        f"--stringency {trim.get('stringency', 3)} "
+        f"-e {trim.get('error_rate', 0.1)}"
+    )
+    extra = (trim.get("extra") or "").strip()
+    if extra:
+        args += f" {extra}"
+    return args
+
+
+# Per-sample STAR arguments. Identical to STAR_ARGS unless the optional umi:
+# section enables 5' UMI clipping; the --clip5pNbases string depends on the
+# sample's detected PE/SE layout, so it must stay out of the global constant.
+def star_args_for(sample):
+    args = STAR_ARGS
+    umi = config.get("umi") or {}
+    read1_len = int(umi.get("read1_len", 0) or 0)
+    if umi.get("enabled") and read1_len > 0:
+        read2_len = int(umi.get("read2_len", 0) or 0)
+        if _raw_reads(sample)[0] == "PE":
+            # STAR 2.7.10b requires two comma-separated values for PE data.
+            args += f" --clip5pNbases {read1_len},{read2_len or read1_len}"
+        else:
+            args += f" --clip5pNbases {read1_len}"
+    return args

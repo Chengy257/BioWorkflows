@@ -55,7 +55,7 @@ The full five-step tutorial is in [docs/user-guide.md](docs/user-guide.md) (work
 ```bash
 # 1) Working directory and data
 mkdir -p ~/work/demo/1.rawdata
-cp {sample}_1.fq.gz {sample}_2.fq.gz ~/work/demo/1.rawdata/   # common R1/R2 suffixes can be renamed in batch via bash run.sh -r
+cp {sample}_1.fq.gz {sample}_2.fq.gz ~/work/demo/1.rawdata/   # _1/_2(.fq|.fastq).gz and _R1/_R2(.fq|.fastq).gz pairs are auto-detected; bash run.sh -r renames in batch
 
 # 2) Sample table + project config (6-column schema template in config/samples.csv)
 cp config/samples.csv ~/work/demo/sample_info.csv

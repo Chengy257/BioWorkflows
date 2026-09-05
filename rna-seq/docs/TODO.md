@@ -1,24 +1,38 @@
-# rna-seq 后续待做项（TODO）
+# rna-seq follow-up TODO
 
-> 产生于 enhancer_lncRNA_2026 项目实测准备阶段（2026-09-05），均为已识别、暂缓实施的事项。
+> Created during the enhancer_lncRNA_2026 real-data preparation stage (2026-09-05).
 
-## 1. UMI 文库支持
+## 1. UMI library support — RESOLVED (2026-09-05)
 
-- **现状**：trim 规则（`workflow/rules/align.smk`）的 trim_galore 参数硬编码（`-q 30 --stringency 3 -e 0.1`），没有像 chip 工作流那样的 `trim.extra` 配置通道，无法按项目注入 cutadapt 参数；工作流无 UMI 提取/去重逻辑。
-- **当前临时方案**：umi-mRNA 项目通过 `config.yaml` 的 `star_extra_args: "--clip5pNbasesRead1 9 --clip5pNbasesRead2 9"` 在比对时剥掉 5' 端 UMI（云序 oligo_dT UMI 文库结构已经数据实证：R1/R2 前 8bp 随机 UMI + 第 9bp 固定 T 锚，插入序列自第 10bp 起），不做去重。
-- **待做**：
-  1. 给 trim 规则增加 `trim.extra`（或等价）配置键，对齐 chip 工作流的做法；
-  2. 评估集成 `umi_tools extract`（fastq 级提取 UMI 到 read name）与 `umi_tools dedup`（基于 STAR 定位去重），作为可选的 `umi:` 配置段（enable、pattern、长度、锚定碱基）。
-- **数据依据**：mRNA-ZH11-0H-1 前 50 万 reads 逐位碱基组成：R1/R2 的 pos1–8 随机、pos9 = 99.5% T、pos10 起为基因组组成；caRNA 对照无此特征。
+- Trim Galore arguments are no longer hardcoded: the `trim:` config section
+  (`quality` / `stringency` / `error_rate` / `extra`) mirrors the chip workflow
+  and injects into both trim rules (`workflow/rules/align.smk`).
+- UMI clipping is a first-class `umi:` config section (`enabled` / `read1_len` /
+  `read2_len`) that appends per-sample `--clip5pNbases` to the STAR command
+  (PE renders two comma-separated values, required by STAR 2.7.10b and
+  data-verified on the server deployment; previously done via raw
+  `star_extra_args`).
+- `umi_tools extract` (fastq-level UMI extraction into read names) and
+  `umi_tools dedup` (alignment-based deduplication): evaluated and deferred —
+  umi_tools is absent from the environments/CI and adding it creates a solve
+  risk, while clip-without-dedup is accepted by the project for now.
+- Data basis: mRNA-ZH11-0H-1 first 500k reads per-position base composition —
+  R1/R2 positions 1-8 random, position 9 = 99.5% T, genomic composition from
+  position 10 (insert starts there); the caRNA control shows no such pattern.
 
-## 2. FASTQ 命名约定兼容
+## 2. FASTQ naming convention compatibility — RESOLVED (2026-09-05)
 
-- **现状**：`get_fastq`（`workflow/rules/common.smk`）仅识别 `1.rawdata/{id}_1.fastq.gz + {id}_2.fastq.gz`（及单端 `{id}.fastq.gz`）；测序交付普遍使用的 `{id}_R1/_R2.fastq(.gz)`、`.fq.gz` 后缀变体不被识别。
-- **当前临时方案**：在项目 `1.rawdata/` 内补一套 `{id}_1.fq.gz`/`{id}_2.fq.gz` 软链接指向同一批原始文件（纯新增，不动原始数据）。
-- **待做**：在 `get_fastq` 的 pattern 列表中增加 `_R1/_R2` 与 `.fq.gz` 变体（匹配优先级需保证不歧义），或在用户文档中显著说明命名约定；相应更新 `validate_samples.py` 的报错提示。
+- `_raw_reads` (`workflow/rules/common.smk`) now recognizes the
+  sequencer-delivery names `{id}_R1/_R2.fastq.gz` and `{id}_R1/_R2.fq.gz`
+  in addition to the original `{id}_1/_2` patterns; the original patterns keep
+  priority so existing projects resolve identically. The manual `{id}_1/_2`
+  symlink workaround is no longer needed. All accepted names are documented in
+  `docs/user-guide.md`.
+- `validate_samples.py` validates the sample table only (it never inspects
+  FASTQ file names), so no validator change was required.
 
-## 3. PBS 集群支持
+## 3. PBS cluster support — resolved (2026-09-05)
 
-- **状态（2026-09-05 已解决）**：已移植 chip 的 `profile/pbs` 并更新 `run.sh` 的
-  profile 白名单与 auto 检测（qsub 且无 SGE_ROOT → pbs），本服务器实测生效；
-  待随仓库一并提交。
+- Status (resolved 2026-09-05): chip's `profile/pbs` was ported and `run.sh`'s
+  profile whitelist and auto-detection updated (qsub without SGE_ROOT -> pbs);
+  verified working on the server; to be committed together with the repository.

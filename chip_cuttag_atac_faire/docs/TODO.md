@@ -1,37 +1,66 @@
-# chip_cuttag_atac_faire 后续待做项（TODO）
+# chip_cuttag_atac_faire follow-up items (TODO)
 
-> 产生于 enhancer_lncRNA_2026 项目实测准备阶段（2026-09-05），均为已识别、暂缓实施的事项。
+> Produced during the enhancer_lncRNA_2026 real-data preparation (2026-09-05).
+> Status update (2026-09-05, branch fix/realdata-todos): items 1-4 below are all
+> resolved at the repository level; the notes under each item record what server
+> deployments can retire after pulling this branch.
 
-## 1. FASTQ 命名约定兼容
+## 1. FASTQ naming-variant support — DONE
 
-- **现状**：`workflow/rules/upstream.smk` 的 fastq 输入仅识别 `1.rawdata/{sample}_1.fq.gz + {sample}_2.fq.gz`；测序交付普遍使用的 `{sample}_R1/_R2.fq.gz`、`.fastq.gz` 后缀变体不被识别。
-- **当前临时方案**：在项目 `1.rawdata/` 内补一套 `{sample}_1.fq.gz`/`{sample}_2.fq.gz` 软链接指向同一批原始文件（纯新增，不动原始数据）。
-- **待做**：在样本表 → fastq 路径解析处增加 `_R1/_R2` 与 `.fastq.gz` 变体支持（与 rna-seq 工作流的同类待办保持一致，见 `rna-seq/docs/TODO.md`），或在用户文档中显著说明命名约定。
+- **Original issue**: the `workflow/rules/upstream.smk` fastq inputs only matched
+  the literal `1.rawdata/{sample}_1.fq.gz` + `{sample}_2.fq.gz`; the
+  `{sample}_R1/_R2.fq.gz` and `.fastq.gz` suffix variants commonly delivered by
+  sequencing vendors were not recognized.
+- **Fix**: `raw_fastq_pair()` in `workflow/rules/common.smk` resolves each
+  sample's raw pair with priority `{id}_1/_2.fastq.gz` -> `{id}_1/_2.fq.gz` ->
+  `{id}_R1/_R2.fastq.gz` -> `{id}_R1/_R2.fq.gz` (first complete pair wins;
+  identical to the rna-seq workflow's resolution order);
+  `trim_adapter` consumes it via input functions, and a missing pair raises a
+  clear `WorkflowError` listing every supported pattern (the pipeline remains
+  paired-end only).
+- **Note**: the server deployment's workaround — symlinking a
+  `{sample}_1.fq.gz`/`{sample}_2.fq.gz` set inside the project `1.rawdata/` —
+  can be retired after pulling this branch.
 
-## 2. `--validate-only` 与锁定的 Snakemake 7 不兼容
+## 2. `--validate-only` incompatible with the pinned Snakemake 7 — DONE
 
-- **现状**：`run.sh` 的 `--validate-only` 调用 `snakemake --list-rules`，该参数是 Snakemake 8 的改名（7.x 为 `--list`）；在锁定的 snakemake-minimal=7.32.4 下报 `unrecognized arguments: --list-rules`。
-- **待做**：改回 7.x 兼容的 `--list`（或做版本分支）；日常验证用 `-n` dry-run 可完全替代。
+- **Original issue**: `run.sh --validate-only` invoked `snakemake --list-rules`,
+  which is the Snakemake 8 rename (7.x uses `--list`); under the pinned
+  snakemake-minimal=7.32.4 it failed with `unrecognized arguments: --list-rules`.
+- **Fix**: `run.sh` now calls `--list` (help text and log messages updated to
+  match); validation keeps working as a full parse + rule listing.
 
-## 3. 规则内裸调 `Rscript` 绕过 `r.rscript` 配置
+## 3. Rules calling bare `Rscript` bypass the `r.rscript` config — DONE
 
-- **现状**：`annoPeak_batch.R` 等规则直接写 `Rscript ...`（见 `callpeak/annotation` 规则），不经过
-  `software.yaml` 的 `r.rscript`/`CHIP_RSCRIPT` 通道。当项目配置指向独立的 R（如 R4.2.3 包装脚本）
-  时，作业里裸调的 `Rscript` 仍会解析到主环境自带的 R（enhancer_lncRNA_2026 部署中为 chip env 的
-  R 4.1.3 + 高版本 R 库 → `rlang.so: undefined symbol: EXTPTR_PROT`，peak_annotation 失败）。
-- **当前绕过**：项目 `bin/env.sh`（BASH_ENV 注入）把含 Rscript 包装脚本的 bin 目录放到 PATH 最前。
-- **待做**：规则改用 `tool("rscript")` 或 `${CHIP_RSCRIPT:-Rscript}`，与 rna-seq 的做法对齐。
-- **实测验证（2026-09-05）**：env.sh 绕过方案有效——R/ChIPseeker 正常加载、TxDb 构建成功、
-  3 个 narrowPeak 全部注释完成、plotAnnoBar/plotDistToTSS/plotAvgProf 均画出。仓库层根治仍待做。
+- **Original issue**: rules called `Rscript ...` directly (the `peak_annotation`
+  rule / `annoPeak_batch.R`), never going through the `software.yaml`
+  `r.rscript` / `CHIP_RSCRIPT` channel. When a project config pointed at a
+  standalone R (e.g. an R 4.2.3 wrapper script), the bare call inside the job
+  still resolved to the main environment's R (R 4.1.3 + newer R libraries on the
+  enhancer_lncRNA_2026 deployment -> `rlang.so: undefined symbol: EXTPTR_PROT`,
+  `peak_annotation` failure).
+- **Fix (repo level)**: the RSCRIPT channel — `common.smk` defines
+  `RSCRIPT = os.environ.get("CHIP_RSCRIPT", "Rscript")` (exported by `run.sh`
+  from `software.yaml r.rscript` via `runtime_config.py`, resolved at
+  orchestrator parse time and baked into the jobscript), and `annotation.smk`
+  invokes `{params.rscript}` instead of a bare `Rscript`.
+- **Notes**: the project `bin/env.sh` (BASH_ENV PATH-injection) workaround can
+  stay in place as belt-and-suspenders; the symlink workaround used in the
+  server deployment can be retired after pulling this branch.
+- **Real-run validation (2026-09-05)**: the env.sh workaround proved the
+  analysis itself is sound — R/ChIPseeker loaded, TxDb built, all 3 narrowPeak
+  files annotated, and plotAnnoBar/plotDistToTSS/plotAvgProf all rendered.
 
-## 4. `annoPeak_batch.R` 的 `tagHeatmap()` 调用缺少必需参数 `xlim`
+## 4. `annoPeak_batch.R` `tagHeatmap()` call missing the required `xlim` — DONE
 
-- **现状**：`workflow/scripts/annoPeak_batch.R:59` 调用 `tagHeatmap(tagMatrixList)`。ChIPseeker 的
-  `tagHeatmap` 必需位置参数 `xlim` 无默认值 → `Error in peakHeatmap.internal2(...): argument
-  "xlim" is missing, with no default`，脚本在 PDF 最后一张图（TSS tag heatmap）处中止、退出码非零，
-  整个 `peak_annotation` 规则失败。enhancer_lncRNA_2026 实测复现（2026-09-05，作业 304546，
-  13:19–13:23，前三张图全部画出后仅在 tagHeatmap 一步报错，与环境无关的纯脚本 bug）。
-- **修复方案**：第 59 行改为 `tagHeatmap(tagMatrixList, xlim = c(-flank, flank))`，与第 58 行
-  `plotAvgProf(..., xlim = c(-flank, flank))` 保持一致（flank=3000，即 TSS ±3kb 窗口）。
-- **实施步骤**：改脚本 → 本地提交推送 → 服务器 `git pull` → chip 项目 dry-run（预期增量仅
-  `peak_annotation` 1 步，其余约 90 步产物全保留）→ 带 `BASH_ENV=<项目>/bin/env.sh` 前缀重新派发。
+- **Original issue**: `workflow/scripts/annoPeak_batch.R` called
+  `tagHeatmap(tagMatrixList)`. ChIPseeker's `tagHeatmap` has a required `xlim`
+  argument with no default -> `Error in peakHeatmap.internal2(...): argument
+  "xlim" is missing, with no default`; the script aborted on the last PDF plot
+  (TSS tag heatmap) with a non-zero exit code, failing the whole
+  `peak_annotation` rule. Reproduced on the enhancer_lncRNA_2026 real run
+  (2026-09-05, job 304546, 13:19-13:23: the first three plots rendered fine and
+  only tagHeatmap failed — a pure script bug, environment-independent).
+- **Fix**: the call now passes `xlim = c(-flank, flank)`, consistent with the
+  preceding `plotAvgProf(..., xlim = c(-flank, flank))` line (flank=3000, i.e.
+  the TSS +/-3kb window).
