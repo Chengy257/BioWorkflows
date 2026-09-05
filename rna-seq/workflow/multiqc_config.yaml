@@ -1,6 +1,11 @@
 ## Custom MultiQC configuration (whole-pipeline QC summary: FastQC / Trim Galore / STAR / featureCounts)
 title: "RNA-seq QC Summary"
 subtitle: "FastQC / Trim Galore / STAR / featureCounts"
+# Pin the report filename: without this MultiQC derives it from the title
+# (RNA-seq-QC-Summary_multiqc_report.html) and the multiqc rule's declared
+# output (multiqc/multiqc_report.html) never appears, failing the job after
+# a successful run.
+output_fn_name: "multiqc_report.html"
 intro_text: "Whole-pipeline QC summary. Samples are ordered per the sample table; alignment statistics come from STAR Log.final.out and quantification assignment statistics from featureCounts."
 report_header_info:
   - Workflow: "rna-seq (Snakemake)"

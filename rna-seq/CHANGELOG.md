@@ -32,6 +32,11 @@ Architecture consolidation release: flattened output layout, dedicated scheduler
   `SAindex`/`chrStart.txt` as "potentially corrupted". The declared outputs are now real
   STAR genomeGenerate products: `SAindex`, `genomeParameters.txt`, `sjdbList.out.tab`,
   and `chrStart.txt` (found on the enhancer_lncRNA_2026 deployment, 2026-09-05).
+- `multiqc` reported success but its declared output `multiqc/multiqc_report.html` never
+  appeared because MultiQC derives the filename from the configured title
+  (`RNA-seq-QC-Summary_multiqc_report.html`), failing the job; `multiqc_config.yaml` now
+  pins `output_fn_name: multiqc_report.html` to match the rule declaration (found on the
+  enhancer_lncRNA_2026 deployment, 2026-09-05).
 
 ### Known issues (CI, not yet fixed)
 
