@@ -25,6 +25,14 @@ Architecture consolidation release: flattened output layout, dedicated scheduler
 - `workflow/environment.yaml` solves again (validated with a dry-run Conda solve): `python` is pinned to 3.10 because `rseqc=5.0.1` ships no newer Python builds, and `r-base` is set to the 4.3 series.
 - **aPEAR is now optional**: the package was removed from both CRAN (archived 2025-01) and Bioconductor, and is not packaged on bioconda, so it can no longer be a required dependency. The deg pipeline's enrichment-network plots and path-cluster tables are skipped with a warning when aPEAR is absent (`run_deg_compare.R` no longer hard-fails at `library()`); the preflight R-package check no longer requires it, and it was removed from `workflow/environment.yaml`. Install it manually from an archive if you want those plots.
 
+### Fixed
+
+- `STAR_index` declared two outputs STAR never writes (`genomeSA`/`genomeSJ`), so every
+  fresh index build was judged failed and Snakemake then removed the actually produced
+  `SAindex`/`chrStart.txt` as "potentially corrupted". The declared outputs are now real
+  STAR genomeGenerate products: `SAindex`, `genomeParameters.txt`, `sjdbList.out.tab`,
+  and `chrStart.txt` (found on the enhancer_lncRNA_2026 deployment, 2026-09-05).
+
 ### Known issues (CI, not yet fixed)
 
 - GitHub CI (`rna-seq` job) end-to-end regression fails at `trimAdapter_PE` (all samples):

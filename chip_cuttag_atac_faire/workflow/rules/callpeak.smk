@@ -149,10 +149,11 @@ rule bigwig:
             -o {params.outdir}/{wildcards.group}_FE.bdg -m FE -p 0.00001 > {log} 2>&1
         bedtools slop -i {params.outdir}/{wildcards.group}_FE.bdg -g {input.chromsize} -b 0 \
             | bedClip stdin {input.chromsize} {params.outdir}/{wildcards.group}_FE.clip >> {log} 2>&1
-        # bedGraphToBigWig requires chromosome order to match the chrom.sizes
-        # file; sort with bedtools sort -g (lexicographic sort breaks names
-        # like Chr10/Chr2).
-        bedtools sort -g {input.chromsize} -i {params.outdir}/{wildcards.group}_FE.clip \
+        # bedGraphToBigWig validates C-collation order (Chr1 < Chr10 < Chr11 <
+        # Chr12 < Chr2) plus numeric starts, regardless of the chrom.sizes line
+        # order; bedtools sort -g follows the chrom.sizes line order instead
+        # and fails the check whenever that order differs from C collation.
+        LC_COLLATE=C sort -k1,1 -k2,2n {params.outdir}/{wildcards.group}_FE.clip \
             > {params.outdir}/{wildcards.group}_FE.clip.sorted
         bedGraphToBigWig {params.outdir}/{wildcards.group}_FE.clip.sorted {input.chromsize} {output} >> {log} 2>&1
         rm -f {params.outdir}/{wildcards.group}_FE.bdg \

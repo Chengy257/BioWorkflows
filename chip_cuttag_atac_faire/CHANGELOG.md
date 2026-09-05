@@ -23,6 +23,7 @@ All notable changes to this project are documented in this file. The format is b
 
 - P0: fixed the `res()` helper signature crash (resources now flow exclusively through the `rthreads`/`rmem`/`rruntime` helpers).
 - Fixed the `config.local.yaml` overlay: the auto-detected project-local overlay is reliably appended last to the `--configfile` chain.
+- `bigwig`: `bedGraphToBigWig` validates C-collation chromosome order (Chr1 < Chr10 < Chr11 < Chr12 < Chr2) regardless of the chrom.sizes line order, but the rule sorted with `bedtools sort -g` (which follows the chrom.sizes line order); whenever the two orders differ the rule fails at the Chr12 -> Chr2 boundary. Replaced with `LC_COLLATE=C sort -k1,1 -k2,2n` as the bedGraphToBigWig error message recommends (found on the enhancer_lncRNA_2026 deployment, 2026-09-05).
 
 ### TODO
 

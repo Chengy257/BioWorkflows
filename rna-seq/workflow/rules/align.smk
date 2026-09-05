@@ -102,8 +102,8 @@ rule STAR_index:
         GTF=res("gtf"),
     output:
         sa=R("0.index/star_genome/SAindex"),
-        genome_sa=R("0.index/star_genome/genomeSA"),
-        genome_sj=R("0.index/star_genome/genomeSJ"),
+        genome_params=R("0.index/star_genome/genomeParameters.txt"),
+        sjdb_list=R("0.index/star_genome/sjdbList.out.tab"),
         chr_start=R("0.index/star_genome/chrStart.txt"),
     log:
         R("logs/index/star_index_log.txt"),
