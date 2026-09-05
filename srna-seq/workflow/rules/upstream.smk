@@ -31,7 +31,13 @@ rule trim:
             -e {params.error_rate} --length {params.min_len} -a {params.adapter} \
             {params.extra} --gzip -j {threads} -o {params.outdir}/ {input.fq} \
             --fastqc --fastqc_args "--outdir {params.fastqc_dir}" > {log} 2>&1
-        ## Trim Galore (0.6.x) names the report after the INPUT file full basename; rename it to the contract path above.
+        ## Trim Galore (0.6.x) names the trimmed FASTQ (and thus the FastQC zip) after the INPUT basename
+        ## (e.g. s1_R1.fq.gz -> s1_R1_trimmed.fq.gz); rename all artifacts to the contract paths above.
+        ## Canonical-name inputs yield same-file moves here; the guards keep them non-fatal.
+        _base=$(basename "{input.fq}")
+        _base="${{_base%.fq.gz}}"; _base="${{_base%.fastq.gz}}"; _base="${{_base%.fq}}"; _base="${{_base%.fastq}}"; _base="${{_base%.gz}}"
+        mv -f "{params.outdir}/${{_base}}_trimmed.fq.gz" {output.fq} 2>/dev/null || true
+        mv -f "{params.fastqc_dir}/${{_base}}_trimmed_fastqc.zip" {output.fastqc_zip} 2>/dev/null || true
         mv -f "{params.outdir}/$(basename "{input.fq}")_trimming_report.txt" {output.report} 2>/dev/null || true
         """
 
