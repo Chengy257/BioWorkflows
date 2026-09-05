@@ -67,3 +67,37 @@ naming table now declare the observed names:
   helper-style warnings are filtered in `tests/lint.sh`); the §1 names are
   reconciled (see above); the lint baseline was re-checked green under
   snakemake 7.32.4.
+
+## 5. Documentation-sync backlog (final-review findings, archived by user adjudication 2026-09-06)
+
+The independent final review of the carrier branch (fix-first verdict,
+receipt 2026-09-05) verified the executable name chain (rules / `TARGETS` /
+test assertions / the README naming table above / TODO §1) as fully
+reconciled, and found scope discipline, red lines, and verification evidence
+all clean. Its remaining findings are user-visible documentation that still
+carries the PRE-reconciliation name chain — deferred to TODO by explicit user
+adjudication (interrupt all execution; archive, do not fix). Sync these on
+the next doc pass:
+
+- [ ] `README.md` (~L134-203, outside the naming table): the results
+  quick-reference, QC notes, and known-limitations sections still use the old
+  names (`{sample}.bam.deduplicated.bam`, `{sample}.dedup_report.txt`,
+  `{sample}.nucleotide_stats.txt`, `{sample}.CpG_merged.tsv.gz`,
+  `{sample}_seq_context.html`, `genomic_nucleotide_totals.txt`) and say the
+  names are "to be confirmed at Phase D" — replace with the reconciled chain
+  of the naming table.
+- [ ] `docs/user-guide.md` (~§4/§7/§8/FAQ): the directory trees, results
+  quick-reference, and FAQ carry the same stale chain; the FAQ also explains
+  the obsolete ".bam.deduplicated infix" and links to the README table that
+  has since been reconciled.
+- [ ] `workflow/rules/align.smk` / `methylation.smk` / `common.smk` header
+  comments: still narrate the pre-reconciliation chain and "Phase D must
+  confirm" caveats in places.
+- [ ] `example/config.yaml` `merge_cpg` comment: references the old
+  `{sample}.CpG_merged.tsv.gz` name.
+- [ ] `srna-seq/CHANGELOG.md`: record the D2-window behavior changes
+  (multiqc `--filename` pin in `meta.smk`; R1/R2 trim artifact guard renames
+  in `upstream.smk`) per its own CONTRIBUTING rules.
+- [ ] `seclip-seq/workflow/environment.yaml` comment: references
+  `docs/env-validation.md`, which was never created (D1 deliverable
+  superseded by CHANGELOG records) — point the comment at the CHANGELOG.
