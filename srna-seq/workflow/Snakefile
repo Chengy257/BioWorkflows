@@ -1,0 +1,67 @@
+# =====================================================================
+# srna-seq — small-RNA sequencing workflow (plant / plant+microbiome).
+#
+# Trim Galore (SE) -> sequential bowtie1 cascade filter over ordered
+# sncRNA classes (rRNA -> snoRNA -> snRNA -> tRNA -> miRNA -> mRNA ->
+# optional exogenous classes; entries with an empty fasta are skipped)
+# -> genome alignment of the trimmed reads -> per-class count and RPM
+# matrices -> cascade read-fate summary + MultiQC.
+#
+# Recommended launcher (full options: run.sh --help):
+#   bash run.sh -P /path/to/workdir -c config.yaml --profile pbs
+# Direct Snakemake invocation also works:
+#   SRNA_CONFIG=/path/to/config.yaml snakemake -s workflow/Snakefile -j 10
+# =====================================================================
+import os
+
+BASE_DIR = os.path.dirname(workflow.basedir)   # Repository root
+WORKFLOW_DIR = workflow.basedir                # workflow/ directory
+
+# Species presets first; explicit top-level project config values win.
+configfile: os.path.join(BASE_DIR, "config", "species.yaml")
+
+# Per-rule scheduler resources (run.sh injects SRNA_RESOURCES_CONFIG when
+# the project directory carries its own copy).
+configfile: os.environ.get("SRNA_RESOURCES_CONFIG", os.path.join(BASE_DIR, "config", "resources.yaml"))
+
+# Project config when provided, otherwise the repository default.
+configfile: os.environ.get("SRNA_CONFIG", os.path.join(BASE_DIR, "config", "config.yaml"))
+
+# Optional last layer: config.local.yaml in the project directory.
+_EXTRA_CONFIG = os.environ.get("SRNA_EXTRA_CONFIG")
+if _EXTRA_CONFIG and os.path.exists(_EXTRA_CONFIG):
+    configfile: _EXTRA_CONFIG
+
+# Resolve species presets into the cascade entries: a project-config
+# entry with an empty fasta inherits the preset path for that class;
+# the genome fasta falls back the same way.
+SPECIES = config.get("species", "osa")
+if SPECIES not in ("osa", "none"):
+    raise ValueError(f"Unknown species '{SPECIES}'. Choose osa or none.")
+_preset = (config.get(SPECIES) or {}) if SPECIES != "none" else {}
+for _entry in config.get("cascade") or []:
+    _filled = (_preset.get("cascade") or {}).get(_entry.get("name"), "")
+    if not str(_entry.get("fasta") or "").strip() and _filled:
+        _entry["fasta"] = _filled
+if not str((config.get("genome") or {}).get("fasta") or "").strip() and _preset.get("genome"):
+    config["genome"] = dict(config.get("genome") or {}, fasta=_preset["genome"])
+
+# Shared definitions: sample-table parsing, config validation, cascade
+# helpers, and target aggregation. Included first by every rules/*.smk.
+include: os.path.join(WORKFLOW_DIR, "rules", "common.smk")
+
+# Restrict wildcards to declared samples and configured cascade classes.
+wildcard_constraints:
+    sample=SAMPLE_WILDCARD,
+    klass=KLASS_WILDCARD
+
+# Final targets.
+rule all:
+    input:
+        TARGETS
+
+# Rule modules.
+include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "cascade.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "quant.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

@@ -1,0 +1,5 @@
+title: "sRNA-seq QC Summary"
+subtitle: "Trim Galore / cascade read fate / FastQC"
+intro_text: "Whole-pipeline QC summary: trimming statistics come from Trim Galore, per-class read fate from the cascade summary, and read-quality profiles from FastQC."
+report_header_info:
+  - Workflow: "srna-seq (Snakemake)"

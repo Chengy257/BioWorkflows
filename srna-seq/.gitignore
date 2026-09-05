@@ -1,0 +1,43 @@
+# ---- Snakemake run metadata ----
+.snakemake/
+*.snakemake*
+
+# ---- Run outputs root (results_dir is configurable, default results) ----
+results/
+snakemake.logs.txt
+
+# ---- Numbered directories inside a project (legacy compatibility; used when the working directory is the project directory) ----
+logs/
+*.logs.txt
+0.index/
+1.rawdata/
+2.cleandata/
+3.align/
+4.expression/
+5.QC/
+temp.*
+
+# ---- example project local data and run outputs ----
+example/1.rawdata/
+example/results/
+example/snakemake.logs.txt
+
+# ---- local test artifacts (deterministic data is generated on the fly by tests/make_testdata.py) ----
+tests/data/
+tests/work/
+
+# ---- marker/temporary files ----
+*.flag
+flag.log
+*.tmp
+
+# ---- Python ----
+__pycache__/
+*.pyc
+
+# ---- editors / operating systems ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,29 @@
+# =====================================================================
+# Per-rule scheduler resources (threads / mem_mb / runtime_min).
+#
+# This is the single place to tune cluster requests -- copy it into your
+# project directory as resources.yaml to override (run.sh picks it up
+# automatically), or edit this file to change the repository defaults.
+# Analysis parameters stay in config.yaml; software environment in
+# software.yaml.
+#
+#   threads      CPU cores requested per job
+#   mem_mb       memory requested per job (MB)
+#   runtime_min  walltime requested per job (minutes; runtime_sec for SGE
+#                h_rt is derived automatically)
+#
+# The legacy top-level "threads" value in config.yaml still acts as a
+# global cap on every rule's threads.
+# =====================================================================
+
+resources:
+  software_versions:  {threads: 1, mem_mb: 1024, runtime_min: 10}
+  trim:               {threads: 4, mem_mb: 4096, runtime_min: 60}
+  fastqc:             {threads: 2, mem_mb: 2048, runtime_min: 30}   # via trim_galore --fastqc
+  multiqc:            {threads: 2, mem_mb: 4096, runtime_min: 30}
+  bowtie_index:       {threads: 8, mem_mb: 8192, runtime_min: 120}
+  cascade_stage:      {threads: 4, mem_mb: 8192, runtime_min: 120}
+  genome_align:       {threads: 8, mem_mb: 8192, runtime_min: 180}
+  count_stage:        {threads: 1, mem_mb: 2048, runtime_min: 30}
+  merge_counts:       {threads: 1, mem_mb: 4096, runtime_min: 30}
+  cascade_summary:    {threads: 1, mem_mb: 2048, runtime_min: 30}

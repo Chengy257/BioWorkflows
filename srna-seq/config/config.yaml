@@ -1,0 +1,72 @@
+## =====================================================================
+## srna-seq workflow main configuration (repository defaults)
+## Usage: copy this file into the project working directory, edit it, then run
+##   bash run.sh <project_dir> /path/to/config.yaml [jobs]
+##   (run.sh injects the configuration into workflow/Snakefile via the SRNA_CONFIG env var)
+## Within the repo this file doubles as the default configuration, used by --lint
+## and the in-repo examples;
+## reference paths not set here fall back to the current species' presets in config/species.yaml.
+## =====================================================================
+
+## ---- Outputs and samples ----
+results_dir: "results"          # run outputs root directory (relative to the working directory)
+SampleListFile: "config/samples.csv"   # sample table (single sample_id column; relative to the working directory)
+threads: 12                     # Legacy/default thread cap; explicit resources.<rule>.threads can override
+
+## ---- Per-rule scheduler resources ----
+# Scheduler requests (threads / mem_mb / runtime_min per rule) live in the
+# dedicated config/resources.yaml; copy it into the working directory as
+# resources.yaml to override (run.sh picks it up automatically).
+
+## ---- Species and reference resources ----
+## After choosing a species, reference keys not explicitly given here fall back to the
+## config/species.yaml presets; uncomment and fill in real paths to override (takes priority over species.yaml)
+species: "osa"                  # currently supported: osa
+# genome:
+#   fasta: "/path/to/reference/osa/genome.fa"
+# Individual cascade class fastas are overridden inline in the cascade list
+# below (an empty fasta falls back to the species preset; a class whose fasta
+# is still empty is skipped entirely).
+
+## ---- Adapter trimming (Trim Galore) ----
+trim:
+  quality: 25                   # 3' quality-trimming cutoff (-q)
+  min_len: 15                   # discard trimmed reads shorter than this (--length)
+  adapter: "AGATCGGAAGAGC"      # 3' adapter sequence (-a)
+  stringency: 3                 # adapter overlap required to trigger trimming (--stringency)
+  error_rate: 0.1               # fraction of mismatches allowed in an adapter match (-e)
+  extra: ""                     # extra trim_galore arguments appended verbatim
+
+## ---- sncRNA cascade filter (ordered; the filter runs top to bottom) ----
+## Reads are aligned against each class index in order; mapped reads are
+## assigned to that class and unmapped reads pass on to the next stage. An
+## entry whose fasta is empty (after the species-preset fallback) is skipped
+## entirely. Leave fasta empty to inherit the config/species.yaml preset.
+cascade:                        # ordered; the filter runs top to bottom; an entry
+  - name: rRNA                  # whose fasta is empty is skipped entirely
+    fasta: ""
+  - name: snoRNA
+    fasta: ""
+  - name: snRNA
+    fasta: ""
+  - name: tRNA
+    fasta: ""
+  - name: miRNA
+    fasta: ""
+  - name: mRNA                  # mRNA/cDNA references (e.g. from genome annotation)
+    fasta: ""
+  - name: rhizo                 # AM-fungus / other exogenous index; optional
+    fasta: ""
+
+## ---- Genome alignment ----
+## Final alignment of the TRIMMED reads (not the cascade remainder) against
+## the reference genome.
+genome:
+  fasta: ""                     # empty = fall back to the species preset; still empty = genome alignment is skipped
+
+## ---- bowtie1 alignment options ----
+bowtie:
+  extra: ""                     # extra bowtie1 args, e.g. "-v 1 --best --strata"
+
+## Software executables, Conda runtime, and large tool databases
+## are configured separately in config/software.yaml (or project software.yaml).

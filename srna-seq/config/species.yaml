@@ -1,0 +1,22 @@
+## =====================================================================
+## Species resource preset map (loaded by workflow/Snakefile)
+## The top-level species key selects one entry; resource keys only take
+## effect when the project configuration does not set them explicitly:
+## a preset cascade fasta fills a cascade entry whose fasta is empty, and
+## the preset genome fills genome.fasta when empty. Paths are placeholders;
+## override them with real cluster paths in the project configuration at
+## deployment time.
+## =====================================================================
+
+osa:
+  label: "Rice Oryza sativa (IRGSP-1.0; sncRNA classes from user references)"
+  cascade:
+    rRNA: "/path/to/reference/osa/rRNA.fa"
+    snoRNA: "/path/to/reference/osa/snoRNA.fa"
+    snRNA: "/path/to/reference/osa/snRNA.fa"
+    tRNA: "/path/to/reference/osa/tRNA.fa"
+    miRNA: "/path/to/reference/osa/miRNA.fa"
+    mRNA: "/path/to/reference/osa/mRNA.fa"
+    rhizo: "/path/to/reference/osa/Rhizo.fa"
+  genome:
+    fasta: "/path/to/reference/osa/genome.fa"

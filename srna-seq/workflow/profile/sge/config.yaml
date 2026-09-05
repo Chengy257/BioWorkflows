@@ -1,0 +1,8 @@
+# SGE execution profile for Snakemake >= 7.
+# Resource placeholders are populated from each rule declaration.
+cluster: "qsub -V -N {rule} -l ncpus={threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime_sec} -j oe"
+jobs: 20
+keep-going: true
+rerun-incomplete: true
+latency-wait: 60
+printshellcmds: true

@@ -1,0 +1,18 @@
+# Unified software/runtime configuration.
+# Copy this file to a project as software.yaml and override only what differs.
+
+environment:
+  type: system                  # system | conda
+  conda_prefix: ""              # preferred for HPC, e.g. /share/conda/envs/srna-seq
+  conda_name: ""                # alternative to conda_prefix
+  strict: true
+
+# Ordinary tools are resolved from the main environment/PATH automatically
+# (bowtie / bowtie-build / trim_galore / fastqc / multiqc / python3).
+# Add only overrides that differ from the environment.
+tools: {}
+
+# Paths that are not ordinary PATH executables.
+paths: {}
+
+databases: {}
