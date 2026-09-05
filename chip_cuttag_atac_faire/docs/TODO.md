@@ -21,3 +21,17 @@
   R 4.1.3 + 高版本 R 库 → `rlang.so: undefined symbol: EXTPTR_PROT`，peak_annotation 失败）。
 - **当前绕过**：项目 `bin/env.sh`（BASH_ENV 注入）把含 Rscript 包装脚本的 bin 目录放到 PATH 最前。
 - **待做**：规则改用 `tool("rscript")` 或 `${CHIP_RSCRIPT:-Rscript}`，与 rna-seq 的做法对齐。
+- **实测验证（2026-09-05）**：env.sh 绕过方案有效——R/ChIPseeker 正常加载、TxDb 构建成功、
+  3 个 narrowPeak 全部注释完成、plotAnnoBar/plotDistToTSS/plotAvgProf 均画出。仓库层根治仍待做。
+
+## 4. `annoPeak_batch.R` 的 `tagHeatmap()` 调用缺少必需参数 `xlim`
+
+- **现状**：`workflow/scripts/annoPeak_batch.R:59` 调用 `tagHeatmap(tagMatrixList)`。ChIPseeker 的
+  `tagHeatmap` 必需位置参数 `xlim` 无默认值 → `Error in peakHeatmap.internal2(...): argument
+  "xlim" is missing, with no default`，脚本在 PDF 最后一张图（TSS tag heatmap）处中止、退出码非零，
+  整个 `peak_annotation` 规则失败。enhancer_lncRNA_2026 实测复现（2026-09-05，作业 304546，
+  13:19–13:23，前三张图全部画出后仅在 tagHeatmap 一步报错，与环境无关的纯脚本 bug）。
+- **修复方案**：第 59 行改为 `tagHeatmap(tagMatrixList, xlim = c(-flank, flank))`，与第 58 行
+  `plotAvgProf(..., xlim = c(-flank, flank))` 保持一致（flank=3000，即 TSS ±3kb 窗口）。
+- **实施步骤**：改脚本 → 本地提交推送 → 服务器 `git pull` → chip 项目 dry-run（预期增量仅
+  `peak_annotation` 1 步，其余约 90 步产物全保留）→ 带 `BASH_ENV=<项目>/bin/env.sh` 前缀重新派发。
