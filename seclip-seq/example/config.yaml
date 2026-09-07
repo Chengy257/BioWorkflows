@@ -1,0 +1,72 @@
+## =====================================================================
+## seclip-seq example project configuration
+## Legacy human FBL-CLIP example (five FC replicates): a filled copy of
+## config/config.template.yaml. Copy it into the project working directory
+## as config.yaml (run.sh auto-detects it there) and replace the three
+## /path/to/ reference placeholders with real server paths.
+## Keys not listed here inherit the repo defaults from config/config.yaml.
+## =====================================================================
+
+## ---- Outputs and samples ----
+results_dir: "results"
+SampleListFile: "samples.csv"   # the example/samples.csv copy in the working directory
+threads: 24                     # legacy project ran with a 24-thread cap
+
+## ---- Species and reference resources ----
+species: "hsa"
+## Replace the placeholders below with the real cluster paths; the commented
+## values are the reference files used by the legacy FBL-CLIP project
+## (GRCh38.p14 / GENCODE v44 / sncRNA + Rfam repeats fasta).
+genome: "/path/to/reference/hsa/GRCh38.p14.genome.onlychr.fa"
+# genome: "/data/reference/hsa/GRCh38.p14.genome.onlychr.fa"
+gtf: "/path/to/reference/hsa/gencode.v44.annotation.gtf"
+# gtf: "/data/reference/hsa/gencode.v44.annotation.gtf"
+repeats_fa: "/path/to/reference/hsa/sncRNA_gencode_Rfam.fa"
+# repeats_fa: "/data/reference/hsa/sncRNA_gencode_Rfam.fa"
+
+## ---- Reads and UMI ----
+filter_repeats: true            # pre-filter sncRNA/repeats reads before genome alignment
+umi:
+  pattern: "NNNNNNNNNN"         # 10 random UMI bases at the start of each read
+
+## ---- Adapter trimming (two cutadapt passes; legacy defaults) ----
+cutadapt:
+  min_len: 18
+  quality_cutoff: 6
+  error_rate: 0.1
+  adapters:                     # 20 shifted 3' adapter variants (legacy set)
+    - AGATCGGAAGAGCAC
+    - GATCGGAAGAGCACA
+    - ATCGGAAGAGCACAC
+    - TCGGAAGAGCACACG
+    - CGGAAGAGCACACGT
+    - GGAAGAGCACACGTC
+    - GAAGAGCACACGTCT
+    - AAGAGCACACGTCTG
+    - AGAGCACACGTCTGA
+    - GAGCACACGTCTGAA
+    - AGCACACGTCTGAAC
+    - GCACACGTCTGAACT
+    - CACACGTCTGAACTC
+    - ACACGTCTGAACTCC
+    - CACGTCTGAACTCCA
+    - ACGTCTGAACTCCAG
+    - CGTCTGAACTCCAGT
+    - GTCTGAACTCCAGTC
+    - TCTGAACTCCAGTCA
+    - CTGAACTCCAGTCAC
+
+## ---- STAR index building and alignment (legacy defaults) ----
+star:
+  sjdb_overhang: 139            # read length minus one (139 = 140 bp reads)
+  genome_sa_index_nbases: 14    # correct for GRCh38; shrink for small genomes
+  repeats_sa_index_nbases: 12
+  repeats_limit_ram: 500000000000
+  filter_multimap_nmax: 30
+  align_multimap_nmax: 1        # unique reads only
+
+## ---- Peak calling ----
+callpeak:
+  pureclip: true
+  clipper: true                 # effective only with paths.clipper set in software.yaml
+  clipper_species: "GRCh38_v40"

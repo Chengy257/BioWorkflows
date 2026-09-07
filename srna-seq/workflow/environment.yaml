@@ -1,0 +1,16 @@
+# Optional all-in-one environment template for a new server.
+# This file is NOT created automatically by Snakemake.
+# Example: mamba env create -f workflow/environment.yaml
+name: srna-seq
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.10
+  - pyyaml
+  - snakemake-minimal=7.32.4
+  - bowtie=1.3.1
+  - trim-galore=0.6.10
+  - fastqc=0.11.9
+  - multiqc=1.21

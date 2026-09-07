@@ -1,0 +1,8 @@
+# PBS (Torque) execution profile, Snakemake >= 7 classic cluster interface.
+# Resource placeholders are filled from each rule's resources declaration.
+cluster: "qsub -V -N {rule} -l select=1:ncpus={threads}:mem={resources.mem_mb}mb -l walltime={resources.runtime_sec} -j oe"
+jobs: 20
+keep-going: true
+rerun-incomplete: true
+latency-wait: 90
+printshellcmds: true

@@ -1,0 +1,60 @@
+# =====================================================================
+# seclip-seq — single-end enhanced CLIP (eCLIP-style) workflow.
+#
+# UMI extraction -> two-pass adapter trimming -> fastq sort ->
+# (optional repeats/sncRNA pre-filter) -> unique genome alignment ->
+# UMI deduplication -> peak calling (PureCLIP; CLIPper when configured)
+# -> MultiQC.
+#
+# Recommended launcher (full options: run.sh --help):
+#   bash run.sh -P /path/to/workdir -c config.yaml --profile pbs
+# Direct Snakemake invocation also works:
+#   SECLIP_CONFIG=/path/to/config.yaml snakemake -s workflow/Snakefile -j 10
+# =====================================================================
+import os
+
+BASE_DIR = os.path.dirname(workflow.basedir)   # Repository root
+WORKFLOW_DIR = workflow.basedir                # workflow/ directory
+
+# Species presets first; explicit top-level project config values win.
+configfile: os.path.join(BASE_DIR, "config", "species.yaml")
+
+# Per-rule scheduler resources (run.sh injects SECLIP_RESOURCES_CONFIG when
+# the project directory carries its own copy).
+configfile: os.environ.get("SECLIP_RESOURCES_CONFIG", os.path.join(BASE_DIR, "config", "resources.yaml"))
+
+# Project config when provided, otherwise the repository default.
+configfile: os.environ.get("SECLIP_CONFIG", os.path.join(BASE_DIR, "config", "config.yaml"))
+
+# Optional last layer: config.local.yaml in the project directory.
+_EXTRA_CONFIG = os.environ.get("SECLIP_EXTRA_CONFIG")
+if _EXTRA_CONFIG and os.path.exists(_EXTRA_CONFIG):
+    configfile: _EXTRA_CONFIG
+
+# Resolve species presets (explicit top-level values win over the preset).
+SPECIES = config.get("species", "hsa")
+if SPECIES not in ("hsa",):
+    raise ValueError(f"Unknown species '{SPECIES}'. Choose hsa.")
+for _key, _value in (config.get(SPECIES) or {}).items():
+    if _key not in config:
+        config[_key] = _value
+
+# Shared definitions: sample-table parsing, config validation, helpers, and
+# target aggregation. Included first by every rules/*.smk consumer.
+include: os.path.join(WORKFLOW_DIR, "rules", "common.smk")
+
+# Restrict sample wildcards to ids declared in the sample table.
+wildcard_constraints:
+    sample=SAMPLE_WILDCARD
+
+# Final targets.
+rule all:
+    input:
+        TARGETS
+
+# Rule modules.
+include: os.path.join(WORKFLOW_DIR, "rules", "index.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "align.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

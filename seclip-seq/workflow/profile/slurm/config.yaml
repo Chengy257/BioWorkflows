@@ -1,0 +1,8 @@
+# SLURM execution profile for the Snakemake 7 classic cluster interface.
+# Resource placeholders are populated from each rule declaration.
+cluster: "sbatch --parsable -J {rule} -c {threads} --mem={resources.mem_mb}M --time={resources.runtime_min} -o slurm-{rule}-%j.out"
+jobs: 20
+keep-going: true
+rerun-incomplete: true
+latency-wait: 60
+printshellcmds: true

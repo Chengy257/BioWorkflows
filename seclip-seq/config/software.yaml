@@ -1,0 +1,20 @@
+# Unified software/runtime configuration.
+# Copy this file to a project as software.yaml and override only what differs.
+
+environment:
+  type: system                  # system | conda
+  conda_prefix: ""              # preferred for HPC, e.g. /share/conda/envs/seclip-seq
+  conda_name: ""                # alternative to conda_prefix
+  strict: true
+
+# Ordinary tools are resolved from the main environment/PATH automatically.
+# Add only overrides that differ from the environment.
+tools: {}
+
+# Paths that are not ordinary PATH executables.
+paths:
+  clipper: ""        # absolute path to an existing CLIPper install, e.g.
+                     # /home/chengyu/soft/miniconda3/envs/clipper/bin/clipper
+                     # empty = CLIPper peak calling is skipped (PureCLIP only)
+
+databases: {}
