@@ -121,7 +121,8 @@ def apply_species_presets(config, preset):
 apply_species_presets(config, _SPECIES_PRESET)
 
 
-SAMPLES = load_sample_table(_resolve_sample_table(config["SampleListFile"]))
+_SAMPLE_TABLE = _resolve_sample_table(config["SampleListFile"])
+SAMPLES = load_sample_table(_SAMPLE_TABLE)
 SAMPLE_WILDCARD = "(?:" + "|".join(re.escape(s) for s in SAMPLES) + ")"
 
 

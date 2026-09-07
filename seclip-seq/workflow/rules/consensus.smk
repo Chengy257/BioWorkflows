@@ -183,7 +183,7 @@ if REPRODUCIBLE_PEAKS_ENABLED:
                     tmpdir={resources.tmpdir}/consensus_raw_{wildcards.condition}
                     rm -rf "$tmpdir" && mkdir -p "$tmpdir"
                     for bed in {input.beds}; do
-                        sort -k1,1 -k2,2 "$bed" > "$tmpdir/$(basename "$bed").sorted"
+                        LC_COLLATE=C sort -k1,1 -k2,2n "$bed" > "$tmpdir/$(basename "$bed").sorted"
                     done
                     ## multiinter columns: chrom, start, end, nclust (number of input
                     ## files carrying the feature), then per-file membership lists.
@@ -221,7 +221,7 @@ if REPRODUCIBLE_PEAKS_ENABLED:
                     tmpdir={resources.tmpdir}/input_background_{wildcards.condition}
                     rm -rf "$tmpdir" && mkdir -p "$tmpdir"
                     for bed in {input.beds}; do
-                        sort -k1,1 -k2,2 "$bed" > "$tmpdir/$(basename "$bed").sorted"
+                        LC_COLLATE=C sort -k1,1 -k2,2n "$bed" > "$tmpdir/$(basename "$bed").sorted"
                     done
                     ## All multiinter rows have support >= 1, so the union
                     ## keeps every row (chrom, start, end, support).
@@ -313,7 +313,7 @@ if REPRODUCIBLE_PEAKS_ENABLED:
                     tmpdir={resources.tmpdir}/consensus_{wildcards.condition}
                     rm -rf "$tmpdir" && mkdir -p "$tmpdir"
                     for bed in {input.beds}; do
-                        sort -k1,1 -k2,2 "$bed" > "$tmpdir/$(basename "$bed").sorted"
+                        LC_COLLATE=C sort -k1,1 -k2,2n "$bed" > "$tmpdir/$(basename "$bed").sorted"
                     done
                     ## multiinter columns: chrom, start, end, nclust (number of input
                     ## files carrying the feature), then per-file membership lists.
@@ -348,7 +348,7 @@ if REPRODUCIBLE_PEAKS_ENABLED:
                 tmpdir={resources.tmpdir}/consensus_{wildcards.condition}
                 rm -rf "$tmpdir" && mkdir -p "$tmpdir"
                 for bed in {input.beds}; do
-                    sort -k1,1 -k2,2 "$bed" > "$tmpdir/$(basename "$bed").sorted"
+                    LC_COLLATE=C sort -k1,1 -k2,2n "$bed" > "$tmpdir/$(basename "$bed").sorted"
                 done
                 ## multiinter columns: chrom, start, end, nclust (number of input
                 ## files carrying the feature), then per-file membership lists.

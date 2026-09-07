@@ -371,7 +371,7 @@ reproducible_peaks:
   min_replicates: 2
 ```
 
-One `consensus_peaks` job runs per condition: the PureCLIP beds of that condition's ip-role samples are coordinate-sorted and merged with `bedtools multiinter`; sites present in >= `min_replicates` input beds are kept and the support count (how many replicates carry the site) is written to column 4 of `results/6.reproducible_peaks/{condition}.consensus.bed`. Parse-time validation errors out when the table has no `condition`/`role` columns, when `callpeak.pureclip` is off, or when a condition has fewer ip samples than `min_replicates` (the support threshold could never be reached).
+One `consensus_peaks` job runs per condition: the PureCLIP beds of that condition's ip-role samples are numerically coordinate-sorted (`LC_COLLATE=C sort -k1,1 -k2,2n`, the form bedtools multiinter requires) and merged with `bedtools multiinter`; sites present in >= `min_replicates` input beds are kept and the support count (how many replicates carry the site) is written to column 4 of `results/6.reproducible_peaks/{condition}.consensus.bed`. Parse-time validation errors out when the table has no `condition`/`role` columns, when `callpeak.pureclip` is off, or when a condition has fewer ip samples than `min_replicates` (the support threshold could never be reached).
 
 **Input controls** (`reproducible_peaks.input_control: true`, needs `enabled: true` and the `condition`/`role` columns; closes backlog item 3):
 

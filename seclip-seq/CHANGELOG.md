@@ -89,6 +89,11 @@ All notable changes to this project are documented in this file. Format based on
 - README results tables now document the PureCLIP output contract (the workflow's
   first written record of it): `results/5.callpeak/{sample}.pureclip.bed` is BED6 —
   chromosome, start, end, site name, crosslink-site score, strand.
+- Final-review fix: the four bedtools multiinter rules sort their input beds with
+  `LC_COLLATE=C sort -k1,1 -k2,2n` (numeric start, stable collation) — the same form
+  chip's `callpeak.smk` codified from a real 2026-09-05 deployment failure; the
+  lexicographic first draft mis-sorted starts past a 9999/10000 boundary and would
+  have corrupted the consensus support counts on real genomes.
 - Dry-run job-count baseline unchanged at **23 jobs** with both stages off (the new
   sections are optional in validation; the default test scenario keeps the generated
   single-column sample table). The `--consensus` scenario dry-run adds 5 jobs

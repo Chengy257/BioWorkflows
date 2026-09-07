@@ -26,7 +26,7 @@ if DMR_ENABLED:
                 R("5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz"),
                 sample=SAMPLES,
             ),
-            sampleinfo=config["SampleListFile"],
+            sampleinfo=_SAMPLE_TABLE,
         output:
             flag=R("6.DMR/flag.log"),
         log:
