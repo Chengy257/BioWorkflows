@@ -64,3 +64,26 @@
 - **Fix**: the call now passes `xlim = c(-flank, flank)`, consistent with the
   preceding `plotAvgProf(..., xlim = c(-flank, flank))` line (flank=3000, i.e.
   the TSS +/-3kb window).
+
+## 5. Migrate `runtime_config.py` onto the shared WorkflowSpec framework — DEFERRED
+
+- **Current state**: chip is the only workflow whose
+  `workflow/scripts/runtime_config.py` (278 lines, ported from rna-seq v0.8.0
+  before the shared-layer extraction) does not import
+  `shared/python/bioworkflows_runtime.py`; the other four workflows declare a
+  thin `WorkflowSpec` wrapper (43-95 lines). chip already consumes the other
+  two shared pieces (`bioworkflows_versions.py` via `collect_versions.py`,
+  `lib/launcher.sh` via `run.sh`).
+- **Why deferred**: the standalone file carries assay-specific surface — tool
+  tables for four assays, R version policy and `R_LIBS_USER` handling,
+  orgdb/annotation-database checks — so the migration is behavior-affecting
+  rather than mechanical. It needs its own validation window (the unit tests in
+  `tests/run_tests.py`, `--check-software` output parity, and a real-project
+  preflight), not a drive-by refactor.
+- **Scope sketch**: port the checks into `WorkflowSpec` (`default_tools`,
+  `pipeline_tools`, `r_packages`, `orgdb`, extra checks); keep every `CHIP_*`
+  exported key stable so `run.sh` and the rules keep working unchanged; verify
+  the `check --scope` semantics match the current preflight output.
+- **Reference**: the consumers matrix in `shared/README.md`; the root
+  `AGENTS.md`.
+
