@@ -30,10 +30,16 @@ tests/data/):
                                      (relative ref/ path, full repository key
                                      set)
 
-Samples: s1, s2.
+Samples: s1, s2. With --dmr the generator emits the differential-methylation
+scenario instead: four samples s1-s4 with a group design in samples.csv
+(s1/s2 = control, s3/s4 = treat; >= 2 replicates per group as the dmr design
+check demands) and a miniature config with dmr enabled -- everything else
+(assembly, reads, seed) unchanged. The default output is byte-identical to
+the plain scenario and stays the 20-job dry-run baseline.
 
 Usage:
     python3 make_testdata.py [--outdir tests/data] [--reads 3000] [--seed 42]
+                             [--dmr]
 """
 import argparse
 import gzip
@@ -53,6 +59,10 @@ TAIL_MIN = 2              # extra bases beyond the fixed 13-mer adapter core
 TAIL_MAX = 8
 SEED = 42
 SAMPLES = ["s1", "s2"]
+# --dmr scenario: 2x2 group design (s1/s2 control, s3/s4 treat).
+DMR_SAMPLES = ["s1", "s2", "s3", "s4"]
+DMR_CONTROL = ("s1", "s2")
+DMR_TREAT = ("s3", "s4")
 
 BASES = "ACGT"
 _REVCOMP = str.maketrans("ACGT", "TGCA")
@@ -80,6 +90,22 @@ methylation_extractor:
   merge_cpg: true
   buffer_frac: 4
 genome: "ref/genome.fa"
+"""
+
+# Appended to the miniature config by the --dmr scenario (the full dmr key
+# set at the shipped default values).
+DMR_CONFIG_BLOCK = """\
+dmr:
+  enabled: true
+  control_group: "control"
+  qvalue: 0.01
+  min_diff: 25
+  tile_len: 1000
+  tile_step: 100
+  min_cpg: 3
+  batch_correction: "F"
+  min_cov: 10
+  max_cov: 500
 """
 
 
@@ -155,11 +181,13 @@ def write_reference(outdir, chroms):
                 fh.write(seq[i:i + 60] + "\n")
 
 
-def write_fastqs(outdir, chroms, pairs_per_sample, rng):
+def write_fastqs(outdir, chroms, pairs_per_sample, rng, samples=None):
     """Draw the simulated PE reads for every sample from the shared stream."""
+    if samples is None:
+        samples = SAMPLES
     raw_dir = os.path.join(outdir, "1.rawdata")
     os.makedirs(raw_dir, exist_ok=True)
-    for sample in SAMPLES:
+    for sample in samples:
         fq1 = _gzip_text(os.path.join(raw_dir, "%s_1.fastq.gz" % sample))
         fq2 = _gzip_text(os.path.join(raw_dir, "%s_2.fastq.gz" % sample))
         try:
@@ -174,16 +202,24 @@ def write_fastqs(outdir, chroms, pairs_per_sample, rng):
             fq2.close()
 
 
-def write_samples(outdir):
+def write_samples(outdir, dmr=False):
+    """Write the sample table: single sample_id column by default; the --dmr
+    scenario carries the 2x2 group design (s1/s2 control, s3/s4 treat)."""
     with open(os.path.join(outdir, "samples.csv"), "w") as fh:
-        fh.write("sample_id\n")
-        for sample in SAMPLES:
-            fh.write(sample + "\n")
+        if dmr:
+            fh.write("sample_id,group\n")
+            for sample in DMR_SAMPLES:
+                group = "control" if sample in DMR_CONTROL else "treat"
+                fh.write("%s,%s\n" % (sample, group))
+        else:
+            fh.write("sample_id\n")
+            for sample in SAMPLES:
+                fh.write(sample + "\n")
 
 
-def write_config(outdir):
+def write_config(outdir, dmr=False):
     with open(os.path.join(outdir, "config.yaml"), "w") as fh:
-        fh.write(CONFIG_TEMPLATE)
+        fh.write(CONFIG_TEMPLATE + (DMR_CONFIG_BLOCK if dmr else ""))
 
 
 def main():
@@ -195,21 +231,32 @@ def main():
     ap.add_argument("--reads", type=int, default=3000,
                     help="PE read pairs per sample")
     ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--dmr", action="store_true",
+                    help="emit the differential-methylation scenario: 4 samples "
+                         "(s1/s2 control, s3/s4 treat) with a group column in "
+                         "samples.csv and dmr enabled in config.yaml")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
     rng = random.Random(args.seed)
     chroms = build_reference(rng)
     write_reference(args.outdir, chroms)
-    write_fastqs(args.outdir, chroms, args.reads, rng)
-    write_samples(args.outdir)
-    write_config(args.outdir)
+    if args.dmr:
+        write_fastqs(args.outdir, chroms, args.reads, rng, samples=DMR_SAMPLES)
+    else:
+        write_fastqs(args.outdir, chroms, args.reads, rng)
+    write_samples(args.outdir, dmr=args.dmr)
+    write_config(args.outdir, dmr=args.dmr)
 
     print("[make_testdata] chromosomes %d x %dbp, PE %dbp reads, fragments %d-%dbp"
           % (N_CHROM, CHROM_LEN, READ_LEN, MIN_FRAG, MAX_FRAG))
     print("[make_testdata] samples %s x %d PE pairs (1%% errors, %d%% with a 3' "
           "adapter tail)"
-          % (", ".join(SAMPLES), args.reads, round(ADAPTER_FRAC * 100)))
+          % (", ".join(DMR_SAMPLES if args.dmr else SAMPLES), args.reads,
+             round(ADAPTER_FRAC * 100)))
+    if args.dmr:
+        print("[make_testdata] dmr scenario: group design control=%s treat=%s"
+              % (",".join(DMR_CONTROL), ",".join(DMR_TREAT)))
     print("[make_testdata] output root: %s" % os.path.abspath(args.outdir))
 
 

@@ -1,5 +1,11 @@
+# Optional all-in-one environment template for a new server.
+# This file is NOT created automatically by Snakemake.
+# Example: mamba env create -f workflow/environment.yaml
 name: bs-seq
-channels: [conda-forge, bioconda, nodefaults]
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
 dependencies:
   - python=3.10
   - pyyaml
@@ -10,3 +16,9 @@ dependencies:
   - trim-galore=0.6.10
   - fastqc=0.11.9
   - multiqc=1.21
+  # R 4.3 series: base for the optional differential-methylation stage
+  # (methylKit, v0.2, default off; r-base 4.3 so the solver picks coherent
+  # Bioconductor builds, same reasoning as rna-seq).
+  - r-base=4.3
+  - bioconductor-methylkit
+  - r-getopt

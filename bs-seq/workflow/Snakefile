@@ -4,7 +4,9 @@
 # Trim Galore adapter/quality trimming (optional) -> bisulfite genome
 # preparation -> Bismark alignment (bowtie2 backend) ->
 # deduplicate_bismark -> bismark_methylation_extractor (+ optional
-# coverage2cytosine merge_CpG per sample) -> bismark2summary and MultiQC.
+# coverage2cytosine merge_CpG per sample) -> bismark2summary and MultiQC;
+# optional methylKit differential methylation over the merged CpG tables
+# (dmr.enabled, default off; rules/dmr.smk).
 #
 # Recommended launcher (full options: run.sh --help):
 #   bash run.sh -P /path/to/workdir -c config.yaml --profile pbs
@@ -65,4 +67,5 @@ include: os.path.join(WORKFLOW_DIR, "rules", "index.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "align.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "methylation.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "dmr.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

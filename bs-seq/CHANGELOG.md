@@ -2,6 +2,59 @@
 
 All notable changes to this project are documented in this file. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-09-08
+
+### Added
+
+- Differential-methylation stage (default off): optional `dmr:` config section
+  (`enabled` / `control_group` / `qvalue` / `min_diff` / `tile_len` /
+  `tile_step` / `min_cpg` / `batch_correction` / `min_cov` / `max_cov`) and a
+  parse-time-guarded `workflow/rules/dmr.smk` with a single wildcard-free
+  `dmr_methylkit` job (resources: 4 threads / 16000 MB / 240 min, overridable
+  via `resources.dmr`). It runs `workflow/scripts/run_dmr.R` (methylKit) over
+  every sample's merged CpG table
+  (`5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz`,
+  read via `pipeline="bismarkCoverage"`): per contrast `{treat}_vs_{control}`
+  one pairwise methylKit analysis produces
+  `6.DMR/{treat}_vs_{control}_DMC_{all,hyper,hypo}.tsv` and
+  `_DMR_tiles.tsv` (columns: chr, start, end, strand, meth.diff in percent
+  (treatment minus control), pvalue, SLIM qvalue) plus `6.DMR/DMR_summary.tsv`
+  and `sessionInfo.txt`; outputs stay inside `6.DMR/`.
+- Sample-table design columns: headers `sample_id`, `sample_id,group`, or
+  `sample_id,group,batch` (same name rules as `sample_id`, non-empty values);
+  `load_sample_table` still returns the ordered id list and fills
+  `SAMPLE_GROUPS` / `SAMPLE_BATCH` in the same parse. Design validation for
+  `dmr.enabled: true` (aggregated `WorkflowError`): group column required,
+  `control_group` present, every group >= 2 replicates (hard error — methylKit
+  cannot fit fewer), `batch_correction: "T"` requires the batch column, and
+  `methylation_extractor.merge_cpg` must be true.
+- R plumbing: `workflow/environment.yaml` gains `r-base=4.3`,
+  `bioconductor-methylkit`, `r-getopt`; `config/software.yaml` gains the `r:`
+  section (resolved `Rscript` exported as `BSSEQ_RSCRIPT`); `rules/common.smk`
+  gains `RSCRIPT = os.environ.get("BSSEQ_RSCRIPT", "Rscript")`.
+- Tests: `tests/make_testdata.py --dmr` emits the 2x2 differential-methylation
+  scenario (4 samples, s1/s2 control + s3/s4 treat, group column, dmr-enabled
+  miniature config; default output byte-identical to before);
+  `bash tests/run_test.sh --dmr` dry-runs it and asserts `dmr_methylkit` in
+  the DAG (35 jobs; default scenario stays 20 jobs and asserts the rule is
+  absent). `tests/test_common.py` grows to 93 tests: group/batch loader
+  coverage, dmr section validation, and design-validation pins.
+- Smoke-tested `run_dmr.R` end-to-end against methylKit 1.20.0 in WSL
+  (2x2 synthetic tables with low-/high-coverage artifact sites): 299 hypo
+  DMCs recovered as simulated, `filterByCoverage` bounds and the batch
+  covariate path (`-b T`) verified.
+
+### Changed
+
+- `workflow/environment.yaml` aligned to the standard all-in-one template
+  style (standard header comment + block-form `channels:`), keeping every
+  existing pin unchanged (per the repository guide this file was due its
+  style alignment on its next touch).
+- `config/config.yaml`, `config/config.template.yaml`, and
+  `example/config.yaml` carry the `dmr:` section (enabled: false);
+  `example/samples.csv` documents the optional `group` column (s1/s2
+  control; the two-sample example cannot enable dmr as shipped).
+
 ## [0.1.0] - 2026-09-05
 
 ### Changed (2026-09-05/06, WSL real-run reconciliation against bismark 0.24.0)

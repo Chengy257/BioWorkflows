@@ -41,10 +41,20 @@ naming table now declare the observed names:
 
 ## 2. Differential methylation / DMR
 
-- v0.1 stops at per-sample cytosine reports and merged CpG tables
-  (`results/5.methylation/`). Differential methylation between conditions
-  (methylKit/DSS-style DMR calling; needs a group/batch design in the sample
-  table) is out of scope for v0.1 and is the first v0.2 candidate.
+- [x] Done in v0.2.0 (2026-09-08, tool decision: methylKit). Optional
+  `dmr:` config section (default off) drives a single `dmr_methylkit` job
+  over the merged CpG tables into `results/6.DMR/`; the sample table gains
+  optional `group`/`batch` columns (header `sample_id,group[,batch]`), every
+  contrast is treat-vs-`control_group`, and every group needs >= 2
+  replicates (parse-time hard error). R plumbing: `r:` section in
+  `config/software.yaml`, `BSSEQ_RSCRIPT`, and the R stack in
+  `workflow/environment.yaml`. Tested by `bash tests/run_test.sh --dmr`
+  (4-sample 2x2 scenario; default scenario unchanged at 20 jobs). See
+  docs/user-guide.md §3/§4.2/§7 and CHANGELOG.md.
+
+(moved from the v0.1 backlog: "differential methylation between conditions
+(methylKit/DSS-style DMR calling; needs a group/batch design in the sample
+table) is out of scope for v0.1 and is the first v0.2 candidate")
 
 ## 3. Unit-test suite
 

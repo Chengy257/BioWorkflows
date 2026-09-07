@@ -28,16 +28,37 @@ def _resolve_sample_table(path):
     return os.path.join(BASE_DIR, p)
 
 
+# Optional design columns for the differential-methylation stage (v0.2):
+# exactly one of these headers is accepted.
+_SAMPLE_TABLE_HEADERS = (
+    ["sample_id"],
+    ["sample_id", "group"],
+    ["sample_id", "group", "batch"],
+)
+
+# Design columns captured by load_sample_table ({sample_id: value or None};
+# None where the column is absent from the table). Filled by the same parse
+# that produces SAMPLES below; consumed by validate_dmr_design and
+# rules/dmr.smk.
+SAMPLE_GROUPS = {}
+SAMPLE_BATCH = {}
+
+
 def load_sample_table(path):
-    """Parse the single-column sample table (header must be exactly
-    sample_id); returns the ordered list of unique sample ids."""
+    """Parse the sample table (header exactly one of 'sample_id',
+    'sample_id,group', 'sample_id,group,batch'); returns the ordered list of
+    unique sample ids. The optional group/batch columns follow the same name
+    rules as sample_id and are captured in the module-level SAMPLE_GROUPS /
+    SAMPLE_BATCH dicts by the same parse."""
     samples = []
+    groups, batches = {}, {}
     with open(path, newline="") as fh:
         reader = csv.DictReader(fh)
-        if reader.fieldnames != ["sample_id"]:
+        if reader.fieldnames not in _SAMPLE_TABLE_HEADERS:
             raise WorkflowError(
-                f"Sample table {path} must have exactly one column with header "
-                f"'sample_id' (got {reader.fieldnames}); see config/samples.csv"
+                f"Sample table {path} header must be 'sample_id', 'sample_id,group' "
+                f"or 'sample_id,group,batch' (got {reader.fieldnames}); "
+                "see config/samples.csv"
             )
         for lineno, row in enumerate(reader, start=2):
             sid = (row["sample_id"] or "").strip()
@@ -52,8 +73,29 @@ def load_sample_table(path):
             if sid in samples:
                 raise WorkflowError(f"Sample table line {lineno}: duplicate sample_id {sid!r}")
             samples.append(sid)
+            for column, values in (("group", groups), ("batch", batches)):
+                if column not in reader.fieldnames:
+                    values[sid] = None
+                    continue
+                value = (row.get(column) or "").strip()
+                if not value:
+                    raise WorkflowError(
+                        f"Sample table line {lineno}: {column} must not be empty "
+                        f"(sample {sid!r}; leave the column out entirely when unused)"
+                    )
+                if not _NAME_RE.match(value) or "__" in value:
+                    raise WorkflowError(
+                        f"Sample table line {lineno}: {column}={value!r} contains illegal "
+                        "characters; only alphanumerics and . _ - are allowed "
+                        "(no leading '-', no '__')"
+                    )
+                values[sid] = value
     if not samples:
         raise WorkflowError(f"Sample table {path} has no data rows")
+    SAMPLE_GROUPS.clear()
+    SAMPLE_GROUPS.update(groups)
+    SAMPLE_BATCH.clear()
+    SAMPLE_BATCH.update(batches)
     return samples
 
 
@@ -148,6 +190,40 @@ def validate_config(cfg):
                     errors.append(f"resources.{rule}.{field}: unknown field (supported: threads/mem_mb/runtime_min)")
                 elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
                     errors.append(f"resources.{rule}.{field} must be an integer >= 1, got {value!r}")
+    # Differential methylation (v0.2): the section is optional (an absent key
+    # keeps the stage disabled for pre-v0.2 project configs); when present it
+    # is validated as a whole.
+    dmr = cfg.get("dmr")
+    if dmr is not None:
+        if not isinstance(dmr, dict):
+            errors.append(f"dmr must be a mapping with sub-keys, got {dmr!r}")
+        else:
+            if not isinstance(dmr.get("enabled"), bool):
+                errors.append(f"dmr.enabled must be true/false, got {dmr.get('enabled')!r}")
+            v = dmr.get("control_group")
+            if not isinstance(v, str) or not v.strip():
+                errors.append(f"dmr.control_group must be a non-empty string, got {v!r}")
+            v = dmr.get("qvalue")
+            try:
+                if not 0 < float(v) <= 1:
+                    errors.append(f"dmr.qvalue must be in (0, 1], got {v!r}")
+            except (TypeError, ValueError):
+                errors.append(f"dmr.qvalue must be numeric in (0, 1], got {v!r}")
+            v = dmr.get("min_diff")
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 100:
+                errors.append(f"dmr.min_diff must be a number in [0, 100], got {v!r}")
+            for key in ("tile_len", "tile_step", "min_cpg", "min_cov", "max_cov"):
+                v = dmr.get(key)
+                if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+                    errors.append(f"dmr.{key} must be an integer >= 1, got {v!r}")
+            if (isinstance(dmr.get("tile_len"), int) and not isinstance(dmr.get("tile_len"), bool)
+                    and isinstance(dmr.get("tile_step"), int) and not isinstance(dmr.get("tile_step"), bool)
+                    and dmr["tile_step"] > dmr["tile_len"]):
+                errors.append(
+                    f"dmr.tile_step must be <= dmr.tile_len, got {dmr['tile_step']} > {dmr['tile_len']}"
+                )
+            if dmr.get("batch_correction") not in ("T", "F"):
+                errors.append(f"dmr.batch_correction must be 'T' or 'F', got {dmr.get('batch_correction')!r}")
     if errors:
         raise WorkflowError(
             f"config validation failed ({len(errors)} issues):\n  " + "\n  ".join(errors)
@@ -158,7 +234,71 @@ def validate_config(cfg):
         print(f"[config warning] {w}")
 
 
+def validate_dmr_design(cfg, groups, batches):
+    """Parse-time design validation for dmr.enabled: true (aggregated
+    WorkflowError style, mirrors validate_config). methylKit contrasts every
+    non-control group against dmr.control_group; every group needs >= 2
+    replicates (a hard error: methylKit's logistic model cannot fit a single
+    replicate), the batch covariate needs a batch column, and the merged CpG
+    tables (methylation_extractor.merge_cpg) are the stage's input."""
+    dmr = cfg.get("dmr") or {}
+    errors = []
+    group_values = [v for v in groups.values() if v is not None]
+    if not group_values:
+        errors.append(
+            "dmr.enabled requires a 'group' column in the sample table "
+            "(header 'sample_id,group' or 'sample_id,group,batch')"
+        )
+    else:
+        control = dmr.get("control_group")
+        if control not in set(group_values):
+            errors.append(
+                f"dmr.control_group={control!r} is not a group in the sample table "
+                f"(found: {sorted(set(group_values))})"
+            )
+        counts = {}
+        for value in group_values:
+            counts[value] = counts.get(value, 0) + 1
+        lonely = sorted(name for name, n in counts.items() if n < 2)
+        if lonely:
+            errors.append(
+                "every group needs >= 2 replicates for methylKit "
+                f"(groups with a single replicate: {lonely})"
+            )
+        if not any(name != control for name in counts):
+            errors.append(
+                "no non-control group found: dmr contrasts need at least one "
+                f"group other than control_group={control!r}"
+            )
+    if dmr.get("batch_correction") == "T" and not any(v is not None for v in batches.values()):
+        errors.append(
+            "dmr.batch_correction='T' requires a 'batch' column in the sample table "
+            "(header 'sample_id,group,batch')"
+        )
+    mex = cfg.get("methylation_extractor") or {}
+    if mex.get("merge_cpg") is not True:
+        errors.append(
+            "dmr consumes the merged CpG tables: set methylation_extractor.merge_cpg: true"
+        )
+    if errors:
+        raise WorkflowError(
+            f"dmr design validation failed ({len(errors)} issues):\n  " + "\n  ".join(errors)
+        )
+
+
 validate_config(config)
+
+# Differential methylation (v0.2, default off): when enabled, the sample-table
+# design is validated here and rules/dmr.smk (included by the Snakefile)
+# defines the single dmr_methylkit job over the merged CpG tables.
+DMR_ENABLED = bool((config.get("dmr") or {}).get("enabled", False))
+if DMR_ENABLED:
+    validate_dmr_design(config, SAMPLE_GROUPS, SAMPLE_BATCH)
+
+# R executable for the optional DMR stage: run.sh resolves BSSEQ_RSCRIPT from
+# config/software.yaml (r: section) and exports it; bare "Rscript" is the
+# same fallback the runtime framework uses.
+RSCRIPT = os.environ.get("BSSEQ_RSCRIPT", "Rscript")
 
 TRIM_ENABLED = bool(config["trim"]["enabled"])
 
@@ -263,6 +403,7 @@ RESOURCE_DEFAULTS = {
     "coverage2cytosine": {"threads": 4, "mem_mb": 16000, "runtime_min": 720},
     "bismark2report": {"threads": 1, "mem_mb": 4096, "runtime_min": 30},
     "bismark2summary": {"threads": 1, "mem_mb": 4096, "runtime_min": 30},
+    "dmr": {"threads": 4, "mem_mb": 16000, "runtime_min": 240},
 }
 
 
@@ -321,3 +462,5 @@ TARGETS += [expand(R("5.methylation/{sample}/{sample}.deduplicated.bismark.cov.g
 TARGETS += [expand(R("5.methylation/{sample}/{sample}.html"), sample=SAMPLES)]
 if config["methylation_extractor"]["merge_cpg"]:
     TARGETS += [expand(R("5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz"), sample=SAMPLES)]
+if DMR_ENABLED:
+    TARGETS += [R("6.DMR/flag.log")]

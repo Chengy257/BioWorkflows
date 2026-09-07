@@ -9,6 +9,10 @@ tests/run_tests.py) with a signature-compatible WorkflowError stand-in,
 and sanity-check the two thin shared-layer wrappers in workflow/scripts
 through their own __file__-relative shared-path resolution.
 
+Since v0.2 the sample table accepts optional group/batch design columns
+(consumed by the differential-methylation stage) and the dmr config section
+plus its design validation are pinned here too.
+
 Run: python -m pytest tests -q   (no snakemake involvement anywhere;
 the suite is independent of the working directory).
 """
@@ -50,15 +54,16 @@ def _segment(src, start_marker, end_markers):
 
 _COMMON_SRC = COMMON_SMK.read_text(encoding="utf-8")
 
-# _NAME_RE + _resolve_sample_table + load_sample_table (+ the pure
-# apply_species_presets def); the module-level merge call and the SAMPLES
-# statement are excluded.
+# _NAME_RE + the accepted-header table + _resolve_sample_table +
+# load_sample_table (+ the pure apply_species_presets def); the module-level
+# merge call and the SAMPLES statement are excluded.
 _BLOCK_TABLE = _segment(
     _COMMON_SRC,
     "_NAME_RE = re.compile",
     ["\napply_species_presets(config", "\nSAMPLES = load_sample_table"],
 )
-# validate_config def only (module-level validate_config(config) excluded).
+# validate_config + validate_dmr_design defs only (the module-level
+# validate_config(config) call is excluded).
 _BLOCK_VALIDATE = _segment(
     _COMMON_SRC,
     "def validate_config(",
@@ -88,7 +93,9 @@ _NS_TABLE = _exec_block(_BLOCK_TABLE)
 load_sample_table = _NS_TABLE["load_sample_table"]
 _resolve_sample_table = _NS_TABLE["_resolve_sample_table"]
 apply_species_presets = _exec_block(_BLOCK_PRESETS)["apply_species_presets"]
-validate_config = _exec_block(_BLOCK_VALIDATE)["validate_config"]
+_NS_VALIDATE = _exec_block(_BLOCK_VALIDATE)
+validate_config = _NS_VALIDATE["validate_config"]
+validate_dmr_design = _NS_VALIDATE["validate_dmr_design"]
 
 
 def _write_table(path, rows):
@@ -116,13 +123,17 @@ def test_synthetic_table_keeps_order_and_accepts_legal_characters(tmp_path):
 
 
 def test_bad_header_rejected(tmp_path):
-    variants = ([["sample"], ["s1"]], [HEADER + ["extra"], ["s1", "x"]])
+    variants = (
+        [["sample"], ["s1"]],
+        [HEADER + ["extra"], ["s1", "x"]],
+        [HEADER + ["batch"], ["s1", "b1"]],  # batch without group
+    )
     for rows in variants:
         path = _write_table(tmp_path / "samples.csv", rows)
         with pytest.raises(WorkflowError) as excinfo:
             load_sample_table(path)
         msg = str(excinfo.value)
-        assert "must have exactly one column" in msg
+        assert "header must be 'sample_id', 'sample_id,group' or 'sample_id,group,batch'" in msg
         assert "'sample_id'" in msg
 
 
@@ -165,6 +176,98 @@ def test_header_only_table_rejected(tmp_path):
 
 
 # ---------------------------------------------------------------------
+# Sample-table design columns (group/batch, v0.2 differential methylation)
+# ---------------------------------------------------------------------
+def _loaded_dicts(path):
+    """Call the real loader and return the module-level design dicts it
+    fills (same parse as the returned id list)."""
+    ids = load_sample_table(path)
+    return ids, dict(_NS_TABLE["SAMPLE_GROUPS"]), dict(_NS_TABLE["SAMPLE_BATCH"])
+
+
+def test_single_column_fills_design_dicts_with_none(tmp_path):
+    path = _write_table(tmp_path / "samples.csv", [HEADER, ["s1"], ["s2"]])
+    ids, groups, batches = _loaded_dicts(path)
+    assert ids == ["s1", "s2"]
+    assert groups == {"s1": None, "s2": None}
+    assert batches == {"s1": None, "s2": None}
+
+
+def test_group_column_parses_into_groups_dict(tmp_path):
+    path = _write_table(
+        tmp_path / "samples.csv",
+        [HEADER + ["group"], ["s1", "control"], ["s2", "control"], ["t1", "heat"]],
+    )
+    ids, groups, batches = _loaded_dicts(path)
+    assert ids == ["s1", "s2", "t1"]
+    assert groups == {"s1": "control", "s2": "control", "t1": "heat"}
+    assert batches == {"s1": None, "s2": None, "t1": None}
+
+
+def test_group_and_batch_columns_parse(tmp_path):
+    path = _write_table(
+        tmp_path / "samples.csv",
+        [
+            HEADER + ["group", "batch"],
+            ["s1", "control", "b1"],
+            ["s2", "control", "b2"],
+            ["t1", "heat", "b1"],
+        ],
+    )
+    ids, groups, batches = _loaded_dicts(path)
+    assert ids == ["s1", "s2", "t1"]
+    assert groups == {"s1": "control", "s2": "control", "t1": "heat"}
+    assert batches == {"s1": "b1", "s2": "b2", "t1": "b1"}
+
+
+@pytest.mark.parametrize("bad", ["a b", "-lead", "a__b", "x/y"])
+def test_illegal_group_value_rejected(tmp_path, bad):
+    path = _write_table(tmp_path / "samples.csv", [HEADER + ["group"], ["s1", "control"], ["s2", bad]])
+    with pytest.raises(WorkflowError) as excinfo:
+        load_sample_table(path)
+    msg = str(excinfo.value)
+    assert "group" in msg and "illegal characters" in msg
+
+
+def test_illegal_batch_value_rejected(tmp_path):
+    path = _write_table(
+        tmp_path / "samples.csv",
+        [HEADER + ["group", "batch"], ["s1", "control", "b1"], ["s2", "control", "a__b"]],
+    )
+    with pytest.raises(WorkflowError) as excinfo:
+        load_sample_table(path)
+    msg = str(excinfo.value)
+    assert "batch" in msg and "illegal characters" in msg
+
+
+def test_empty_group_value_rejected(tmp_path):
+    path = _write_table(tmp_path / "samples.csv", [HEADER + ["group"], ["s1", "control"], ["s2", ""]])
+    with pytest.raises(WorkflowError) as excinfo:
+        load_sample_table(path)
+    msg = str(excinfo.value)
+    assert "line 3" in msg and "group must not be empty" in msg and "'s2'" in msg
+
+
+def test_empty_batch_value_rejected(tmp_path):
+    path = _write_table(
+        tmp_path / "samples.csv",
+        [HEADER + ["group", "batch"], ["s1", "control", ""]],
+    )
+    with pytest.raises(WorkflowError) as excinfo:
+        load_sample_table(path)
+    msg = str(excinfo.value)
+    assert "line 2" in msg and "batch must not be empty" in msg
+
+
+def test_short_row_missing_batch_rejected(tmp_path):
+    # A row with fewer fields than the header reads as an empty trailing cell.
+    path = _write_table(tmp_path / "samples.csv", [HEADER + ["group", "batch"], ["s1", "control"]])
+    with pytest.raises(WorkflowError) as excinfo:
+        load_sample_table(path)
+    assert "batch must not be empty" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------
 # _resolve_sample_table (absolute > cwd-relative > BASE_DIR-relative)
 # ---------------------------------------------------------------------
 def test_resolve_absolute_path_unchanged(tmp_path):
@@ -192,6 +295,19 @@ def test_resolve_missing_relative_path_falls_back_to_base_dir(tmp_path, monkeypa
 # ---------------------------------------------------------------------
 GOOD_GENOME = "/reference/Oryza_sativa.IRGSP-1.0.dna.genome.fa"
 
+DMR_OFF = {
+    "enabled": False,
+    "control_group": "control",
+    "qvalue": 0.01,
+    "min_diff": 25,
+    "tile_len": 1000,
+    "tile_step": 100,
+    "min_cpg": 3,
+    "batch_correction": "F",
+    "min_cov": 10,
+    "max_cov": 500,
+}
+
 GOOD_CFG = {
     "SampleListFile": "config/samples.csv",
     "results_dir": "results",
@@ -209,6 +325,7 @@ GOOD_CFG = {
     },
     "bismark": {"align_extra": "--phred33-quals"},
     "methylation_extractor": {"cx_report": False, "merge_cpg": True, "buffer_frac": 4},
+    "dmr": dict(DMR_OFF),
 }
 
 
@@ -357,6 +474,159 @@ def test_resources_valid_override_accepted(capsys):
 
 
 # ---------------------------------------------------------------------
+# dmr config section (v0.2, default off)
+# ---------------------------------------------------------------------
+def test_dmr_defaults_pass_silently(capsys):
+    validate_config(_cfg_copy())  # GOOD_CFG ships the full dmr: defaults
+    assert capsys.readouterr().out == ""
+
+
+def test_dmr_absent_section_still_validates(capsys):
+    """Pre-v0.2 project configs carry no dmr key: absent stays legal (and
+    means disabled)."""
+    cfg = _cfg_copy()
+    del cfg["dmr"]
+    validate_config(cfg)
+    assert capsys.readouterr().out == ""
+
+
+def test_dmr_non_mapping_rejected():
+    cfg = _cfg_copy()
+    cfg["dmr"] = True
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_config(cfg)
+    assert "dmr must be a mapping with sub-keys" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "key,bad,needle",
+    [
+        ("enabled", "yes", "dmr.enabled must be true/false"),
+        ("control_group", "", "dmr.control_group must be a non-empty string"),
+        ("qvalue", 0, "dmr.qvalue must be"),
+        ("qvalue", 1.5, "dmr.qvalue must be"),
+        ("min_diff", -1, "dmr.min_diff must be a number in [0, 100]"),
+        ("min_diff", 101, "dmr.min_diff must be a number in [0, 100]"),
+        ("tile_len", 0, "dmr.tile_len must be an integer >= 1"),
+        ("tile_step", True, "dmr.tile_step must be an integer >= 1"),
+        ("min_cpg", "3", "dmr.min_cpg must be an integer >= 1"),
+        ("min_cov", 0, "dmr.min_cov must be an integer >= 1"),
+        ("max_cov", 1.5, "dmr.max_cov must be an integer >= 1"),
+        ("batch_correction", "X", "dmr.batch_correction must be 'T' or 'F'"),
+    ],
+)
+def test_dmr_bad_value_rejected(key, bad, needle):
+    cfg = _cfg_copy()
+    cfg["dmr"][key] = bad
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_config(cfg)
+    assert needle in str(excinfo.value)
+
+
+def test_dmr_tile_step_above_tile_len_rejected():
+    cfg = _cfg_copy()
+    cfg["dmr"]["tile_step"] = 2000
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_config(cfg)
+    assert "dmr.tile_step must be <= dmr.tile_len" in str(excinfo.value)
+
+
+def test_dmr_partial_section_aggregates_all_missing_keys():
+    cfg = _cfg_copy()
+    cfg["dmr"] = {"enabled": False}
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_config(cfg)
+    msg = str(excinfo.value)
+    # every sub-key except enabled is reported in the single aggregated error
+    assert "config validation failed (9 issues)" in msg
+    for key in ("control_group", "qvalue", "min_diff", "tile_len", "tile_step",
+                "min_cpg", "min_cov", "max_cov", "batch_correction"):
+        assert f"dmr.{key} " in msg
+
+
+# ---------------------------------------------------------------------
+# dmr design validation (sample-table group/batch vs the dmr section)
+# ---------------------------------------------------------------------
+GROUPS_2X2 = {"s1": "control", "s2": "control", "t1": "heat", "t2": "heat"}
+BATCH_2X2 = {"s1": "b1", "s2": "b2", "t1": "b1", "t2": "b2"}
+
+
+def _design_cfg(**over):
+    cfg = _cfg_copy()
+    cfg["dmr"] = {**DMR_OFF, "enabled": True, **over}
+    return cfg
+
+
+def test_dmr_design_valid_2x2_passes():
+    validate_dmr_design(_design_cfg(), GROUPS_2X2, BATCH_2X2)  # must NOT raise
+
+
+def test_dmr_design_requires_group_column():
+    single = {sid: None for sid in ("s1", "s2", "t1", "t2")}
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_dmr_design(_design_cfg(), single, single)
+    msg = str(excinfo.value)
+    assert "requires a 'group' column" in msg
+    assert "dmr design validation failed (1 issues)" in msg
+
+
+def test_dmr_design_missing_control_group():
+    groups = {"s1": "wt", "s2": "wt", "t1": "heat", "t2": "heat"}
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_dmr_design(_design_cfg(), groups, {k: None for k in groups})
+    assert "dmr.control_group='control' is not a group in the sample table" in str(excinfo.value)
+
+
+def test_dmr_design_replicates_are_a_hard_error():
+    groups = {"s1": "control", "t1": "heat", "t2": "heat"}
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_dmr_design(_design_cfg(), groups, {k: None for k in groups})
+    msg = str(excinfo.value)
+    assert "every group needs >= 2 replicates for methylKit" in msg
+    assert "'control'" in msg  # the lonely group is named
+
+
+def test_dmr_design_no_non_control_group():
+    groups = {"s1": "control", "s2": "control"}
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_dmr_design(_design_cfg(), groups, {k: None for k in groups})
+    assert "no non-control group found" in str(excinfo.value)
+
+
+def test_dmr_design_batch_correction_requires_batch_column():
+    no_batch = {k: None for k in GROUPS_2X2}
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_dmr_design(_design_cfg(batch_correction="T"), GROUPS_2X2, no_batch)
+    assert "dmr.batch_correction='T' requires a 'batch' column" in str(excinfo.value)
+
+
+def test_dmr_design_batch_correction_with_batch_column_passes():
+    validate_dmr_design(
+        _design_cfg(batch_correction="T"), GROUPS_2X2, BATCH_2X2
+    )  # must NOT raise
+
+
+def test_dmr_design_requires_merged_cpg_tables():
+    cfg = _design_cfg()
+    cfg["methylation_extractor"]["merge_cpg"] = False
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_dmr_design(cfg, GROUPS_2X2, BATCH_2X2)
+    assert "set methylation_extractor.merge_cpg: true" in str(excinfo.value)
+
+
+def test_dmr_design_aggregates_multiple_issues():
+    cfg = _design_cfg()
+    cfg["methylation_extractor"]["merge_cpg"] = False
+    single = {sid: None for sid in ("s1", "s2")}
+    with pytest.raises(WorkflowError) as excinfo:
+        validate_dmr_design(cfg, single, single)
+    msg = str(excinfo.value)
+    assert "dmr design validation failed (2 issues)" in msg
+    assert "requires a 'group' column" in msg
+    assert "set methylation_extractor.merge_cpg: true" in msg
+
+
+# ---------------------------------------------------------------------
 # apply_species_presets
 # ---------------------------------------------------------------------
 def test_preset_fills_only_unset_keys():
@@ -397,6 +667,32 @@ def test_species_merge_wiring_order_preserved():
     snakefile = (REPO / "workflow" / "Snakefile").read_text(encoding="utf-8")
     assert '_SPECIES_PRESET = config.get(SPECIES) or {}' in snakefile
     assert '"osa", "hsa", "none"' in snakefile  # allowlist preserved
+
+
+def test_dmr_wiring_preserved():
+    """v0.2 DMR wiring: the RSCRIPT env fallback, the resource defaults
+    entry, the TARGETS gating on DMR_ENABLED, and the dmr.smk include placed
+    after methylation.smk."""
+    assert 'RSCRIPT = os.environ.get("BSSEQ_RSCRIPT", "Rscript")' in _COMMON_SRC
+    assert '"dmr": {"threads": 4, "mem_mb": 16000, "runtime_min": 240}' in _COMMON_SRC
+    targets = _COMMON_SRC[_COMMON_SRC.index("TARGETS = ["):]
+    gate = targets.index("if DMR_ENABLED:")
+    assert targets.index('R("6.DMR/flag.log")') > gate  # only requested when enabled
+    snakefile = (REPO / "workflow" / "Snakefile").read_text(encoding="utf-8")
+    methylation_include = snakefile.index('"rules", "methylation.smk"')
+    dmr_include = snakefile.index('"rules", "dmr.smk"')
+    assert methylation_include < dmr_include
+
+
+def test_dmr_rule_gated_on_dmr_enabled():
+    """The dmr module must define its rule inside a parse-time guard so the
+    default (dmr disabled) DAG is unchanged."""
+    dmr_smk = (REPO / "workflow" / "rules" / "dmr.smk").read_text(encoding="utf-8")
+    guard = dmr_smk.index("if DMR_ENABLED:")
+    rule = dmr_smk.index("rule dmr_methylkit:")
+    assert 0 < guard < rule
+    assert dmr_smk.count("rule dmr_methylkit:") == 1
+    assert "configfile" not in dmr_smk  # no config side effects in the module
 
 
 # ---------------------------------------------------------------------
