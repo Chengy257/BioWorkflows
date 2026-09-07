@@ -164,7 +164,7 @@ FC_rep1,FBL,ip
 FC_rep2,FBL,ip
 ```
 
-`condition` groups replicates that measure the same target (the value becomes a file name, so it obeys the same naming rules as `sample_id`); `role` marks the channel and accepts exactly `ip` or `input`. Each `sample_id` must match the prefix of a FASTQ file in `1.rawdata/`. The grouping columns only take effect when `reproducible_peaks.enabled: true` (§5.5); a single-column table stays fully valid and the two v0.2 stages error out with a clear message if enabled without them.
+`condition` groups replicates that measure the same target (the value becomes a file name, so it obeys the same naming rules as `sample_id`); `role` marks the channel and accepts exactly `ip` or `input` — input controls pair with the ip replicates of their condition, and they join the peak-calling target set only when `reproducible_peaks.input_control: true` (§5.5; otherwise only the ip samples are peak-called once the consensus stage is enabled). Each `sample_id` must match the prefix of a FASTQ file in `1.rawdata/`. The grouping columns only take effect when `reproducible_peaks.enabled: true` (§5.5); a single-column table stays fully valid and the two v0.2 stages error out with a clear message if enabled without them.
 
 ### 3.1 Validation rules (at parse time, errors carry line numbers)
 
@@ -226,6 +226,8 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 | `callpeak.clipper_species` | string | `"GRCh38_v40"` | CLIPper `--species` value; must be non-empty when `callpeak.clipper: true` |
 | `reproducible_peaks.enabled` | bool | `false` | optional v0.2 stage (§5.5): build a per-condition consensus of the ip-role PureCLIP beds (`bedtools multiinter`); requires the `condition`/`role` sample-table columns and `callpeak.pureclip: true` |
 | `reproducible_peaks.min_replicates` | int >= 1 | `2` | a consensus site must be present in at least this many ip samples of the condition; every condition must actually have that many ip samples (parse-time error otherwise) |
+| `reproducible_peaks.input_control` | bool | `false` | with the consensus stage enabled: also peak-call the `role: input` samples and build a per-condition background union from their PureCLIP beds; the consensus of conditions with inputs gains the binary `in_input_background` flag column (§5.5) |
+| `reproducible_peaks.filter_by_input` | bool | `false` | requires `input_control: true`: additionally write `{condition}.consensus.filtered.bed` with the input-background-flagged sites removed and feed the filtered BED to the consensus annotation (§5.5) |
 | `annotate_peaks.enabled` | bool | `false` | optional v0.2 stage (§5.5): annotate every peak set (per-sample PureCLIP + consensus) with nearest gene, distance, and biotype from the configured `gtf`; requires `callpeak.pureclip: true` |
 | `resources` | mapping of rule -> {threads, mem_mb, runtime_min} | `{}` | per-rule scheduler-resource overrides, same shape as `config/resources.yaml` (§4.4) |
 
@@ -281,6 +283,9 @@ Built-in defaults per rule (identical to `config/resources.yaml` for the always-
 | `callpeak_clipper` | 4 | 16000 | 240 |
 | `callpeak_pureclip` | 8 | 16000 | 360 |
 | `consensus_peaks` (optional stage) | 1 | 2048 | 30 |
+| `input_background` (optional stage) | 1 | 2048 | 30 |
+| `flag_input_background` (optional stage) | 1 | 2048 | 30 |
+| `filter_input_background` (optional stage) | 1 | 2048 | 30 |
 | `gtf_gene_regions` (optional stage) | 1 | 4096 | 60 |
 | `annotate_peaks` (optional stage, both annotate rules) | 1 | 4096 | 60 |
 
@@ -366,7 +371,25 @@ reproducible_peaks:
   min_replicates: 2
 ```
 
-One `consensus_peaks` job runs per condition: the PureCLIP beds of that condition's ip-role samples are coordinate-sorted and merged with `bedtools multiinter`; sites present in >= `min_replicates` input beds are kept and the support count (how many replicates carry the site) is written to column 4 of `results/6.reproducible_peaks/{condition}.consensus.bed`. Parse-time validation errors out when the table has no `condition`/`role` columns, when `callpeak.pureclip` is off, or when a condition has fewer ip samples than `min_replicates` (the support threshold could never be reached). `role: input` samples are validated but currently participate in no rule — input-aware background subtraction is still backlog item 3.
+One `consensus_peaks` job runs per condition: the PureCLIP beds of that condition's ip-role samples are coordinate-sorted and merged with `bedtools multiinter`; sites present in >= `min_replicates` input beds are kept and the support count (how many replicates carry the site) is written to column 4 of `results/6.reproducible_peaks/{condition}.consensus.bed`. Parse-time validation errors out when the table has no `condition`/`role` columns, when `callpeak.pureclip` is off, or when a condition has fewer ip samples than `min_replicates` (the support threshold could never be reached).
+
+**Input controls** (`reproducible_peaks.input_control: true`, needs `enabled: true` and the `condition`/`role` columns; closes backlog item 3):
+
+```yaml
+reproducible_peaks:
+  enabled: true
+  min_replicates: 2
+  input_control: true       # peak-call the role=input samples too
+  filter_by_input: false    # optionally drop flagged consensus sites
+```
+
+The upstream chain never changes — trim/align/dedup always run for every declared sample — but the PureCLIP target set does: without `input_control` only the ip samples of each condition are peak-called, with `input_control` the role=input samples join as well. Their beds feed one `input_background` job per condition with inputs: a `bedtools multiinter` union (every row has support >= 1 by construction, so the whole union is kept; column 4 reports how many input controls cover a feature) written to `results/6.reproducible_peaks/{condition}.input_background.bed`.
+
+For every condition that declares input samples, the final consensus keeps the W7 columns 1-4 (chrom, start, end, support) and appends the binary `in_input_background` flag as column 5 (1 = the site overlaps the condition's input background, 0 = ip-specific). The background is **condition-scoped**: an input control only flags the consensus of the ip replicates declared under the same `condition`. Conditions without input samples keep the plain unflagged BED4 — byte-identical to the no-`input_control` output (parse-time warning when `input_control` is on). With `filter_by_input: true`, an additional `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` drops the flagged sites (BED4 again) and the annotation stage consumes the filtered BED for those conditions; without filtering it annotates the flagged BED5 and drops the flag column per its column contract (`score` stays the consensus support).
+
+Design rationale (recorded when backlog item 3 was closed): the background is condition-scoped because an input control only pairs meaningfully with the ip replicates of the same condition; the union uses the lowest possible threshold (support >= 1 — every interval ever seen in any input counts as background); and flagging is the default over filtering so both the annotated-with-flag view (all reproducible sites, background membership recorded) and the cleaned view (opt-in `filter_by_input`) remain available.
+
+Validation additions (parse-time, aggregated): `input_control` requires the `condition`/`role` columns and `reproducible_peaks.enabled: true` (a warning while the stage is off); `filter_by_input` requires `input_control`; a condition with input samples but no ip samples is a hard error (there is no ip consensus to build or flag); an ip condition without inputs only warns (the background is simply absent).
 
 **GTF-based peak annotation** (`annotate_peaks.enabled: true`): annotates every existing peak set — each per-sample PureCLIP bed plus each consensus bed. Requires `callpeak.pureclip: true` (it annotates PureCLIP output; CLIPper beds are not annotated).
 
@@ -401,7 +424,7 @@ annotate_peaks:
   enabled: true
 ```
 
-Dry-run first (`bash run.sh -P . -n`): the consensus and annotation rules appear in the DAG as `consensus_peaks`, `gtf_gene_regions`, `annotate_sample_peaks`, and `annotate_consensus_peaks`. Scheduler resources for the new rules default to 1 thread / 2048 MB / 30 min (`consensus_peaks`) and 1 / 4096 / 60 (GTF prep and annotation); override them per rule via a project `resources.yaml` (§4.4). The regression script exercises the whole scenario with synthetic data: `bash tests/run_test.sh --consensus`.
+Dry-run first (`bash run.sh -P . -n`): the consensus and annotation rules appear in the DAG as `consensus_peaks`, `gtf_gene_regions`, `annotate_sample_peaks`, and `annotate_consensus_peaks`; with `input_control` the raw consensus becomes the `consensus_peaks_raw` intermediate and `input_background`, `flag_input_background`, and (with `filter_by_input`) `filter_input_background` join the DAG. Scheduler resources for the new rules default to 1 thread / 2048 MB / 30 min (`consensus_peaks` and the three input-control rules) and 1 / 4096 / 60 (GTF prep and annotation); override them per rule via a project `resources.yaml` (§4.4). The regression script exercises both scenarios with synthetic data: `bash tests/run_test.sh --consensus` and `bash tests/run_test.sh --input-control`.
 
 ---
 
@@ -527,7 +550,10 @@ workdir/
     │   ├── {sample}_readnum.txt                # mapped-read count
     │   └── {sample}_stats/                     # umi_tools dedup statistics
     ├── 5.callpeak/             # {sample}.pureclip.bed, {sample}.clipper.peakClusters.bed
-    ├── 6.reproducible_peaks/   # optional: {condition}.consensus.bed (support in column 4)
+    ├── 6.reproducible_peaks/   # optional: {condition}.consensus.bed (support in column 4; with
+    │                           #   input_control conditions with inputs carry the in_input_background
+    │                           #   flag in column 5), plus {condition}.input_background.bed and
+    │                           #   {condition}.consensus.filtered.bed (filter_by_input)
     ├── 6.annotation/           # optional: {set}.annotation.tsv + _ref/ (genes.bed, exons.bed, genes.tsv)
     ├── 5.QC/
     │   ├── multiqc/multiqc_report.html
@@ -554,7 +580,9 @@ workdir/
 | read count | `results/4.rmdup/{sample}_readnum.txt` | mapped reads after dedup (one integer) |
 | PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` | crosslink sites, BED6 (chromosome, start, end, site name, crosslink-site score, strand) |
 | CLIPper peaks | `results/5.callpeak/{sample}.clipper.peakClusters.bed` | peak clusters (only with a configured CLIPper) |
-| Consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` | per-condition cross-sample consensus; BED4 with the replicate support count in column 4 (§5.5) |
+| Consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` | per-condition cross-sample consensus; BED4 with the replicate support count in column 4 (§5.5); with `input_control`, conditions with input samples carry the binary `in_input_background` flag in column 5 |
+| Input background (`reproducible_peaks.input_control`) | `results/6.reproducible_peaks/{condition}.input_background.bed` | union of the condition's input-control PureCLIP beds, BED4 (column 4 = number of inputs covering the feature) |
+| Filtered consensus (`reproducible_peaks.filter_by_input`) | `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` | consensus minus the input-background-flagged sites (BED4) |
 | Peak annotation (`annotate_peaks.enabled`) | `results/6.annotation/{set}.annotation.tsv` | nearest gene / distance / biotype per peak set, one row per peak (§5.5) |
 | Annotation reference | `results/6.annotation/_ref/` | GTF-derived `genes.bed` / `exons.bed` / `genes.tsv` behind the annotation |
 | QC report | `results/5.QC/multiqc/multiqc_report.html` | everything above in one HTML |
@@ -607,10 +635,11 @@ make lint                           # static suite (missing optional tools are s
 make unit                           # pytest suite for the annotation scripts
 bash tests/run_test.sh              # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
 bash tests/run_test.sh --consensus  # dry-run with the optional v0.2 stages enabled
+bash tests/run_test.sh --input-control  # dry-run with the input-control consensus scenario
 bash tests/run_test.sh --real-run   # end-to-end run + output assertions (needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 2 samples); the default dry-run DAG is 23 jobs (CI passes `--reads 2000`), and the `--consensus` scenario dry-runs 28 jobs. Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 2 samples; 4 with `--with-inputs`); the default dry-run DAG is 23 jobs (CI passes `--reads 2000`), the `--consensus` scenario dry-runs 28 jobs, and the `--input-control` scenario 45. Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
 
 **Q9: How do I get reproducible peaks across replicates, and what do the annotation columns mean?**
-Enable the two optional stages (§5.5): extend the sample table to `sample_id,condition,role` (§3), then set `reproducible_peaks.enabled: true` (with `min_replicates`) and `annotate_peaks.enabled: true` in the project config. Each condition gets `results/6.reproducible_peaks/{condition}.consensus.bed` (BED4, column 4 = number of replicates carrying the site) and every peak set gets `results/6.annotation/{set}.annotation.tsv` (`feature_class` = exon/gene/intergenic, `distance` = signed distance to the nearest gene with 0 = overlapping). Both stages stay out of the DAG while disabled, so existing projects are unaffected.
+Enable the two optional stages (§5.5): extend the sample table to `sample_id,condition,role` (§3), then set `reproducible_peaks.enabled: true` (with `min_replicates`) and `annotate_peaks.enabled: true` in the project config. Each condition gets `results/6.reproducible_peaks/{condition}.consensus.bed` (BED4, column 4 = number of replicates carrying the site) and every peak set gets `results/6.annotation/{set}.annotation.tsv` (`feature_class` = exon/gene/intergenic, `distance` = signed distance to the nearest gene with 0 = overlapping). Both stages stay out of the DAG while disabled, so existing projects are unaffected. With `input_control: true` the consensus of conditions with input samples additionally carries the binary `in_input_background` flag (column 5), and `filter_by_input: true` writes a filtered BED without those background sites (§5.5).

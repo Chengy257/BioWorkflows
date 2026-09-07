@@ -1,8 +1,8 @@
 # seclip-seq
 
-A **Snakemake** workflow for single-end enhanced CLIP (eCLIP-style) protein-RNA binding maps. One command takes raw SE FASTQ files with a 10-base random UMI at the start of each read through: UMI extraction, two-pass 3' adapter trimming, read sorting, an optional sncRNA/repeats pre-filter, unique genome alignment, UMI-based deduplication, and peak calling with PureCLIP (CLIPper when configured), ending in a combined MultiQC report. Two optional v0.2 stages (both default off) add cross-sample reproducible peaks per condition (bedtools multiinter consensus) and GTF-based peak annotation (nearest gene / distance / biotype per peak set).
+A **Snakemake** workflow for single-end enhanced CLIP (eCLIP-style) protein-RNA binding maps. One command takes raw SE FASTQ files with a 10-base random UMI at the start of each read through: UMI extraction, two-pass 3' adapter trimming, read sorting, an optional sncRNA/repeats pre-filter, unique genome alignment, UMI-based deduplication, and peak calling with PureCLIP (CLIPper when configured), ending in a combined MultiQC report. Two optional v0.2 stages (both default off) add cross-sample reproducible peaks per condition (bedtools multiinter consensus) and GTF-based peak annotation (nearest gene / distance / biotype per peak set); the consensus stage can additionally peak-call `role: input` control samples and flag (optionally filter) the consensus against their per-condition background union.
 
-> **Status (v0.2.0)**: first-class subproject aligned with the `rna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets, three-layer config stacking, parse-time config/sample-table validation, software-version provenance, and a synthetic-data dry-run regression test (plus a pytest suite for the annotation scripts). The default regression DAG is **23 jobs** (both optional stages off); the `--consensus` scenario adds 5 (28 total); for end-to-end validation see [Development and testing](#development-and-testing).
+> **Status (v0.2.0)**: first-class subproject aligned with the `rna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets, three-layer config stacking, parse-time config/sample-table validation, software-version provenance, and a synthetic-data dry-run regression test (plus a pytest suite for the annotation scripts). The default regression DAG is **23 jobs** (both optional stages off); the `--consensus` scenario adds 5 (28 total); the `--input-control` scenario (2 ip + 2 input samples, background flagging/filtering on) dry-runs 45 jobs; for end-to-end validation see [Development and testing](#development-and-testing).
 
 ## Workflow overview
 
@@ -21,6 +21,8 @@ A **Snakemake** workflow for single-end enhanced CLIP (eCLIP-style) protein-RNA 
 | `5.callpeak` | `callpeak_pureclip` | PureCLIP crosslink-site peaks on the deduplicated BAM |
 | | `callpeak_clipper` | CLIPper peak clusters, only when a CLIPper executable is configured |
 | `6.reproducible_peaks` (optional) | `consensus_peaks` | when `reproducible_peaks.enabled`: bedtools multiinter consensus of one condition's ip-role PureCLIP beds; sites present in >= `min_replicates` beds are kept, column 4 of the consensus BED reports the support |
+| | `input_background` | with `reproducible_peaks.input_control`: union of the condition's input-control PureCLIP beds (per-condition background) |
+| | `flag_input_background` / `filter_input_background` | with `input_control`: append the binary `in_input_background` column to the consensus BED; with `filter_by_input` additionally write the consensus minus background sites |
 | `6.annotation` (optional) | `gtf_gene_regions` | when `annotate_peaks.enabled`: GTF -> gene/exon BEDs + gene attribute table (stdlib parser) |
 | | `annotate_sample_peaks` / `annotate_consensus_peaks` | bedtools intersect (exon/gene overlap) + closest (nearest gene + distance) merged into one TSV per peak set |
 | `5.QC` | `multiqc` | combined QC report over all per-sample modules |
@@ -110,7 +112,7 @@ workdir/
     ├── 3.align/             # repeats-unmapped reads + unique genome alignments
     ├── 4.rmdup/             # deduplicated BAMs + read counts
     ├── 5.callpeak/          # PureCLIP / CLIPper peak BEDs
-    ├── 6.reproducible_peaks/  # optional: per-condition consensus BEDs (support in column 4)
+    ├── 6.reproducible_peaks/  # optional: per-condition consensus BEDs (support in column 4; input flag with input_control)
     ├── 6.annotation/        # optional: {set}.annotation.tsv + _ref/ gene/exon BEDs
     ├── 5.QC/                # multiqc_report.html + software_versions.yaml
     └── logs/                # per-rule logs
@@ -138,7 +140,9 @@ All derived artifacts live under `results/` in the working directory (rename via
 | Mapped-read count | `results/4.rmdup/{sample}_readnum.txt` |
 | PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` — BED6: chromosome, start (0-based), end, site name, crosslink-site score, strand |
 | CLIPper peaks (when configured) | `results/5.callpeak/{sample}.clipper.peakClusters.bed` |
-| Per-condition consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` |
+| Per-condition consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` (with `input_control`, conditions with inputs carry the `in_input_background` flag in column 5) |
+| Input background (`reproducible_peaks.input_control`) | `results/6.reproducible_peaks/{condition}.input_background.bed` |
+| Filtered consensus (`reproducible_peaks.filter_by_input`) | `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` |
 | Peak-set annotation (`annotate_peaks.enabled`) | `results/6.annotation/{set}.annotation.tsv` (`{set}` = each sample id and each `{condition}.consensus`) |
 | GTF-derived annotation reference (`annotate_peaks.enabled`) | `results/6.annotation/_ref/genes.bed` (+ `exons.bed`, `genes.tsv`) |
 | Combined QC report | `results/5.QC/multiqc/multiqc_report.html` |
@@ -149,8 +153,10 @@ STAR also writes sibling files next to the two declared alignment outputs (`{sam
 
 Optional v0.2 outputs:
 
-- `results/6.reproducible_peaks/{condition}.consensus.bed` — one file per condition (the `condition` of the ip-role samples in the sample table): bedtools multiinter consensus of that condition's per-sample PureCLIP beds, filtered to sites present in >= `min_replicates` beds; BED4 with the support count (number of replicates carrying the site) in column 4;
-- `results/6.annotation/{set}.annotation.tsv` — one file per peak set (`{set}` is each sample id for the PureCLIP beds plus each `{condition}.consensus`), with the header `chrom, start, end, score, nearest_gene, nearest_gene_id, distance, feature_class, gene_biotype` (`score` = PureCLIP crosslink-site score, or the consensus support for consensus sets; `feature_class` = `exon` when the peak overlaps an exon, `gene` when it falls in a gene body, `intergenic` otherwise; `distance` = signed bedtools closest distance to the nearest gene, 0 = overlapping, `NA` when the contig has no gene);
+- `results/6.reproducible_peaks/{condition}.consensus.bed` — one file per condition (the `condition` of the ip-role samples in the sample table): bedtools multiinter consensus of that condition's per-sample PureCLIP beds, filtered to sites present in >= `min_replicates` beds; BED4 with the support count (number of replicates carrying the site) in column 4. With `reproducible_peaks.input_control: true`, conditions that declare input samples get the binary `in_input_background` flag appended as column 5 (1 = the site also occurs in the condition's input background);
+- `results/6.reproducible_peaks/{condition}.input_background.bed` — with `input_control`: union of the condition's input-control PureCLIP beds (BED4, column 4 = number of inputs covering the feature);
+- `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` — with `filter_by_input: true` (needs `input_control`): the consensus minus the background-flagged sites (BED4 again);
+- `results/6.annotation/{set}.annotation.tsv` — one file per peak set (`{set}` is each peak-called sample id plus each `{condition}.consensus`), with the header `chrom, start, end, score, nearest_gene, nearest_gene_id, distance, feature_class, gene_biotype` (`score` = PureCLIP crosslink-site score, or the consensus support for consensus sets; `feature_class` = `exon` when the peak overlaps an exon, `gene` when it falls in a gene body, `intergenic` otherwise; `distance` = signed bedtools closest distance to the nearest gene, 0 = overlapping, `NA` when the contig has no gene); with `filter_by_input` the consensus annotation consumes the filtered BED, otherwise the flagged BED (its flag column is dropped per the column contract);
 - `results/6.annotation/_ref/` — the GTF-derived machinery behind the table above (`genes.bed`, `exons.bed`, `genes.tsv`).
 
 Both stages are off by default; see [docs/user-guide.md](docs/user-guide.md) §5.5 for the config switches and the sample-table columns that drive them.
@@ -190,10 +196,11 @@ Regression tests (need snakemake):
 ```bash
 bash tests/run_test.sh               # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
 bash tests/run_test.sh --consensus   # dry-run with the optional v0.2 stages enabled (condition/role table, both stages on)
+bash tests/run_test.sh --input-control  # dry-run with the input-control consensus scenario (2 ip + 2 input samples, flagging/filtering on)
 bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 3 snRNA-like repeats, 2 samples of 50 bp SE UMI reads) and is never committed. The default dry-run DAG is **23 jobs** (2 samples, `filter_repeats: true`, PureCLIP on, CLIPper absent/auto-skipped, both optional stages off) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)); the `--consensus` scenario dry-runs 28 jobs and asserts the consensus/annotation rules join the DAG. A lightweight CI job (lint + `--reads 2000` dry-run regression) runs at the repository root (`.github/workflows/ci.yml`, added 2026-09-07); locally, use `make test` + `bash tests/run_test.sh --reads 2000`. Real-run validation uses the script's `--reads 50000` default — PureCLIP's parameter learning needs tens of thousands of reads.
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 3 snRNA-like repeats, 2 samples of 50 bp SE UMI reads; `--with-inputs` adds the input controls FC_in1/FC_in2) and is never committed. The default dry-run DAG is **23 jobs** (2 samples, `filter_repeats: true`, PureCLIP on, CLIPper absent/auto-skipped, both optional stages off) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)); the `--consensus` scenario dry-runs 28 jobs and asserts the consensus/annotation rules join the DAG; the `--input-control` scenario dry-runs 45 jobs and asserts the background/flagging/filtering rules join the DAG. A lightweight CI job (lint + `--reads 2000` dry-run regression) runs at the repository root (`.github/workflows/ci.yml`, added 2026-09-07); locally, use `make test` + `bash tests/run_test.sh --reads 2000`. Real-run validation uses the script's `--reads 50000` default — PureCLIP's parameter learning needs tens of thousands of reads.
 
 ## Known limitations and TODOs
 
@@ -201,7 +208,7 @@ Mirrors [docs/TODO.md](docs/TODO.md):
 
 1. ~~**Cross-sample reproducible peaks**~~ — resolved in v0.2.0 (optional `reproducible_peaks` stage); IDR-style ranking remains a possible future refinement.
 2. ~~**Peak annotation**~~ — resolved in v0.2.0 (optional `annotate_peaks` stage); repeat-feature annotation beyond the GTF is future work.
-3. **IP vs input control**: no input/background logic yet; the v0.2 sample table already reserves the `role` column (`ip`|`input`) it will build on.
+3. ~~**IP vs input control**~~ — resolved in v0.2.0 (`reproducible_peaks.input_control` / `filter_by_input`: condition-scoped input background, flagged/filtered consensus); IDR-style contrast modes remain possible future work.
 
 ## License
 
@@ -209,6 +216,6 @@ Mirrors [docs/TODO.md](docs/TODO.md):
 
 ## Versions
 
-v0.2.0 (2026-09-08): optional cross-sample reproducible peaks (per-condition bedtools multiinter consensus) and GTF-based peak annotation stages, driven by the optional condition/role sample-table columns; bedtools 2.31.0 pinned; pytest unit suite and the `--consensus` regression scenario (see [CHANGELOG.md](CHANGELOG.md)).
+v0.2.0 (2026-09-08): optional cross-sample reproducible peaks (per-condition bedtools multiinter consensus), GTF-based peak annotation stages, and the IP-vs-input extension (`input_control` / `filter_by_input`: condition-scoped input background, flagged/filtered consensus), driven by the optional condition/role sample-table columns; bedtools 2.31.0 pinned; pytest unit suite and the `--consensus` / `--input-control` regression scenarios (see [CHANGELOG.md](CHANGELOG.md)).
 
 v0.1.0 (2026-09-05): initial release — config layer, STAR index / UMI / trim / align / dedup / peak-calling rules, unified launcher, regression tests, and docs (see [CHANGELOG.md](CHANGELOG.md)).

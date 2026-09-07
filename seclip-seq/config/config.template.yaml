@@ -76,10 +76,15 @@ callpeak:
 ## ---- Cross-sample reproducible peaks (optional, default off) ----
 ## Requires a sample table with condition/role columns (header
 ## sample_id,condition,role); consensus groups the PureCLIP beds of the
-## ip-role samples per condition (bedtools multiinter).
+## ip-role samples per condition (bedtools multiinter). With input_control,
+## role=input samples also run peak calling and their beds form a
+## per-condition background union against which the ip consensus is flagged
+## (in_input_background column) and optionally filtered.
 reproducible_peaks:
   enabled: false                # build a per-condition consensus of the ip-replicate PureCLIP beds
   min_replicates: 2             # a consensus site must be present in at least this many ip samples of the condition
+  input_control: false          # also peak-call role=input samples and build the per-condition background union
+  filter_by_input: false        # drop input-background-flagged consensus sites (requires input_control: true)
 
 ## ---- GTF-based peak annotation (optional, default off) ----
 ## Annotates every peak set (per-sample PureCLIP beds plus each consensus

@@ -30,6 +30,40 @@ All notable changes to this project are documented in this file. Format based on
   `load_sample_table` keeps returning the ordered sample-id list, with the grouping
   exposed as the module-level `SAMPLE_CONDITIONS` / `SAMPLE_ROLES` dicts
   (`workflow/rules/common.smk`).
+- IP vs input control for the consensus stage (default off; closes TODO item 3): the
+  new `reproducible_peaks.input_control` switch peak-calls the `role: input` samples
+  too (without it, once the consensus stage is enabled, only ip samples join the
+  PureCLIP target set) and unions their PureCLIP beds per condition (`rule
+  input_background`: `bedtools multiinter` with support >= 1, i.e. the plain union;
+  column 4 = number of inputs covering the feature) into
+  `results/6.reproducible_peaks/{condition}.input_background.bed`. For conditions with
+  inputs, `rule flag_input_background` produces the final
+  `{condition}.consensus.bed` as BED5 — the W7 columns 1-4 plus the binary
+  `in_input_background` flag (1 = the site overlaps the condition's input background);
+  the raw pre-flagging consensus is kept as the `{condition}.consensus.raw.bed`
+  intermediate (`rule consensus_peaks_raw`). Conditions without input samples keep the
+  byte-identical W7 BED4 consensus pipeline (`rule consensus_peaks`, scoped to them by
+  per-rule wildcard constraints). `reproducible_peaks.filter_by_input` (requires
+  `input_control`) adds `rule filter_input_background`, writing
+  `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` (flagged sites
+  dropped, BED4 again); the consensus annotation consumes the filtered BED under
+  `filter_by_input`, otherwise the flagged BED5 (`annotate_peaks.py` already accepts
+  arbitrary peak-column counts, so the flag column rides through the annotation
+  machinery and is dropped per its TSV column contract).
+- Parse-time validation for the input-control switches (aggregated in
+  `validate_config`): both keys must be booleans; `input_control` requires the
+  condition/role sample-table columns (and warns while `reproducible_peaks.enabled`
+  is false); `filter_by_input` requires `input_control`; a condition with input
+  samples but no ip samples is a hard error (no consensus to build or flag); an ip
+  condition without inputs warns (the background is simply absent and its consensus
+  stays unflagged).
+- New scheduler-resource defaults (`RESOURCE_DEFAULTS` in common.smk): `input_background`,
+  `flag_input_background`, and `filter_input_background` at 1 thread / 2048 MB /
+  30 min each (overridable per rule via a project resources.yaml).
+- `tests/make_testdata.py --with-inputs`: opt-in input-control test samples (FC_in1 /
+  FC_in2, appended to the RNG stream after the ip samples, so the default output stays
+  byte-identical); `tests/test_gtf_regions.py` gains a flagged-consensus (BED5) case
+  (27 tests total).
 - Parse-time validation for the new switches (aggregated in `validate_config`): both
   sections are optional (absent = disabled, so v0.1 project configs keep working);
   `reproducible_peaks.{enabled,min_replicates}` and `annotate_peaks.enabled` shapes;
@@ -59,9 +93,20 @@ All notable changes to this project are documented in this file. Format based on
   sections are optional in validation; the default test scenario keeps the generated
   single-column sample table). The `--consensus` scenario dry-run adds 5 jobs
   (28 total: consensus 1 + GTF prep 1 + per-sample annotation 2 + consensus
-  annotation 1). `config/resources.yaml` (repository mirror) intentionally not
+  annotation 1). The new `--input-control` scenario (4 samples: 2 ip + 2 input,
+  `input_control` + `filter_by_input` on, both annotation stages off) dry-runs 45
+  jobs (18 per-sample jobs for the two extra samples + background/flag/filter/raw
+  consensus). `config/resources.yaml` (repository mirror) intentionally not
   extended — unlisted rules keep the built-in defaults per the documented override
   semantics; a project copy can override the new rules by name.
+- `tests/run_test.sh`: new `--input-control` scenario (4-sample condition/role
+  table, reproducible_peaks enabled with input_control + filter_by_input; dry-run
+  asserts `consensus_peaks_raw`, `input_background`, `flag_input_background`, and
+  `filter_input_background` join the DAG; `--real-run` additionally asserts the
+  background/consensus/filtered outputs); `--consensus` and `--input-control` are
+  mutually exclusive; `--consensus --real-run` / `--input-control --real-run`
+  additionally need bedtools (documented, not rejected, matching the existing
+  convention).
 
 ## [0.1.0] - 2026-09-05
 

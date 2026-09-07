@@ -294,6 +294,27 @@ def test_annotate_consensus_bed4_score_is_support(tmp_path):
         [("2", "exon"), ("3", "intergenic")]
 
 
+def test_annotate_consensus_bed5_flag_column_dropped(tmp_path):
+    # Flagged consensus (reproducible_peaks.input_control on): BED5 with the
+    # binary in_input_background flag appended as column 5. The annotation
+    # keeps the BED4 columns and the support (column 4) as score and drops
+    # the flag per its column contract.
+    paths = _annotation_inputs(tmp_path)
+    peaks5 = _write(tmp_path, "flagged.bed",
+                    "chr1\t100\t200\t2\t1\nchr1\t5000\t5100\t3\t0\n")
+    closest5 = _write(tmp_path, "closest5.tsv",
+                      "chr1\t100\t200\t2\t1\tchr1\t90\t700\tg1\t0\t+\t0\n"
+                      "chr1\t5000\t5100\t3\t0\tchr1\t90\t700\tg1\t0\t+\t-4300\n")
+    rows = ann.annotate(
+        ann.read_peaks(peaks5, 4),
+        ann.read_hits(paths["exon_hits"]),
+        ann.read_hits(paths["gene_hits"]),
+        ann.read_closest(closest5, 5),
+        ann.read_gene_table(paths["table"]))
+    assert [(r["score"], r["feature_class"]) for r in rows] == \
+        [("2", "exon"), ("3", "intergenic")]
+
+
 def test_annotate_missing_closest_row_raises(tmp_path):
     paths = _annotation_inputs(tmp_path)
     trimmed = _write(tmp_path, "trimmed.tsv",
