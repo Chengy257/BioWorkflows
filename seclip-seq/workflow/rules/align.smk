@@ -23,8 +23,14 @@ if FILTER_REPEATS:
             runtime_sec=rruntime_sec("star_filter_repeats"),
         shell:
             """
+            ## STAR spawns FIFO files for threaded input; results/ may live on a
+            ## non-FIFO filesystem (e.g. WSL /mnt/* NTFS mounts), so keep the temp
+            ## dir on the scheduler-provided tmpdir (Linux /tmp by default).
+            ## STAR refuses an existing --outTmpDir — clean, then let it create.
+            rm -rf {resources.tmpdir}/STAR_{wildcards.sample}_filter_repeats
             STAR --runThreadN {threads} --runMode alignReads --alignEndsType EndToEnd \
                 --genomeDir {params.index} --readFilesCommand zcat \
+                --outTmpDir {resources.tmpdir}/STAR_{wildcards.sample}_filter_repeats \
                 --genomeLoad NoSharedMemory --outBAMcompression 10 \
                 --outFileNamePrefix {params.prefix} \
                 --outFilterMultimapNmax {params.multimap} --outFilterMultimapScoreRange 1 \
@@ -46,6 +52,9 @@ rule star_align:
         index=lambda wc, input: os.path.dirname(str(input.index)),
         prefix=lambda wc: f"{RD}3.align/genome/{wc.sample}_",
         multimap=config["star"]["align_multimap_nmax"],
+        # The repeats filter emits a PLAIN (uncompressed) unmapped Fastx;
+        # zcat would reject it and STAR would silently see zero reads.
+        read_cmd="cat" if FILTER_REPEATS else "zcat",
     log:
         R("logs/star_align/{sample}.log"),
     threads: rthreads("star_align")
@@ -55,8 +64,11 @@ rule star_align:
         runtime_sec=rruntime_sec("star_align"),
     shell:
         """
+        ## See star_filter_repeats: STAR FIFOs need a Linux tmpdir.
+        rm -rf {resources.tmpdir}/STAR_{wildcards.sample}_align
         STAR --runThreadN {threads} --runMode alignReads --alignEndsType EndToEnd \
-            --genomeDir {params.index} --readFilesCommand zcat \
+            --genomeDir {params.index} --readFilesCommand {params.read_cmd} \
+            --outTmpDir {resources.tmpdir}/STAR_{wildcards.sample}_align \
             --genomeLoad NoSharedMemory --outBAMcompression 10 \
             --outFileNamePrefix {params.prefix} \
             --outFilterMultimapNmax {params.multimap} --outFilterMultimapScoreRange 1 \

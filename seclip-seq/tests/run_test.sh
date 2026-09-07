@@ -21,7 +21,12 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTS_DIR="$REPO_DIR/tests"
 DATA_DIR="$TESTS_DIR/data"
-WORK_DIR="$TESTS_DIR/work"
+# The assembled working directory defaults to /tmp (Linux filesystem):
+# STAR finishes writing some outputs (e.g. the unmapped Fastx) asynchronously,
+# and on WSL DrvFs mounts (/mnt/*, 9p protocol) a reader that opens the file
+# within seconds of the writer exiting can observe an empty view until the
+# host flushes. Keep the default overridable for debugging.
+WORK_DIR="${SECLIP_TEST_WORK_DIR:-/tmp/seclip_seq_test_work}"
 
 usage() {
     cat <<'EOF'
@@ -39,7 +44,7 @@ Usage:
 
 Requires:
   dry-run only needs snakemake + python3(+pyyaml); --real-run needs a full
-  analysis environment (STAR/umi-tools/cutadapt/ea-utils/samtools/fastqc/
+  analysis environment (STAR/umi-tools/cutadapt/seqkit/samtools/fastqc/
   multiqc/pureclip, see workflow/environment.yaml).
 EOF
 }

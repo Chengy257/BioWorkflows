@@ -58,7 +58,9 @@ rule cutadapt_trim:
 
 
 rule fastq_sort:
-    # ea-utils fastq-sort by read id (deterministic order before STAR).
+    # seqkit name sort (deterministic read order before STAR). Replaced the
+    # legacy ea-utils `fastq-sort --id`: the current bioconda ea-utils build
+    # (1.1.2.779) ships no fastq-sort binary.
     input:
         R("2.cleandata/{sample}_clean.fqTrTr.fq.gz"),
     output:
@@ -72,7 +74,7 @@ rule fastq_sort:
         runtime_sec=rruntime_sec("fastq_sort"),
     shell:
         """
-        zcat {input} | fastq-sort --id | bgzip -@ {threads} > {output} 2> {log}
+        zcat {input} | seqkit sort -n -j {threads} | bgzip -@ {threads} > {output} 2> {log}
         """
 
 
@@ -93,5 +95,11 @@ rule fastqc:
         runtime_sec=rruntime_sec("fastqc"),
     shell:
         """
+        ## fastqc derives output names from the input file basename
+        ## (sample_clean.fqTrTr.sorted_fastqc.*); rename to the
+        ## sample-keyed contract paths. NOTE: snakemake formats the whole
+        ## shell string, comments included — never write bare braces here.
         fastqc -f fastq -t {threads} -o {params.outdir} {input} > {log} 2>&1
+        mv -f {params.outdir}/{wildcards.sample}_clean.fqTrTr.sorted_fastqc.html {output.html}
+        mv -f {params.outdir}/{wildcards.sample}_clean.fqTrTr.sorted_fastqc.zip {output.zip}
         """

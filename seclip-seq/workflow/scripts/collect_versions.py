@@ -15,14 +15,14 @@ sys.path.insert(0, os.path.join(_SHARED, "python"))
 from bioworkflows_versions import run_cli  # noqa: E402
 
 TOOLS = [
-    "python", "umi_tools", "cutadapt", "fastq_sort", "bgzip", "fastqc",
+    "python", "umi_tools", "cutadapt", "seqkit", "bgzip", "fastqc",
     "multiqc", "star", "samtools", "pureclip",
 ]
 
 TOOL_DEFAULTS = {
     "python": "python3",
     "star": "STAR",
-    "fastq_sort": "fastq-sort",
+    "seqkit": "seqkit",
     "bgzip": "bgzip",
 }
 

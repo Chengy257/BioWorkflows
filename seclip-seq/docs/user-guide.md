@@ -15,7 +15,7 @@
 | Linux (PBS/SGE/SLURM cluster or a single machine; WSL works) | the scheduler is auto-detected by `run.sh` or set via `--profile` |
 | Snakemake | reference version **7.32.4** (pinned in `workflow/environment.yaml`); see the version matrix in §1.4 |
 | Python 3 + PyYAML | the bootstrap dependency `run.sh` needs to resolve `software.yaml` and run preflight checks; must be on the main PATH |
-| Analysis tools | STAR / samtools / umi-tools / cutadapt / fastq-sort (ea-utils) / bgzip / FastQC / MultiQC / PureCLIP; plus CLIPper when peak clusters are wanted (external install, see §4.5) |
+| Analysis tools | STAR / samtools / umi-tools / cutadapt / seqkit / bgzip / FastQC / MultiQC / PureCLIP; plus CLIPper when peak clusters are wanted (external install, see §4.5) |
 
 Launcher bootstrap order: `run.sh` first uses the `python3` on the system PATH (with PyYAML) to resolve `config/software.yaml`, then injects the main environment/tools into the current process — so even on the conda_prefix reuse route, the login-node PATH must have `python3` (snakemake is supplied by the main environment after resolution).
 
@@ -28,7 +28,7 @@ mamba env create -f workflow/environment.yaml   # environment name seclip-seq
 conda activate seclip-seq
 ```
 
-This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, star 2.7.10b, samtools 1.17, cutadapt 4.6, umi-tools 1.1.4, ea-utils (provides `fastq-sort`; unpinned, few builds), fastqc 0.11.9, multiqc 1.21, pureclip 1.3.1.
+This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, star 2.7.10b, samtools 1.17, cutadapt 4.6, umi-tools 1.1.5 (pip; python 3.9 — see the notes in `workflow/environment.yaml`), seqkit 2.13.0, fastqc 0.11.9, multiqc 1.21, pureclip 1.3.1.
 
 **Path 2: reuse an existing conda environment on the server**
 
@@ -60,7 +60,7 @@ environment:
 
 ```bash
 # Check that all required executables resolve (STAR, umi-tools, cutadapt,
-# fastq-sort, bgzip, samtools, fastqc, multiqc, pureclip) and report the
+# seqkit, bgzip, samtools, fastqc, multiqc, pureclip) and report the
 # configured CLIPper; then exit
 bash run.sh -P /path/to/workdir --check-software
 
@@ -290,7 +290,7 @@ paths: {}
 databases: {}
 ```
 
-`paths.clipper` semantics: CLIPper is an external legacy install (Python2-era upstream, deliberately not packaged). `run.sh` resolves it through `workflow/scripts/runtime_config.py` and exports the absolute path as `SECLIP_TOOL_CLIPPER`; the workflow defines the `callpeak_clipper` rule only when the path is non-empty. Ordinary tools (STAR, umi-tools, cutadapt, fastq-sort, FastQC, MultiQC, PureCLIP, samtools, bgzip) are resolved from the main environment/PATH automatically. When invoking Snakemake directly without run.sh (§5.3), you can export `SECLIP_TOOL_CLIPPER` yourself.
+`paths.clipper` semantics: CLIPper is an external legacy install (Python2-era upstream, deliberately not packaged). `run.sh` resolves it through `workflow/scripts/runtime_config.py` and exports the absolute path as `SECLIP_TOOL_CLIPPER`; the workflow defines the `callpeak_clipper` rule only when the path is non-empty. Ordinary tools (STAR, umi-tools, cutadapt, seqkit, FastQC, MultiQC, PureCLIP, samtools, bgzip) are resolved from the main environment/PATH automatically. When invoking Snakemake directly without run.sh (§5.3), you can export `SECLIP_TOOL_CLIPPER` yourself.
 
 ---
 

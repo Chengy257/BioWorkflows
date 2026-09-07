@@ -10,6 +10,8 @@ rule umi_dedup:
         stats=R("4.rmdup/{sample}_stats/{sample}_edit_distance.tsv"),
     params:
         tmp_bam=lambda wc: f"{RD}4.rmdup/{wc.sample}.rmDup.bam",
+        sorted_bam=lambda wc: f"{RD}4.rmdup/{wc.sample}.Aligned.sorted.bam",
+        stats_dir=lambda wc: f"{RD}4.rmdup/{wc.sample}_stats",
         stats_prefix=lambda wc: f"{RD}4.rmdup/{wc.sample}_stats/{wc.sample}",
     log:
         R("logs/umi_dedup/{sample}.log"),
@@ -20,11 +22,16 @@ rule umi_dedup:
         runtime_sec=rruntime_sec("umi_dedup"),
     shell:
         """
-        umi_tools dedup --random-seed 1 -I {input.bam} --method unique \
-            --output-stats {params.stats_prefix} -S {params.tmp_bam} > {log} 2>&1
-        samtools sort -@ {threads} -o {output.bam} {params.tmp_bam} >> {log} 2>&1
+        ## umi_tools dedup requires a coordinate-sorted, INDEXED input BAM
+        ## (pysam fetch); STAR writes unsorted BAMs, so sort+index first.
+        ## Dedup preserves input order, so its output is already sorted.
+        mkdir -p {params.stats_dir}
+        samtools sort -@ {threads} -o {params.sorted_bam} {input.bam} >> {log} 2>&1
+        samtools index -@ {threads} {params.sorted_bam} >> {log} 2>&1
+        umi_tools dedup --random-seed 1 -I {params.sorted_bam} --method unique \
+            --output-stats {params.stats_prefix} -S {output.bam} >> {log} 2>&1
         samtools index -@ {threads} {output.bam} >> {log} 2>&1
-        rm -f {params.tmp_bam}
+        rm -f {params.sorted_bam} {params.sorted_bam}.bai
         """
 
 

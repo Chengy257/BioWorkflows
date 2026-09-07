@@ -14,6 +14,12 @@
 
 - v0.1 has no input/background channel concept. Supporting an paired input control (PureCLIP background estimation from a control BAM, or CLIPper contrast modes) needs a sample-table design decision first (how to declare IP/input pairs).
 
-## 4. ea-utils fallback for fastq-sort
+## 4. fastq_sort tool switch: ea-utils -> seqkit (resolved 2026-09-07)
 
-- `rule fastq_sort` depends on `fastq-sort` from ea-utils, which has few conda builds (see the note in `workflow/environment.yaml`). If a server cannot solve ea-utils, switch the rule to an equivalent name-based sort (e.g. `seqkit sort -N` or a sort-by-id one-liner) and record the change here and in the CHANGELOG.
+- [x] `rule fastq_sort` now uses `seqkit sort -n` (seqkit 2.13.0 pinned in
+  `workflow/environment.yaml`, ea-utils entry removed): the current bioconda
+  ea-utils build (1.1.2.779) ships no `fastq-sort` binary (only fastq-clipper /
+  fastq-join / fastq-mcf / fastq-multx / fastq-stats), so the pre-specified
+  seqkit fallback was applied during the 2026-09-07 real-run validation. The
+  runtime resolver and version-collector tool tables follow the rename
+  (`fastq_sort`/`fastq-sort` -> `seqkit`); see CHANGELOG.md.
