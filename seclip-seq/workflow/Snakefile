@@ -5,6 +5,8 @@
 # (optional repeats/sncRNA pre-filter) -> unique genome alignment ->
 # UMI deduplication -> peak calling (PureCLIP; CLIPper when configured)
 # -> MultiQC.
+# Optional v0.2 stages (default off): cross-sample reproducible peaks
+# (consensus_peaks) and GTF-based peak annotation (annotate_peaks).
 #
 # Recommended launcher (full options: run.sh --help):
 #   bash run.sh -P /path/to/workdir -c config.yaml --profile pbs
@@ -43,9 +45,12 @@ for _key, _value in (config.get(SPECIES) or {}).items():
 # target aggregation. Included first by every rules/*.smk consumer.
 include: os.path.join(WORKFLOW_DIR, "rules", "common.smk")
 
-# Restrict sample wildcards to ids declared in the sample table.
+# Restrict sample wildcards to ids declared in the sample table, and the
+# consensus {condition} wildcard to the conditions of the ip-role samples
+# (CONDITION_WILDCARD never matches while reproducible_peaks is disabled).
 wildcard_constraints:
-    sample=SAMPLE_WILDCARD
+    sample=SAMPLE_WILDCARD,
+    condition=CONDITION_WILDCARD
 
 # Final targets.
 rule all:
@@ -57,4 +62,5 @@ include: os.path.join(WORKFLOW_DIR, "rules", "index.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "align.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "consensus.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

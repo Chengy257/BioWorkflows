@@ -70,3 +70,13 @@ callpeak:
   pureclip: true
   clipper: true                 # effective only with paths.clipper set in software.yaml
   clipper_species: "GRCh38_v40"
+
+## ---- Optional v0.2 stages (both default off; flip enabled to true to run) ----
+## reproducible_peaks needs the condition/role columns of samples.csv (the
+## five FC replicates below are one ip condition). annotate_peaks annotates
+## every peak set against the configured gtf (bedtools intersect/closest).
+reproducible_peaks:
+  enabled: false                # consensus of the ip replicates per condition
+  min_replicates: 2             # support threshold for a consensus site
+annotate_peaks:
+  enabled: false                # nearest gene / distance / biotype per peak set

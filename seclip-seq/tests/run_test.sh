@@ -6,13 +6,18 @@
 # -> assert -> clean up
 #
 # Usage:
-#   bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
-#     --reads     SE reads per sample, default 50000 (CI passes 2000)
-#     --keep      keep tests/data and tests/work (cleaned up by default)
-#     --real-run  run end-to-end and assert that outputs exist (default is
-#                 a dry-run that only validates DAG integrity; a real run
-#                 needs a full analysis environment with STAR/umi-tools/
-#                 cutadapt/pureclip etc.)
+#   bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--consensus] [--help]
+#     --reads      SE reads per sample, default 50000 (CI passes 2000)
+#     --keep       keep tests/data and tests/work (cleaned up by default)
+#     --real-run   run end-to-end and assert that outputs exist (default is
+#                  a dry-run that only validates DAG integrity; a real run
+#                  needs a full analysis environment with STAR/umi-tools/
+#                  cutadapt/pureclip etc.)
+#     --consensus  optional-stage scenario: switch the sample table to the
+#                  condition/role form (both samples ip, same condition) and
+#                  enable reproducible_peaks + annotate_peaks, then dry-run
+#                  and assert the new rules join the DAG (a --consensus
+#                  --real-run additionally needs bedtools in the environment)
 # Requires: dry-run only needs snakemake + python3(+pyyaml); --real-run
 # needs a full analysis environment.
 #########################################################################
@@ -34,38 +39,45 @@ One-command regression test: synthetic data -> assemble working directory
 -> dry-run (default) / --real-run end-to-end -> assertions
 
 Usage:
-  bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
-  --reads     SE reads per sample, default 50000
-  --keep      keep tests/data and tests/work (cleaned up by default)
-  --real-run  run end-to-end and assert that outputs exist (default only
-              dry-runs to validate DAG integrity; a real run needs a full
-              analysis environment; used for server validation)
-  -h, --help  show this help
+  bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--consensus] [--help]
+  --reads      SE reads per sample, default 50000
+  --keep       keep tests/data and tests/work (cleaned up by default)
+  --real-run   run end-to-end and assert that outputs exist (default only
+               dry-runs to validate DAG integrity; a real run needs a full
+               analysis environment; used for server validation)
+  --consensus  optional-stage scenario: condition/role sample table plus
+               reproducible_peaks/annotate_peaks enabled, dry-run asserts
+               the new rules join the DAG
+  -h, --help   show this help
 
 Requires:
   dry-run only needs snakemake + python3(+pyyaml); --real-run needs a full
   analysis environment (STAR/umi-tools/cutadapt/seqkit/samtools/fastqc/
-  multiqc/pureclip, see workflow/environment.yaml).
+  multiqc/pureclip, see workflow/environment.yaml); --consensus --real-run
+  additionally needs bedtools.
 EOF
 }
 
 READS=50000
 KEEP=0
 REAL_RUN=0
+CONSENSUS=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
             [[ $# -ge 2 ]] || { echo "[ERROR] --reads requires a value" >&2; exit 1; }
             [[ "$2" =~ ^[0-9]+$ ]] || { echo "[ERROR] --reads must be a positive integer: $2" >&2; exit 1; }
             READS="$2"; shift 2 ;;
-        --keep)     KEEP=1; shift ;;
-        --real-run) REAL_RUN=1; shift ;;
-        -h|--help)  usage; exit 0 ;;
-        *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
+        --keep)      KEEP=1; shift ;;
+        --real-run)  REAL_RUN=1; shift ;;
+        --consensus) CONSENSUS=1; shift ;;
+        -h|--help)   usage; exit 0 ;;
+        *) echo "[ERROR] Unknown argument: $1 (see --help)" >&2; exit 1 ;;
     esac
 done
 MODE="dry-run"
 [[ "$REAL_RUN" == 1 ]] && MODE="real-run"
+[[ "$CONSENSUS" == 1 ]] && MODE="$MODE+consensus"
 
 echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS)"
 command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exit 1; }
@@ -87,6 +99,27 @@ else
 fi
 cp -r "$DATA_DIR/ref" "$WORK_DIR/ref"
 cp "$DATA_DIR/samples.csv" "$DATA_DIR/config.yaml" "$WORK_DIR/"
+
+if [[ "$CONSENSUS" == 1 ]]; then
+    # Optional-stage scenario (v0.2): switch the sample table to the
+    # condition/role form (both samples in one ip condition) and enable
+    # reproducible_peaks + annotate_peaks on top of the generated config.
+    # The default (no-flag) run keeps the generated single-column table and
+    # both stages disabled.
+    cat > "$WORK_DIR/samples.csv" <<'EOF'
+sample_id,condition,role
+FC_rep1,treatment,ip
+FC_rep2,treatment,ip
+EOF
+    cat >> "$WORK_DIR/config.yaml" <<'EOF'
+reproducible_peaks:
+  enabled: true
+  min_replicates: 2
+annotate_peaks:
+  enabled: true
+EOF
+    echo "[test]   --consensus: condition/role sample table + reproducible_peaks/annotate_peaks enabled"
+fi
 
 echo "[test] 4/5 Running the workflow ($MODE)"
 RUN_ARGS=(-P "$WORK_DIR" -c "$WORK_DIR/config.yaml" -j 4)
@@ -111,6 +144,13 @@ if [[ "$REAL_RUN" == 1 ]]; then
         "results/5.callpeak/FC_rep1.pureclip.bed"
         "results/4.rmdup/FC_rep1_readnum.txt"
     )
+    if [[ "$CONSENSUS" == 1 ]]; then
+        EXPECTED+=(
+            "results/6.reproducible_peaks/treatment.consensus.bed"
+            "results/6.annotation/FC_rep1.annotation.tsv"
+            "results/6.annotation/treatment.consensus.annotation.tsv"
+        )
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -120,13 +160,25 @@ if [[ "$REAL_RUN" == 1 ]]; then
     done
 else
     SNAKE_LOG="$WORK_DIR/snakemake.logs.txt"
-    for rule in star_align umi_dedup callpeak_pureclip; do
-        if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+    RULES=(star_align umi_dedup callpeak_pureclip)
+    if [[ "$CONSENSUS" == 1 ]]; then
+        RULES+=(consensus_peaks gtf_gene_regions annotate_sample_peaks annotate_consensus_peaks)
+    fi
+    for rule in "${RULES[@]}"; do
+        # Word-boundary match so consensus_peaks is not satisfied by the
+        # annotate_consensus_peaks table row (underscore is a word character).
+        if grep -qE "(^|[^A-Za-z0-9_])${rule}([^A-Za-z0-9_]|$)" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
             echo "  PASS  DAG contains rule $rule"
         else
             echo "  FAIL  DAG does not contain rule $rule"; FAIL=1
         fi
     done
+    total=$(grep -hE '^total[[:space:]]+[0-9]+' "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null | awk '{print $NF}' | tail -1)
+    if [[ -n "$total" ]]; then
+        echo "  INFO  dry-run job total: $total (default scenario baseline: 23)"
+    else
+        echo "  INFO  dry-run job total: not found in the logs"
+    fi
 fi
 if [[ "$FAIL" != "0" ]]; then
     echo "[ERROR] Assertions failed; keeping workspace for debugging: $WORK_DIR" >&2

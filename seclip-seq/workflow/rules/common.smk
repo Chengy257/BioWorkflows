@@ -1,6 +1,7 @@
 # ---------------------------------------------------------------------
-# Shared definitions: sample-table parsing, config validation, path and
-# resource helpers, CLIPper resolution, and target aggregation.
+# Shared definitions: sample-table parsing (optional condition/role
+# columns), config validation, path and resource helpers, CLIPper
+# resolution, and target aggregation.
 # Included first by workflow/Snakefile; every rules/*.smk uses the names
 # defined here. BASE_DIR / WORKFLOW_DIR come from the Snakefile.
 # ---------------------------------------------------------------------
@@ -31,16 +32,28 @@ def _resolve_sample_table(path):
     return os.path.join(BASE_DIR, p)
 
 
-def load_sample_table(path):
-    """Parse the single-column sample table (header must be exactly
-    sample_id); returns the ordered list of unique sample ids."""
-    samples = []
+_GROUPED_HEADER = ["sample_id", "condition", "role"]
+
+
+def _read_sample_table(path):
+    """Parse the sample table; returns (samples, conditions, roles).
+
+    Accepted headers are exactly ["sample_id"] (classic single-column table)
+    or exactly ["sample_id", "condition", "role"] (the optional grouping
+    columns that drive the reproducible_peaks stage). With the grouping
+    columns present, "condition" follows the sample-id name rules (it becomes
+    a file name) and "role" is restricted to ip|input; every row must fill
+    both. When the columns are absent, the conditions/roles dicts come back
+    empty (so lookups via SAMPLE_CONDITIONS.get(sample) yield None)."""
+    samples, conditions, roles = [], {}, {}
     with open(path, newline="") as fh:
         reader = csv.DictReader(fh)
-        if reader.fieldnames != ["sample_id"]:
+        grouped = reader.fieldnames == _GROUPED_HEADER
+        if reader.fieldnames != ["sample_id"] and not grouped:
             raise WorkflowError(
-                f"Sample table {path} must have exactly one column with header "
-                f"'sample_id' (got {reader.fieldnames}); see config/samples.csv"
+                f"Sample table {path} header must be exactly ['sample_id'] or exactly "
+                f"['sample_id', 'condition', 'role'] (got {reader.fieldnames}); "
+                "see config/samples.csv"
             )
         for lineno, row in enumerate(reader, start=2):
             sid = (row["sample_id"] or "").strip()
@@ -55,12 +68,36 @@ def load_sample_table(path):
             if sid in samples:
                 raise WorkflowError(f"Sample table line {lineno}: duplicate sample_id {sid!r}")
             samples.append(sid)
+            if grouped:
+                cond = (row["condition"] or "").strip()
+                role = (row["role"] or "").strip()
+                if not cond:
+                    raise WorkflowError(f"Sample table line {lineno}: condition must not be empty")
+                if not _NAME_RE.match(cond) or "__" in cond:
+                    raise WorkflowError(
+                        f"Sample table line {lineno}: condition={cond!r} contains illegal "
+                        "characters; only alphanumerics and . _ - are allowed "
+                        "(no leading '-', no '__')"
+                    )
+                if role not in ("ip", "input"):
+                    raise WorkflowError(
+                        f"Sample table line {lineno}: role={role!r} must be 'ip' or 'input'"
+                    )
+                conditions[sid] = cond
+                roles[sid] = role
     if not samples:
         raise WorkflowError(f"Sample table {path} has no data rows")
-    return samples
+    return samples, conditions, roles
 
 
-SAMPLES = load_sample_table(_resolve_sample_table(config["SampleListFile"]))
+def load_sample_table(path):
+    """Parse the sample table; returns the ordered list of unique sample ids
+    (see _read_sample_table for the accepted header shapes)."""
+    return _read_sample_table(path)[0]
+
+
+SAMPLES, SAMPLE_CONDITIONS, SAMPLE_ROLES = _read_sample_table(
+    _resolve_sample_table(config["SampleListFile"]))
 SAMPLE_WILDCARD = "(?:" + "|".join(re.escape(s) for s in SAMPLES) + ")"
 
 
@@ -133,6 +170,56 @@ def validate_config(cfg):
             errors.append("callpeak.clipper=true requires a non-empty callpeak.clipper_species")
     else:
         errors.append("callpeak must be a mapping with sub-keys")
+    # Optional v0.2 stage switches (both default off; absent sections are
+    # valid and mean "disabled", which keeps older project configs working).
+    reproducible = cfg.get("reproducible_peaks")
+    annotate = cfg.get("annotate_peaks")
+    for name, section in (("reproducible_peaks", reproducible), ("annotate_peaks", annotate)):
+        if section is not None and not isinstance(section, dict):
+            errors.append(f"{name} must be a mapping with sub-keys, got {section!r}")
+    if isinstance(reproducible, dict):
+        if not isinstance(reproducible.get("enabled"), bool):
+            errors.append(f"reproducible_peaks.enabled must be true/false, got {reproducible.get('enabled')!r}")
+        v = reproducible.get("min_replicates", 2)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+            errors.append(f"reproducible_peaks.min_replicates must be an integer >= 1, got {v!r}")
+    if isinstance(annotate, dict):
+        if not isinstance(annotate.get("enabled"), bool):
+            errors.append(f"annotate_peaks.enabled must be true/false, got {annotate.get('enabled')!r}")
+    pureclip_on = isinstance(cfg.get("callpeak"), dict) and bool(cfg["callpeak"].get("pureclip"))
+    reproducible_on = isinstance(reproducible, dict) and bool(reproducible.get("enabled"))
+    annotate_on = isinstance(annotate, dict) and bool(annotate.get("enabled"))
+    if reproducible_on:
+        if not SAMPLE_CONDITIONS:
+            errors.append(
+                "reproducible_peaks.enabled=true requires a sample table with the optional "
+                "condition and role columns (header sample_id,condition,role); got the "
+                "single-column table"
+            )
+        if not pureclip_on:
+            errors.append(
+                "reproducible_peaks.enabled=true requires callpeak.pureclip=true "
+                "(the consensus groups the per-sample PureCLIP beds)"
+            )
+        if SAMPLE_CONDITIONS and isinstance(reproducible.get("min_replicates"), int) \
+                and not isinstance(reproducible.get("min_replicates"), bool):
+            ip_counts = {}
+            for sid, cond in SAMPLE_CONDITIONS.items():
+                if SAMPLE_ROLES.get(sid) == "ip":
+                    ip_counts[cond] = ip_counts.get(cond, 0) + 1
+            for cond in sorted(set(SAMPLE_CONDITIONS.values())):
+                n = ip_counts.get(cond, 0)
+                if n < reproducible["min_replicates"]:
+                    errors.append(
+                        f"reproducible_peaks: condition {cond!r} has {n} ip sample(s) but "
+                        f"min_replicates={reproducible['min_replicates']}; consensus support "
+                        "can never reach the threshold"
+                    )
+    if annotate_on and not pureclip_on:
+        errors.append(
+            "annotate_peaks.enabled=true requires callpeak.pureclip=true "
+            "(annotation consumes the per-sample PureCLIP peak sets)"
+        )
     resources = cfg.get("resources") or {}
     if not isinstance(resources, dict):
         errors.append(f"resources must be a mapping of rule -> {{threads, mem_mb, runtime_min}}, got {resources!r}")
@@ -167,6 +254,17 @@ if bool(config["callpeak"]["clipper"]) and not CLIPPER:
           "is configured (software.yaml paths.clipper); CLIPper peak calling is "
           "skipped and only PureCLIP runs")
 
+# Optional v0.2 stages (both default off; see config.yaml reproducible_peaks /
+# annotate_peaks). The consensus stage groups the ip-role samples of one
+# condition; its condition list drives the {condition} wildcard.
+REPRODUCIBLE_PEAKS_ENABLED = bool((config.get("reproducible_peaks") or {}).get("enabled", False))
+ANNOTATE_PEAKS_ENABLED = bool((config.get("annotate_peaks") or {}).get("enabled", False))
+MIN_REPLICATES = int((config.get("reproducible_peaks") or {}).get("min_replicates", 2))
+CONDITIONS = sorted({c for s, c in SAMPLE_CONDITIONS.items() if SAMPLE_ROLES.get(s) == "ip"})
+CONDITION_WILDCARD = (
+    "(?:" + "|".join(re.escape(c) for c in CONDITIONS) + ")" if CONDITIONS else "(?!x)x"
+)
+
 # ---------------------------------------------------------------------
 # Output redirection (aligned with rna-seq/chip): raw inputs (1.rawdata/)
 # stay at the project working-directory root; every derived artifact
@@ -190,6 +288,14 @@ def raw_fastq(sample):
         f"sample {sample}: no raw FASTQ found under 1.rawdata/. Supported names: "
         f"{sample}_R1.fastq.gz, {sample}_R1.fq.gz, {sample}.fastq.gz, {sample}.fq.gz"
     )
+
+
+def condition_ip_samples(condition):
+    """Ordered (sample-table order) list of the ip-role samples of one
+    condition; used by the reproducible_peaks consensus rule. Helper lives
+    here to keep the rule modules rules-only."""
+    return [s for s in SAMPLES
+            if SAMPLE_CONDITIONS.get(s) == condition and SAMPLE_ROLES.get(s) == "ip"]
 
 
 def _align_input(wc):
@@ -220,6 +326,9 @@ RESOURCE_DEFAULTS = {
     "read_count": {"threads": 1, "mem_mb": 2000, "runtime_min": 10},
     "callpeak_clipper": {"threads": 4, "mem_mb": 16000, "runtime_min": 240},
     "callpeak_pureclip": {"threads": 8, "mem_mb": 16000, "runtime_min": 360},
+    "consensus_peaks": {"threads": 1, "mem_mb": 2048, "runtime_min": 30},
+    "gtf_gene_regions": {"threads": 1, "mem_mb": 4096, "runtime_min": 60},
+    "annotate_peaks": {"threads": 1, "mem_mb": 4096, "runtime_min": 60},
 }
 
 
@@ -267,3 +376,9 @@ if config["callpeak"]["pureclip"]:
     TARGETS += [expand(R("5.callpeak/{sample}.pureclip.bed"), sample=SAMPLES)]
 if CLIPPER_ENABLED:
     TARGETS += [expand(R("5.callpeak/{sample}.clipper.peakClusters.bed"), sample=SAMPLES)]
+if REPRODUCIBLE_PEAKS_ENABLED:
+    TARGETS += [expand(R("6.reproducible_peaks/{condition}.consensus.bed"), condition=CONDITIONS)]
+    if ANNOTATE_PEAKS_ENABLED:
+        TARGETS += [expand(R("6.annotation/{condition}.consensus.annotation.tsv"), condition=CONDITIONS)]
+if ANNOTATE_PEAKS_ENABLED and bool(config["callpeak"]["pureclip"]):
+    TARGETS += [expand(R("6.annotation/{sample}.annotation.tsv"), sample=SAMPLES)]

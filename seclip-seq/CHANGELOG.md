@@ -2,6 +2,67 @@
 
 All notable changes to this project are documented in this file. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-09-08
+
+### Added
+
+- Optional `reproducible_peaks` stage (default off; closes TODO item 1): per-condition
+  cross-sample consensus of the ip-role PureCLIP beds via `bedtools multiinter`
+  (`rule consensus_peaks` in `workflow/rules/consensus.smk`); a site is kept when
+  present in >= `min_replicates` beds and the support count is written to column 4
+  of `results/6.reproducible_peaks/{condition}.consensus.bed`.
+- Optional `annotate_peaks` stage (default off; closes TODO item 2): GTF-based peak
+  annotation for every peak set (per-sample PureCLIP beds plus each consensus BED).
+  `rule gtf_gene_regions` derives gene/exon BEDs and a gene_id/gene_name/gene_biotype
+  table from the already-required GTF (new stdlib script
+  `workflow/scripts/gtf_to_gene_regions.py`: quoted/unquoted attribute parsing,
+  gene spans merged from gene + exon records, 1-based GTF -> 0-based half-open BED);
+  the `annotate_sample_peaks` / `annotate_consensus_peaks` rules classify each peak
+  with `bedtools intersect -u` (exon / gene overlap) and `bedtools closest -d -t first`
+  (nearest gene + signed distance) and merge everything into
+  `results/6.annotation/{set}.annotation.tsv` (chrom, start, end, score, nearest_gene,
+  nearest_gene_id, distance, feature_class exon|gene|intergenic, gene_biotype) via the
+  new stdlib script `workflow/scripts/annotate_peaks.py`.
+- Optional `condition`/`role` sample-table columns driving the consensus: the sample
+  table now accepts either exactly `[sample_id]` (unchanged; single-column tables keep
+  working) or exactly `[sample_id, condition, role]`. `role` is restricted to
+  `ip|input`, `condition` follows the sample-id name rules (values become file names);
+  `load_sample_table` keeps returning the ordered sample-id list, with the grouping
+  exposed as the module-level `SAMPLE_CONDITIONS` / `SAMPLE_ROLES` dicts
+  (`workflow/rules/common.smk`).
+- Parse-time validation for the new switches (aggregated in `validate_config`): both
+  sections are optional (absent = disabled, so v0.1 project configs keep working);
+  `reproducible_peaks.{enabled,min_replicates}` and `annotate_peaks.enabled` shapes;
+  enabled consensus requires the condition/role columns, `callpeak.pureclip=true`,
+  and at least `min_replicates` ip samples per condition (hard error, consensus
+  support could never be reached); enabled annotation requires `callpeak.pureclip=true`.
+- `bedtools=2.31.0` pinned in `workflow/environment.yaml` (seclip had no bedtools
+  before; matches the chip sibling pin; invoked bare from PATH like the other tools).
+- New scheduler-resource defaults (`RESOURCE_DEFAULTS` in common.smk):
+  `consensus_peaks` 1 thread / 2048 MB / 30 min, `gtf_gene_regions` and
+  `annotate_peaks` 1 / 4096 / 60 (overridable per rule via a project resources.yaml).
+- `tests/test_gtf_regions.py`: 26 pytest unit tests for both scripts (attribute
+  parsing, interval extraction, output contracts, merge/feature-class logic, error
+  paths); `make unit` target (`python3 -m pytest tests -q`) and `make test` now runs
+  check + lint + unit.
+- `tests/run_test.sh --consensus` scenario: rewrites the test sample table to the
+  condition/role form (both samples one ip condition), enables both stages in the
+  test config, dry-runs, and asserts `consensus_peaks`, `gtf_gene_regions`,
+  `annotate_sample_peaks`, and `annotate_consensus_peaks` join the DAG.
+
+### Changed
+
+- README results tables now document the PureCLIP output contract (the workflow's
+  first written record of it): `results/5.callpeak/{sample}.pureclip.bed` is BED6 —
+  chromosome, start, end, site name, crosslink-site score, strand.
+- Dry-run job-count baseline unchanged at **23 jobs** with both stages off (the new
+  sections are optional in validation; the default test scenario keeps the generated
+  single-column sample table). The `--consensus` scenario dry-run adds 5 jobs
+  (28 total: consensus 1 + GTF prep 1 + per-sample annotation 2 + consensus
+  annotation 1). `config/resources.yaml` (repository mirror) intentionally not
+  extended — unlisted rules keep the built-in defaults per the documented override
+  semantics; a project copy can override the new rules by name.
+
 ## [0.1.0] - 2026-09-05
 
 ### Changed (2026-09-05/06, environment solve validation in WSL)

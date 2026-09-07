@@ -1,8 +1,8 @@
 # seclip-seq
 
-A **Snakemake** workflow for single-end enhanced CLIP (eCLIP-style) protein-RNA binding maps. One command takes raw SE FASTQ files with a 10-base random UMI at the start of each read through: UMI extraction, two-pass 3' adapter trimming, read sorting, an optional sncRNA/repeats pre-filter, unique genome alignment, UMI-based deduplication, and peak calling with PureCLIP (CLIPper when configured), ending in a combined MultiQC report.
+A **Snakemake** workflow for single-end enhanced CLIP (eCLIP-style) protein-RNA binding maps. One command takes raw SE FASTQ files with a 10-base random UMI at the start of each read through: UMI extraction, two-pass 3' adapter trimming, read sorting, an optional sncRNA/repeats pre-filter, unique genome alignment, UMI-based deduplication, and peak calling with PureCLIP (CLIPper when configured), ending in a combined MultiQC report. Two optional v0.2 stages (both default off) add cross-sample reproducible peaks per condition (bedtools multiinter consensus) and GTF-based peak annotation (nearest gene / distance / biotype per peak set).
 
-> **Status (v0.1.0)**: first-class subproject aligned with the `rna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets, three-layer config stacking, parse-time config/sample-table validation, software-version provenance, and a synthetic-data dry-run regression test. The regression baseline DAG is **23 jobs**; for end-to-end validation see [Development and testing](#development-and-testing).
+> **Status (v0.2.0)**: first-class subproject aligned with the `rna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets, three-layer config stacking, parse-time config/sample-table validation, software-version provenance, and a synthetic-data dry-run regression test (plus a pytest suite for the annotation scripts). The default regression DAG is **23 jobs** (both optional stages off); the `--consensus` scenario adds 5 (28 total); for end-to-end validation see [Development and testing](#development-and-testing).
 
 ## Workflow overview
 
@@ -20,6 +20,9 @@ A **Snakemake** workflow for single-end enhanced CLIP (eCLIP-style) protein-RNA 
 | | `read_count` | `samtools view -c -F 4` mapped-read count of the deduplicated BAM |
 | `5.callpeak` | `callpeak_pureclip` | PureCLIP crosslink-site peaks on the deduplicated BAM |
 | | `callpeak_clipper` | CLIPper peak clusters, only when a CLIPper executable is configured |
+| `6.reproducible_peaks` (optional) | `consensus_peaks` | when `reproducible_peaks.enabled`: bedtools multiinter consensus of one condition's ip-role PureCLIP beds; sites present in >= `min_replicates` beds are kept, column 4 of the consensus BED reports the support |
+| `6.annotation` (optional) | `gtf_gene_regions` | when `annotate_peaks.enabled`: GTF -> gene/exon BEDs + gene attribute table (stdlib parser) |
+| | `annotate_sample_peaks` / `annotate_consensus_peaks` | bedtools intersect (exon/gene overlap) + closest (nearest gene + distance) merged into one TSV per peak set |
 | `5.QC` | `multiqc` | combined QC report over all per-sample modules |
 | | `software_versions` | record of the tool versions actually resolved for the run |
 
@@ -29,7 +32,7 @@ A rendered DAG of the regression-test project is in [docs/dag_test.svg](docs/dag
 
 Three ways to get an environment (pick one; details in [docs/user-guide.md](docs/user-guide.md) §1):
 
-1. **Fresh server**: `mamba env create -f workflow/environment.yaml` (all-in-one environment `seclip-seq`, pinning snakemake-minimal 7.32.4 / STAR 2.7.10b / samtools 1.17 / cutadapt 4.6 / umi-tools 1.1.5 (pip, python 3.9) / seqkit 2.13.0 / fastqc 0.11.9 / multiqc 1.21 / pureclip 1.3.1);
+1. **Fresh server**: `mamba env create -f workflow/environment.yaml` (all-in-one environment `seclip-seq`, pinning snakemake-minimal 7.32.4 / STAR 2.7.10b / samtools 1.17 / bedtools 2.31.0 / cutadapt 4.6 / umi-tools 1.1.5 (pip, python 3.9) / seqkit 2.13.0 / fastqc 0.11.9 / multiqc 1.21 / pureclip 1.3.1);
 2. **Reuse an existing conda environment**: in `config/software.yaml` set `environment.type: conda` + `conda_prefix` (recommended) or `conda_name`; `run.sh` injects the prefix's `bin` into PATH automatically, no activate needed;
 3. **System mode**: with `environment.type: system`, all tools come from PATH.
 
@@ -46,7 +49,7 @@ The full walkthrough is in [docs/user-guide.md](docs/user-guide.md) §2; a ready
 mkdir -p ~/work/fbl/1.rawdata
 cp FC_rep1.fastq.gz FC_rep2.fastq.gz ~/work/fbl/1.rawdata/
 
-# 2) Sample table (single sample_id column) + project config
+# 2) Sample table (sample_id column, optional condition/role columns) + project config
 cp example/samples.csv ~/work/fbl/samples.csv
 cp example/config.yaml  ~/work/fbl/config.yaml       # fill in the reference paths
 
@@ -73,8 +76,9 @@ seclip-seq/
 ├── workflow/
 │   ├── Snakefile             # single entry point (species presets + config layering + target aggregation)
 │   ├── environment.yaml      # all-in-one conda environment template (pinned; created explicitly by the user)
-│   ├── rules/                # common / index / upstream / align / callpeak / meta
-│   ├── scripts/              # runtime_config.py (software.yaml resolver), collect_versions.py
+│   ├── rules/                # common / index / upstream / align / callpeak / consensus / meta
+│   ├── scripts/              # runtime_config.py (software.yaml resolver), collect_versions.py,
+│   │                         # gtf_to_gene_regions.py + annotate_peaks.py (annotation stage)
 │   ├── profile/              # default / pbs / sge / slurm profiles + README (cluster commands and pinned params)
 │   └── multiqc_config.yaml
 ├── config/
@@ -106,6 +110,8 @@ workdir/
     ├── 3.align/             # repeats-unmapped reads + unique genome alignments
     ├── 4.rmdup/             # deduplicated BAMs + read counts
     ├── 5.callpeak/          # PureCLIP / CLIPper peak BEDs
+    ├── 6.reproducible_peaks/  # optional: per-condition consensus BEDs (support in column 4)
+    ├── 6.annotation/        # optional: {set}.annotation.tsv + _ref/ gene/exon BEDs
     ├── 5.QC/                # multiqc_report.html + software_versions.yaml
     └── logs/                # per-rule logs
 ```
@@ -130,13 +136,24 @@ All derived artifacts live under `results/` in the working directory (rename via
 | Deduplicated BAM (+ index) | `results/4.rmdup/{sample}.rmDupSo.bam` (+ `.bam.bai`) |
 | umi_tools dedup statistics | `results/4.rmdup/{sample}_stats/{sample}_edit_distance.tsv` |
 | Mapped-read count | `results/4.rmdup/{sample}_readnum.txt` |
-| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` |
+| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` — BED6: chromosome, start (0-based), end, site name, crosslink-site score, strand |
 | CLIPper peaks (when configured) | `results/5.callpeak/{sample}.clipper.peakClusters.bed` |
+| Per-condition consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` |
+| Peak-set annotation (`annotate_peaks.enabled`) | `results/6.annotation/{set}.annotation.tsv` (`{set}` = each sample id and each `{condition}.consensus`) |
+| GTF-derived annotation reference (`annotate_peaks.enabled`) | `results/6.annotation/_ref/genes.bed` (+ `exons.bed`, `genes.tsv`) |
 | Combined QC report | `results/5.QC/multiqc/multiqc_report.html` |
 | Software version record | `results/5.QC/software_versions.yaml` |
 | Per-rule logs | `results/logs/` |
 
 STAR also writes sibling files next to the two declared alignment outputs (`{sample}_Log.out`, `{sample}_SJ.out.tab`, ...); they are informational only.
+
+Optional v0.2 outputs:
+
+- `results/6.reproducible_peaks/{condition}.consensus.bed` — one file per condition (the `condition` of the ip-role samples in the sample table): bedtools multiinter consensus of that condition's per-sample PureCLIP beds, filtered to sites present in >= `min_replicates` beds; BED4 with the support count (number of replicates carrying the site) in column 4;
+- `results/6.annotation/{set}.annotation.tsv` — one file per peak set (`{set}` is each sample id for the PureCLIP beds plus each `{condition}.consensus`), with the header `chrom, start, end, score, nearest_gene, nearest_gene_id, distance, feature_class, gene_biotype` (`score` = PureCLIP crosslink-site score, or the consensus support for consensus sets; `feature_class` = `exon` when the peak overlaps an exon, `gene` when it falls in a gene body, `intergenic` otherwise; `distance` = signed bedtools closest distance to the nearest gene, 0 = overlapping, `NA` when the contig has no gene);
+- `results/6.annotation/_ref/` — the GTF-derived machinery behind the table above (`genes.bed`, `exons.bed`, `genes.tsv`).
+
+Both stages are off by default; see [docs/user-guide.md](docs/user-guide.md) §5.5 for the config switches and the sample-table columns that drive them.
 
 ## QC notes
 
@@ -148,7 +165,7 @@ The MultiQC report aggregates, per sample:
 - **STAR** (`*_Log.final.out`): input reads, uniquely mapped reads and percentage, splices, and mismatch rates for the end-to-end genome alignment;
 - **umi_tools dedup** (`*_edit_distance.tsv`): deduplication statistics of the UMI-collapse step.
 
-There is no Bismark or RNA-seq-style strandedness module here; pipeline health is judged from the UMI extraction rate → trimmed yield → unique mapping rate → deduplicated mapped count (`{sample}_readnum.txt`) chain, plus the peak BED sizes in `results/5.callpeak/`. Peak files are per sample (single-sample calling in v0.1); cross-sample reproducible-peak merging is a v0.2 item (see [docs/TODO.md](docs/TODO.md)).
+There is no Bismark or RNA-seq-style strandedness module here; pipeline health is judged from the UMI extraction rate → trimmed yield → unique mapping rate → deduplicated mapped count (`{sample}_readnum.txt`) chain, plus the peak BED sizes in `results/5.callpeak/`. Peak files are per sample (single-sample calling); with `reproducible_peaks.enabled` the per-condition consensus (`results/6.reproducible_peaks/`) and its support counts add the cross-replicate view, and `annotate_peaks.enabled` ships every peak set with a nearest-gene/biotype table (see [docs/TODO.md](docs/TODO.md) for the remaining backlog).
 
 ## Differences from the legacy pipeline
 
@@ -164,30 +181,34 @@ The workflow is a refactor of the legacy `seCLIP.smk` Snakemake draft. Four deli
 ```bash
 make check    # bash -n syntax checks (no snakemake needed)
 make lint     # static check suite tests/lint.sh (missing optional tools are skipped)
-make test     # CI-equivalent full check (= check + lint)
+make unit     # pytest suite for the annotation scripts (tests/test_gtf_regions.py)
+make test     # check + lint + unit
 ```
 
 Regression tests (need snakemake):
 
 ```bash
 bash tests/run_test.sh               # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
+bash tests/run_test.sh --consensus   # dry-run with the optional v0.2 stages enabled (condition/role table, both stages on)
 bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 3 snRNA-like repeats, 2 samples of 50 bp SE UMI reads) and is never committed. The dry-run baseline DAG is **23 jobs** (2 samples, `filter_repeats: true`, PureCLIP on, CLIPper absent/auto-skipped) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)). A lightweight CI job (lint + `--reads 2000` dry-run regression) runs at the repository root (`.github/workflows/ci.yml`, added 2026-09-07); locally, use `make test` + `bash tests/run_test.sh --reads 2000`. Real-run validation uses the script's `--reads 50000` default — PureCLIP's parameter learning needs tens of thousands of reads.
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 3 snRNA-like repeats, 2 samples of 50 bp SE UMI reads) and is never committed. The default dry-run DAG is **23 jobs** (2 samples, `filter_repeats: true`, PureCLIP on, CLIPper absent/auto-skipped, both optional stages off) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)); the `--consensus` scenario dry-runs 28 jobs and asserts the consensus/annotation rules join the DAG. A lightweight CI job (lint + `--reads 2000` dry-run regression) runs at the repository root (`.github/workflows/ci.yml`, added 2026-09-07); locally, use `make test` + `bash tests/run_test.sh --reads 2000`. Real-run validation uses the script's `--reads 50000` default — PureCLIP's parameter learning needs tens of thousands of reads.
 
 ## Known limitations and TODOs
 
 Mirrors [docs/TODO.md](docs/TODO.md):
 
-1. **Cross-sample reproducible peaks**: v0.1 calls peaks per sample; IDR-style ranking or overlap-based merging across replicates is the first v0.2 candidate.
-2. **Peak annotation**: no gene-model/repeat-feature annotation of the called peaks yet.
-3. **IP vs input control**: no input/background channel concept; a sample-table design decision is needed first.
+1. ~~**Cross-sample reproducible peaks**~~ — resolved in v0.2.0 (optional `reproducible_peaks` stage); IDR-style ranking remains a possible future refinement.
+2. ~~**Peak annotation**~~ — resolved in v0.2.0 (optional `annotate_peaks` stage); repeat-feature annotation beyond the GTF is future work.
+3. **IP vs input control**: no input/background logic yet; the v0.2 sample table already reserves the `role` column (`ip`|`input`) it will build on.
 
 ## License
 
 [Apache-2.0](LICENSE) © 2026 ChengYu
 
 ## Versions
+
+v0.2.0 (2026-09-08): optional cross-sample reproducible peaks (per-condition bedtools multiinter consensus) and GTF-based peak annotation stages, driven by the optional condition/role sample-table columns; bedtools 2.31.0 pinned; pytest unit suite and the `--consensus` regression scenario (see [CHANGELOG.md](CHANGELOG.md)).
 
 v0.1.0 (2026-09-05): initial release — config layer, STAR index / UMI / trim / align / dedup / peak-calling rules, unified launcher, regression tests, and docs (see [CHANGELOG.md](CHANGELOG.md)).

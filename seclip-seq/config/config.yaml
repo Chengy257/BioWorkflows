@@ -10,7 +10,7 @@
 
 ## ---- Outputs and samples ----
 results_dir: "results"          # run outputs root directory (relative to the working directory)
-SampleListFile: "config/samples.csv"   # sample table (single sample_id column; relative to the working directory)
+SampleListFile: "config/samples.csv"   # sample table (sample_id column, optional condition/role columns; relative to the working directory)
 threads: 12                     # Legacy/default thread cap; explicit resources.<rule>.threads can override
 
 ## ---- Per-rule scheduler resources ----
@@ -72,6 +72,21 @@ callpeak:
   pureclip: true                # run PureCLIP on the deduplicated BAM
   clipper: true                 # run CLIPper when an executable is configured (see software.yaml paths.clipper; auto-skipped with a warning when empty)
   clipper_species: "GRCh38_v40"  # CLIPper --species value
+
+## ---- Cross-sample reproducible peaks (optional, default off) ----
+## Requires a sample table with condition/role columns (header
+## sample_id,condition,role); consensus groups the PureCLIP beds of the
+## ip-role samples per condition (bedtools multiinter).
+reproducible_peaks:
+  enabled: false                # build a per-condition consensus of the ip-replicate PureCLIP beds
+  min_replicates: 2             # a consensus site must be present in at least this many ip samples of the condition
+
+## ---- GTF-based peak annotation (optional, default off) ----
+## Annotates every peak set (per-sample PureCLIP beds plus each consensus
+## BED) with the nearest gene, signed distance, and biotype from the
+## configured gtf (bedtools intersect/closest).
+annotate_peaks:
+  enabled: false                # write results/6.annotation/{set}.annotation.tsv for every peak set
 
 ## Software executables, Conda runtime, and large tool databases
 ## are configured separately in config/software.yaml (or project software.yaml).
