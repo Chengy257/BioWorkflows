@@ -6,7 +6,7 @@ This directory contains everything needed to start an srna-seq project modeled o
 
 | File | Description |
 |---|---|
-| `samples.csv` | sample table for the example project (`root_rep1`, `root_rep2`, `leaf_rep1`, `leaf_rep2`), single `sample_id` column |
+| `samples.csv` | sample table for the example project (`root_rep1`, `root_rep2`, `leaf_rep1`, `leaf_rep2`) with `sample_id,group` columns (the group feeds the optional DE stage; a single `sample_id` column remains valid) |
 | `config.yaml` | filled copy of `config/config.template.yaml` for that project: `species: "osa"` (rice IRGSP-1.0 preset), `threads: 24` (legacy PBS cap), the legacy Trim Galore parameters, the legacy cascade class order (rRNA → snoRNA → snRNA → tRNA → miRNA → mRNA → rhizo), and the genome alignment of the trimmed reads; the class FASTAs and the genome still hold `/path/to/` placeholders, with the legacy project's `0.index/` references from the old `srna-seq.sh` script as comments |
 
 For the miniature synthetic dataset (no real data needed) see `tests/make_testdata.py` (`bash tests/run_test.sh` assembles the working directory and dry-runs automatically); a real analysis project must supply its own FASTQ files.

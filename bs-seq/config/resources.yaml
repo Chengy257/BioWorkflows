@@ -30,3 +30,4 @@ resources:
   coverage2cytosine:     {threads:  4, mem_mb: 16000, runtime_min: 720}
   bismark2report:        {threads:  1, mem_mb:  4096, runtime_min: 30}
   bismark2summary:       {threads:  1, mem_mb:  4096, runtime_min: 30}
+  dmr:                   {threads:  4, mem_mb: 16000, runtime_min: 240}
