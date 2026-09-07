@@ -75,3 +75,11 @@ deg:
   padj: 0.05                    # adjusted-pvalue threshold
   batch_correction: "F"         # "T" adds batch to the design (needs a batch column)
   pca_ntop: 2000                # top variable features used in the PCA plot
+
+## ---- Novel miRNA discovery (optional; DEFAULT OFF) ----
+## miRDeep-P2 (mirdeep-p2=1.1.4) novel miRNA prediction from the trimmed
+## reads against the genome; needs the genome fasta above plus a known
+## mature-miRNA reference (e.g. the miRBase mature set of the species).
+novel_mirna:
+  enabled: false                # true turns on the novel_mirna stage
+  mature_fasta: "/path/to/reference/osa/mature_miRNA.fa"   # known mature-miRNA fasta

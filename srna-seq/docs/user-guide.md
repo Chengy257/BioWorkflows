@@ -17,6 +17,7 @@
 | Python 3 + PyYAML | the bootstrap dependency `run.sh` needs to resolve `software.yaml` and run preflight checks; must be on the main PATH |
 | Analysis tools | bowtie + bowtie-build (1.x) / Trim Galore (brings Cutadapt + FastQC) / MultiQC |
 | R + DESeq2 (optional) | only for the differential-expression stage (§8): R (>= 4.3), DESeq2, BiocParallel, getopt, ggplot2, gplots, amap, RColorBrewer — all pinned in `workflow/environment.yaml` |
+| miRDeep-P2 (optional) | only for the novel-miRNA discovery stage (§9): bioconda `mirdeep-p2=1.1.4` (ships `miRDP2-v1.1.4_pipeline.bash`; brings its own bowtie/viennarna dependencies) — pinned in `workflow/environment.yaml` |
 
 Launcher bootstrap order: `run.sh` first uses the `python3` on the system PATH (with PyYAML) to resolve `config/software.yaml`, then injects the main environment/tools into the current process — so even on the conda_prefix reuse route, the login-node PATH must have `python3` (snakemake is supplied by the main environment after resolution).
 
@@ -29,7 +30,7 @@ mamba env create -f workflow/environment.yaml   # environment name srna-seq
 conda activate srna-seq
 ```
 
-This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, bowtie 1.3.1, trim-galore 0.6.10, fastqc 0.11.9, multiqc 1.21, plus the R/DESeq2 stack (r-base 4.3, bioconductor-deseq2, bioconductor-biocparallel, r-getopt, r-ggplot2, r-gplots, r-amap, r-rcolorbrewer) used only by the optional differential-expression stage (§8).
+This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, bowtie 1.3.1, trim-galore 0.6.10, fastqc 0.11.9, multiqc 1.21, `mirdeep-p2` 1.1.4 (used only by the optional novel-miRNA stage, §9), plus the R/DESeq2 stack (r-base 4.3, bioconductor-deseq2, bioconductor-biocparallel, r-getopt, r-ggplot2, r-gplots, r-amap, r-rcolorbrewer) used only by the optional differential-expression stage (§8).
 
 **Path 2: reuse an existing conda environment on the server**
 
@@ -228,6 +229,8 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 | `deg.padj` | number in (0, 1) | `0.05` | adjusted-pvalue threshold |
 | `deg.batch_correction` | `"T"` or `"F"` | `"F"` | `"T"` fits `design = ~ batch + group` (requires a `batch` column); `"F"` fits `~ group` |
 | `deg.pca_ntop` | int >= 1 | `2000` | top variable features used in the PCA plot |
+| `novel_mirna.enabled` | bool | `false` | turn on the novel-miRNA discovery stage (§9); the section is optional and off by default |
+| `novel_mirna.mature_fasta` | string | `""` | known mature-miRNA reference fasta (e.g. the miRBase mature set of the species); required (non-empty) when `novel_mirna.enabled` is true — enabling also requires a configured `genome.fasta` |
 
 **Cascade entry semantics** (the most important config in this workflow):
 
@@ -239,7 +242,7 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 
 Validation runs at parse time (`validate_config` in `workflow/rules/common.smk`) and aggregates all problems into a single `WorkflowError` report. Reference files that do not exist (or are still `/path/to/` placeholders) only **print a warning and do not abort** — dry-run/lint often run on machines without the reference files; in a real run a missing reference fails the corresponding rule, so confirm each warning before launching. Skipped classes warn too: `[config warning] cascade class 'x' has no fasta and is skipped`.
 
-The `deg` section is validated the same way whenever it is present (shape/type checks, aggregated); when `deg.enabled` is true an additional parse-time **design check** runs against the loaded sample table (§8).
+The `deg` section is validated the same way whenever it is present (shape/type checks, aggregated); when `deg.enabled` is true an additional parse-time **design check** runs against the loaded sample table (§8). The `novel_mirna` section behaves the same way: shape/type checks are aggregated, and `novel_mirna.enabled: true` additionally requires a configured `genome.fasta` and a non-empty `novel_mirna.mature_fasta` (hard errors; with the stage disabled an empty `mature_fasta` is silent and a `/path/to/` placeholder only warns, §9).
 
 ### 4.3 Species presets
 
@@ -294,6 +297,9 @@ Built-in defaults per rule (identical to `config/resources.yaml`):
 | `merge_counts` | 1 | 4096 | 30 |
 | `cascade_summary` | 1 | 2048 | 30 |
 | `deg_deseq2` | 4 | 16000 | 240 |
+| `novel_mirna` | 4 | 8192 | 240 |
+
+(`novel_mirna` exists only as a built-in default in `workflow/rules/common.smk`; `config/resources.yaml` is not updated in lockstep for this optional stage — override it the same way as any other rule via a project `resources.yaml`.)
 
 (`fastqc` has its own entry for completeness; in v0.1 FastQC runs inside `rule trim` via `trim_galore --fastqc`.)
 
@@ -351,7 +357,7 @@ Skipped classes are reported, never silent: each one prints `[config warning] ca
 `rule genome_align` aligns `results/2.cleandata/{sample}_trimmed.fq.gz` (the full trimmed read set), **not** the unmapped output of the last cascade stage. This is deliberate and faithful to the legacy script, and the two views answer different questions:
 
 - the **cascade stages** classify reads against curated class references — reads assigned to `miRNA` never reach the later stages, so the later SAMs (and the cascade remainder) are progressively depleted;
-- the **genome SAM** is a complete trimmed-read alignment against the reference genome, unaffected by what the cascade assigned — the basis for genome-level analyses (e.g. novel miRNA discovery, a v0.2 item) and for judging how much of the library the cascade classified at all.
+- the **genome SAM** is a complete trimmed-read alignment against the reference genome, unaffected by what the cascade assigned — the basis for genome-level analyses (e.g. the novel-miRNA discovery stage, §9) and for judging how much of the library the cascade classified at all.
 
 Consequently `genome_unmapped` in `cascade_summary.tsv` is *not* the complement of the last class's unmapped count: it counts trimmed reads that did not match the genome.
 
@@ -508,7 +514,8 @@ workdir/
     │   ├── software_versions.yaml
     │   └── logs/               # QC rule logs (e.g. software_versions.log.txt)
     ├── 6.DEG/                  # optional differential-expression results per class (§8)
-    └── logs/                   # per-rule logs (trim/, cascade/{class}/, genome_align/, count/{class}/, deg_deseq2/, ...)
+    ├── 6.novel_mirna/          # optional novel-miRNA prediction per sample (§9)
+    └── logs/                   # per-rule logs (trim/, cascade/{class}/, genome_align/, count/{class}/, deg_deseq2/, novel_mirna/, ...)
 ```
 
 ### 7.2 Results quick reference
@@ -535,6 +542,8 @@ workdir/
 | DE contrast table | `results/6.DEG/{class}/{treat}_vs_{control}_DESeq2.output.tsv` | per-feature DESeq2 statistics; first header column is `feature` (§8) |
 | DE contrast plots | `results/6.DEG/{class}/{treat}_vs_{control}_DESeq2.output.tsv_VolcanoPlot.pdf` / `_MAPlot.pdf` | volcano and MA plot per contrast (§8) |
 | DE sample plots | `results/6.DEG/{class}/{class}_DESeq2.normalized.vst.PCA_plot.pdf` / `.Pearson_heatmap.pdf` | vst PCA and sample Pearson-correlation heatmap (§8) |
+| novel-miRNA predictions | `results/6.novel_mirna/{sample}/{sample}_filter_P_prediction` (+ `.bed`) | miRDeep-P2 per-sample plant-criteria-filtered prediction table (§9) |
+| novel-miRNA intermediates | `results/6.novel_mirna/{sample}/` | tool-native tree: precursor fasta/structures, mapping signatures, raw `{sample}_predictions` scores (§9) |
 | per-rule logs | `results/logs/` | one log per rule/sample |
 
 ### 7.3 Reading the numbers
@@ -634,7 +643,56 @@ Rscript -e 'library(DESeq2)'
 
 The `example/` project ships exactly this shape (`samples.csv` with root/leaf groups, `control_group: "root"`); flip `deg.enabled` to `true` there to switch the stage on.
 
-## 9. FAQ
+## 9. Novel miRNA discovery stage (optional, default off)
+
+The `novel_mirna` stage (added in v0.2.0) runs miRDeep-P2 per sample over the trimmed reads: candidate hairpins are excised from the reference genome and scored by mapping signature, closing the v0.1 gap where only the mature sequences listed in the configured `miRNA` cascade fasta were quantified. With the shipped default (`novel_mirna.enabled: false`) it is completely absent from the DAG; nothing in §1-§8 changes.
+
+### 9.1 Requirements
+
+1. **Config**: a `novel_mirna:` section with `enabled: true` and a non-empty `mature_fasta` (a known mature-miRNA fasta, e.g. the miRBase mature set of the species; U-to-T conversion / duplicate collapsing is NOT required). Enabling also requires a configured `genome.fasta` — candidate hairpins are excised from it. Both requirements are enforced by the aggregated parse-time validation (§4.2).
+2. **Tool**: `miRDP2-v1.1.4_pipeline.bash` on PATH (bioconda `mirdeep-p2=1.1.4`, pinned in `workflow/environment.yaml`; brings bowtie and ViennaRNA/RNAfold dependencies). The preflight does not check it (the stage is off by default) — verify with `command -v miRDP2-v1.1.4_pipeline.bash` before a real run.
+3. **Genome bowtie index**: built automatically — the stage reuses the workflow's `0.index/genome` index (bowtie1), which miRDP2 1.1.4 requires pre-built via its `-x` flag (the tool never builds a genome index itself).
+
+### 9.2 What runs
+
+One `novel_mirna` job per sample (resources: threads 4 / 8192 MB / 240 min by default, §4.4):
+
+1. the trimmed reads `results/2.cleandata/{sample}_trimmed.fq.gz` are converted into the collapsed unique-read fasta miRDeep-P2 requires (`>readNNNNNNNN_x<count>` headers encoding duplicate counts — the format its RPM arithmetic needs; the tool's own `-q` fastq mode is broken in 1.1.4, so the rule produces this file itself);
+2. `miRDP2-v1.1.4_pipeline.bash -f -g <genome> -x <0.index/genome prefix> -i <collapsed fasta> -o results/6.novel_mirna -p <threads>` runs (command surface verified against the exact bioconda 1.1.4 artifact; see the header of `workflow/rules/novel_mirna.smk` for the full evidence);
+3. the tool-native result tree lands under `results/6.novel_mirna/{sample}/`; the DAG tracks a `flag.log` completion marker plus the collapsed fasta.
+
+Outputs (names are the tool's own and version-dependent):
+
+| File | Meaning |
+|---|---|
+| `results/6.novel_mirna/{sample}/{sample}_filter_P_prediction` | the main result: plant-criteria-filtered, redundancy-removed novel miRNA prediction table (may legitimately be empty when nothing passes) |
+| `results/6.novel_mirna/{sample}/{sample}_filter_P_prediction.bed` | genomic coordinates of the predictions |
+| `results/6.novel_mirna/{sample}/{sample}_predictions` | raw miRDP2 scores before the plant filter |
+| `results/6.novel_mirna/{sample}/{sample}_precursors.fa` / `{sample}_structures` | excised candidate hairpins and their RNAfold structures |
+| `results/6.novel_mirna/{sample}/progress_log`, `script_err`, `script_log` | tool progress/error logs |
+
+Known packaging limitations of bioconda `mirdeep-p2=1.1.4` (documented, not worked around):
+
+- the package ships no user-facing mature-reference flag — known-miRNA filtering runs against the plant mature-miRNA index **bundled in the package**, so the configured `novel_mirna.mature_fasta` is enforced and recorded as a declared input (existence + provenance) but is not passed to the tool;
+- the rfam ncRNA index the script references is not shipped: that filter silently no-ops (its stderr lands in `{sample}/script_err`), so rRNA/tRNA-derived reads reach the scoring step — expect a somewhat noisier candidate set on ncRNA-rich libraries.
+
+### 9.3 Worked example
+
+```bash
+# novel_mirna section (copy into the project config; genome.fasta must be set)
+cat >> config.yaml <<'EOF'
+novel_mirna:
+  enabled: true
+  mature_fasta: "/path/to/reference/osa/mature.fa"
+EOF
+
+command -v miRDP2-v1.1.4_pipeline.bash   # tool present?
+bash run.sh -P . -n                      # dry-run: the DAG gains one novel_mirna job per sample
+bash run.sh -P . -j 10
+# results land in results/6.novel_mirna/{sample}/
+```
+
+## 10. FAQ
 
 **Q1: How do I add a new sncRNA class (e.g. piRNA, or another exogenous index)?**
 Append an entry to the `cascade:` list at the position where it should run — order matters, because it defines assignment priority:
@@ -677,10 +735,11 @@ make check                          # bash -n syntax checks (no snakemake needed
 make lint                           # static suite (missing optional tools are skipped)
 bash tests/run_test.sh              # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
 bash tests/run_test.sh --deg        # dry-run the differential-expression scenario
+bash tests/run_test.sh --novel-mirna  # dry-run the novel-miRNA scenario
 bash tests/run_test.sh --real-run   # end-to-end run + output assertions (needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, rRNA/tRNA/miRNA references, 2 samples); the dry-run baseline DAG is 27 jobs (CI passes `--reads 2000`), and the `--deg` scenario adds the differential-expression job on top. Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, rRNA/tRNA/miRNA references, 2 samples); the dry-run baseline DAG is 27 jobs (CI passes `--reads 2000`), the `--deg` scenario adds the differential-expression job on top, and the `--novel-mirna` scenario adds one `novel_mirna` job per sample (29 jobs). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
 
 **Q11: How do I run differential expression on my data?**
 

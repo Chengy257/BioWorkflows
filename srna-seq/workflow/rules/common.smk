@@ -146,6 +146,25 @@ def _validate_deg_design(deg, errors, warnings):
         )
 
 
+def _validate_novel_mirna_design(novel, genome_fasta, errors):
+    """Design checks for the optional novel-miRNA discovery stage
+    (novel_mirna.enabled true), aggregated WorkflowError style. The stage
+    runs miRDeep-P2 over the trimmed reads: candidate hairpins are excised
+    from the reference genome, so a configured genome fasta is mandatory,
+    and a known mature-miRNA reference (novel_mirna.mature_fasta) must be
+    configured for the run to be meaningful."""
+    if not genome_fasta:
+        errors.append(
+            "novel_mirna.enabled is true but the genome has no configured fasta "
+            "(candidate hairpins are excised from the reference genome)"
+        )
+    if not str(novel.get("mature_fasta") or "").strip():
+        errors.append(
+            "novel_mirna.enabled is true but novel_mirna.mature_fasta is empty "
+            "(a known mature-miRNA fasta is required)"
+        )
+
+
 def validate_config(cfg):
     """Parse-time hard validation: required keys, cascade entry shapes,
     types and value ranges aggregated into a single report. Reference
@@ -252,6 +271,23 @@ def validate_config(cfg):
                 errors.append(f"deg.pca_ntop must be an integer >= 1, got {ntop!r}")
             if enabled is True:
                 _validate_deg_design(deg, errors, warnings)
+    novel = cfg.get("novel_mirna")
+    if novel is not None:
+        if not isinstance(novel, dict):
+            errors.append(f"novel_mirna must be a mapping, got {novel!r}")
+        else:
+            enabled = novel.get("enabled")
+            if not isinstance(enabled, bool):
+                errors.append(f"novel_mirna.enabled must be a boolean, got {enabled!r}")
+            mature = novel.get("mature_fasta")
+            if not isinstance(mature, str):
+                errors.append(f"novel_mirna.mature_fasta must be a string, got {mature!r}")
+            elif enabled is True:
+                _validate_novel_mirna_design(
+                    novel,
+                    str((cfg.get("genome") or {}).get("fasta") or "").strip(),
+                    errors,
+                )
     if errors:
         raise WorkflowError(
             f"config validation failed ({len(errors)} issues):\n  " + "\n  ".join(errors)
@@ -266,6 +302,13 @@ def validate_config(cfg):
     genome_fasta = str((cfg.get("genome") or {}).get("fasta") or "").strip()
     if genome_fasta and "/path/to/" in genome_fasta:
         warnings.append(f"genome.fasta is still a placeholder: {genome_fasta}")
+    novel_section = cfg.get("novel_mirna")
+    if isinstance(novel_section, dict):
+        novel_mature = str(novel_section.get("mature_fasta") or "").strip()
+        if novel_mature and "/path/to/" in novel_mature:
+            warnings.append(
+                f"novel_mirna.mature_fasta is still a placeholder: {novel_mature}"
+            )
     for w in warnings:
         print(f"[config warning] {w}")
 
@@ -368,6 +411,7 @@ RESOURCE_DEFAULTS = {
     "merge_counts": {"threads": 1, "mem_mb": 4096, "runtime_min": 30},
     "cascade_summary": {"threads": 1, "mem_mb": 2048, "runtime_min": 30},
     "deg_deseq2": {"threads": 4, "mem_mb": 16000, "runtime_min": 240},
+    "novel_mirna": {"threads": 4, "mem_mb": 8192, "runtime_min": 240},
 }
 
 
@@ -415,6 +459,20 @@ _DEG_CLASSES = sorted(set(_DEG_CONFIG.get("classes") or []) & set(_CLASSES)) \
     if (_DEG_ENABLED and _CLASSES) else []
 
 # ---------------------------------------------------------------------
+# Optional novel-miRNA discovery stage (default off)
+# ---------------------------------------------------------------------
+# The novel stage (rules/novel_mirna.smk) runs miRDeep-P2 (bioconda
+# mirdeep-p2=1.1.4) per sample over the trimmed reads: candidate hairpins
+# are excised from the reference genome and scored by mapping signature,
+# so it needs the genome AND a known mature-miRNA fasta. Parse-time guarded
+# by _NOVEL_RUN: with the default novel_mirna.enabled=false this declares
+# nothing and the DAG is unchanged.
+_NOVEL_CONFIG = config.get("novel_mirna") or {}
+_NOVEL_ENABLED = bool(_NOVEL_CONFIG.get("enabled", False))
+_NOVEL_MATURE = str(_NOVEL_CONFIG.get("mature_fasta") or "").strip()
+_NOVEL_RUN = _NOVEL_ENABLED and _GENOME_CONFIGURED and bool(_NOVEL_MATURE)
+
+# ---------------------------------------------------------------------
 # Target aggregation
 # ---------------------------------------------------------------------
 TARGETS = [
@@ -429,3 +487,5 @@ if _GENOME_CONFIGURED:
     TARGETS += [expand(R("3.align/genome/{sample}.sam"), sample=SAMPLES)]
 if _DEG_CLASSES:
     TARGETS += [expand(R("6.DEG/{klass}/flag.log"), klass=_DEG_CLASSES)]
+if _NOVEL_RUN:
+    TARGETS += [expand(R("6.novel_mirna/{sample}/flag.log"), sample=SAMPLES)]
