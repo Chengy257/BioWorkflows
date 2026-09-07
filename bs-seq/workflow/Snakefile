@@ -33,14 +33,19 @@ if _EXTRA_CONFIG and os.path.exists(_EXTRA_CONFIG):
 
 # Resolve species presets: every preset key not set by the project config
 # is filled in (an unset genome fasta inherits the preset path this way);
-# species "none" skips the preset merge entirely.
+# species "none" skips the preset merge entirely. The allowlist check and
+# the preset selection live here; the merge itself is apply_species_presets
+# in rules/common.smk (included below), executed there right before config
+# validation -- the same point in the parse sequence this inline merge used
+# to occupy relative to load_sample_table/validate_config (the function
+# cannot be called above the include that defines it).
 SPECIES = config.get("species", "osa")
 if SPECIES not in ("osa", "hsa", "none"):
     raise ValueError(f"Unknown species '{SPECIES}'. Choose osa, hsa, or none.")
 if SPECIES != "none":
-    for _key, _value in (config.get(SPECIES) or {}).items():
-        if _key not in config:
-            config[_key] = _value
+    _SPECIES_PRESET = config.get(SPECIES) or {}
+else:
+    _SPECIES_PRESET = {}
 
 # Shared definitions: sample-table parsing, config validation, PE/SE
 # helpers, and target aggregation. Included first by every rules/*.smk.

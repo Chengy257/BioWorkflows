@@ -1,9 +1,10 @@
 # ---------------------------------------------------------------------
-# Shared definitions: sample-table parsing, config validation, PE/SE
-# raw-read detection, trim-aware alignment inputs, resource helpers, and
-# target aggregation. Included first by workflow/Snakefile; every
-# rules/*.smk uses the names defined here. BASE_DIR / WORKFLOW_DIR come
-# from the Snakefile.
+# Shared definitions: sample-table parsing, species-preset merging, config
+# validation, PE/SE raw-read detection, trim-aware alignment inputs,
+# resource helpers, and target aggregation. Included first by
+# workflow/Snakefile; every rules/*.smk uses the names defined here.
+# BASE_DIR / WORKFLOW_DIR (and the species preset selection) come from the
+# Snakefile.
 # ---------------------------------------------------------------------
 import csv
 import os
@@ -54,6 +55,28 @@ def load_sample_table(path):
     if not samples:
         raise WorkflowError(f"Sample table {path} has no data rows")
     return samples
+
+
+def apply_species_presets(config, preset):
+    """Fill in every preset key the project config left unset, in place.
+
+    The preset table (config/species.yaml, selected by the top-level
+    "species" key in workflow/Snakefile) only supplies TOP-LEVEL keys the
+    project configuration left unset (an absent genome inherits the preset
+    fasta this way); explicit project values win and an empty preset is a
+    no-op. Mutates `config`; returns None. `_SPECIES_PRESET` is computed in
+    workflow/Snakefile ({} for species "none").
+    """
+    for key, value in (preset or {}).items():
+        if key not in config:
+            config[key] = value
+
+
+# Species preset merge; the allowlist check and the preset selection live in
+# workflow/Snakefile. This runs at the exact position of the historical
+# inline merge in the Snakefile: before the sample table is read and before
+# validate_config (a preset genome is what satisfies that validation).
+apply_species_presets(config, _SPECIES_PRESET)
 
 
 SAMPLES = load_sample_table(_resolve_sample_table(config["SampleListFile"]))
