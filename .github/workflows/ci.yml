@@ -70,7 +70,7 @@ jobs:
         run: bash tests/run_test.sh --reads 2000
 
   seclip-seq:
-    name: seclip-seq (lint + dry-run regression)
+    name: seclip-seq (unit tests + lint + dry-run regression)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -84,13 +84,17 @@ jobs:
       - name: Install snakemake and lint tools
         run: |
           python -m pip install --upgrade pip
-          pip install "snakemake==7.32.4" "pulp==2.7.0" pyyaml
+          pip install "snakemake==7.32.4" "pulp==2.7.0" pyyaml pytest
           sudo apt-get update
           sudo apt-get install -y shellcheck graphviz
+      - name: Unit tests
+        run: python -m pytest tests -q
       - name: Lint
         run: bash tests/lint.sh
       - name: Dry-run regression (synthetic data)
         run: bash tests/run_test.sh --reads 2000
+      - name: Enabled-stage dry-run regression (v0.2 scenarios)
+        run: bash tests/run_test.sh --reads 2000 --consensus
       - name: Upload DAG
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,7 +104,7 @@ jobs:
           if-no-files-found: ignore
 
   srna-seq:
-    name: srna-seq (lint + dry-run regression)
+    name: srna-seq (unit tests + lint + dry-run regression)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -114,13 +118,19 @@ jobs:
       - name: Install snakemake and lint tools
         run: |
           python -m pip install --upgrade pip
-          pip install "snakemake==7.32.4" "pulp==2.7.0" pyyaml
+          pip install "snakemake==7.32.4" "pulp==2.7.0" pyyaml pytest
           sudo apt-get update
           sudo apt-get install -y shellcheck graphviz
+      - name: Unit tests
+        run: python -m pytest tests -q
       - name: Lint
         run: bash tests/lint.sh
       - name: Dry-run regression (synthetic data)
         run: bash tests/run_test.sh --reads 2000
+      - name: Enabled-stage dry-run regression (v0.2 scenarios)
+        run: |
+          bash tests/run_test.sh --reads 2000 --deg
+          bash tests/run_test.sh --reads 2000 --novel-mirna
       - name: Upload DAG
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,7 +140,7 @@ jobs:
           if-no-files-found: ignore
 
   bs-seq:
-    name: bs-seq (lint + dry-run regression)
+    name: bs-seq (unit tests + lint + dry-run regression)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -144,13 +154,17 @@ jobs:
       - name: Install snakemake and lint tools
         run: |
           python -m pip install --upgrade pip
-          pip install "snakemake==7.32.4" "pulp==2.7.0" pyyaml
+          pip install "snakemake==7.32.4" "pulp==2.7.0" pyyaml pytest
           sudo apt-get update
           sudo apt-get install -y shellcheck graphviz
+      - name: Unit tests
+        run: python -m pytest tests -q
       - name: Lint
         run: bash tests/lint.sh
       - name: Dry-run regression (synthetic data)
         run: bash tests/run_test.sh --reads 2000
+      - name: Enabled-stage dry-run regression (v0.2 scenarios)
+        run: bash tests/run_test.sh --reads 2000 --dmr
       - name: Upload DAG
         if: always()
         uses: actions/upload-artifact@v4
