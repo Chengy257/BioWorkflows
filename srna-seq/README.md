@@ -1,8 +1,8 @@
 # srna-seq
 
-A **Snakemake** workflow for small-RNA sequencing (plant / plant+microbiome). One command takes raw single-end FASTQ files through: 3' adapter trimming (Trim Galore), a sequential bowtie1 cascade filter over ordered sncRNA classes (rRNA → snoRNA → snRNA → tRNA → miRNA → mRNA → optional exogenous classes), a bowtie1 genome alignment of the trimmed reads, per-class count and RPM matrices, ending in a cascade read-fate summary and a combined MultiQC report.
+A **Snakemake** workflow for small-RNA sequencing (plant / plant+microbiome). One command takes raw single-end FASTQ files through: 3' adapter trimming (Trim Galore), a sequential bowtie1 cascade filter over ordered sncRNA classes (rRNA → snoRNA → snRNA → tRNA → miRNA → mRNA → optional exogenous classes), a bowtie1 genome alignment of the trimmed reads, per-class count and RPM matrices, ending in a cascade read-fate summary and a combined MultiQC report — plus an optional, default-off differential-expression stage (DESeq2 over the per-class count matrices, `6.DEG/`).
 
-> **Status (v0.1.0)**: first-class subproject aligned with the `rna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets, three-layer config stacking, parse-time config/sample-table validation, software-version provenance, and a synthetic-data dry-run regression test. The regression baseline DAG is **27 jobs**; for end-to-end validation see [Development and testing](#development-and-testing).
+> **Status (v0.2.0)**: first-class subproject aligned with the `rna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets, three-layer config stacking, parse-time config/sample-table validation, software-version provenance, and a synthetic-data dry-run regression test. v0.2.0 adds the optional DESeq2 differential-expression stage (default off; see [Differential expression](#differential-expression)). The regression baseline DAG is **27 jobs**; for end-to-end validation see [Development and testing](#development-and-testing).
 
 ## Workflow overview
 
@@ -18,6 +18,7 @@ A **Snakemake** workflow for small-RNA sequencing (plant / plant+microbiome). On
 | `5.QC` | `cascade_summary` | per-sample read fate across the cascade (wide TSV + MultiQC custom bargraph) |
 | | `multiqc` | combined QC report over all per-sample modules + the cascade bargraph |
 | | `software_versions` | record of the tool versions actually resolved for the run |
+| `6.DEG` (optional) | `deg_deseq2` | DESeq2 differential expression per analyzed class (default off; `deg.enabled: true` + a `group` column in the sample table) |
 
 ## Cascade design
 
@@ -34,7 +35,7 @@ The cascade is the heart of the workflow; its semantics are fixed by the ordered
 
 Three ways to get an environment (pick one; details in [docs/user-guide.md](docs/user-guide.md) §1):
 
-1. **Fresh server**: `mamba env create -f workflow/environment.yaml` (all-in-one environment `srna-seq`, pinning snakemake-minimal 7.32.4 / bowtie 1.3.1 / trim-galore 0.6.10 / fastqc 0.11.9 / multiqc 1.21);
+1. **Fresh server**: `mamba env create -f workflow/environment.yaml` (all-in-one environment `srna-seq`, pinning snakemake-minimal 7.32.4 / bowtie 1.3.1 / trim-galore 0.6.10 / fastqc 0.11.9 / multiqc 1.21, plus the R/DESeq2 stack used by the optional differential-expression stage);
 2. **Reuse an existing conda environment**: in `config/software.yaml` set `environment.type: conda` + `conda_prefix` (recommended) or `conda_name`; `run.sh` injects the prefix's `bin` into PATH automatically, no activate needed;
 3. **System mode**: with `environment.type: system`, all tools come from PATH.
 
@@ -51,7 +52,7 @@ The full walkthrough is in [docs/user-guide.md](docs/user-guide.md) §2; a ready
 mkdir -p ~/work/rice/1.rawdata
 cp root_rep1.fq.gz root_rep2.fq.gz leaf_rep1.fq.gz leaf_rep2.fq.gz ~/work/rice/1.rawdata/
 
-# 2) Sample table (single sample_id column) + project config
+# 2) Sample table (sample_id column; add a group column for the DE stage) + project config
 cp example/samples.csv ~/work/rice/samples.csv
 cp example/config.yaml  ~/work/rice/config.yaml       # fill in the reference paths
 
@@ -78,8 +79,8 @@ srna-seq/
 ├── workflow/
 │   ├── Snakefile             # single entry point (species presets + config layering + target aggregation)
 │   ├── environment.yaml      # all-in-one conda environment template (pinned; created explicitly by the user)
-│   ├── rules/                # common / upstream / cascade / quant / meta
-│   ├── scripts/              # runtime_config.py, collect_versions.py, count_features.py, merge_counts.py, cascade_summary.py
+│   ├── rules/                # common / upstream / cascade / quant / deg / meta
+│   ├── scripts/              # runtime_config.py, collect_versions.py, count_features.py, merge_counts.py, cascade_summary.py, run_deseq2.R
 │   ├── profile/              # default / pbs / sge / slurm profiles + README (cluster commands and pinned params)
 │   └── multiqc_config.yaml
 ├── config/
@@ -87,9 +88,9 @@ srna-seq/
 │   ├── config.template.yaml  # annotated project template (copy into the working directory)
 │   ├── species.yaml          # species presets (osa: per-class sncRNA fastas + genome)
 │   ├── resources.yaml        # per-rule scheduler resources (threads/mem_mb/runtime_min)
-│   ├── software.yaml         # unified software runtime (conda_prefix / system)
+│   ├── software.yaml         # unified software runtime (conda_prefix / system + r: section for the DE stage)
 │   └── samples.csv           # sample table template (single sample_id column)
-├── tests/                    # run_test.sh (dry-run + --real-run regression) / lint.sh / make_testdata.py
+├── tests/                    # run_test.sh (dry-run / --real-run / --deg regression) / lint.sh / make_testdata.py / test_common.py
 ├── example/                  # example project (legacy rice sample table + filled config + start guide)
 ├── docs/                     # user guide + TODO backlog
 ├── Makefile                  # make check / lint / test
@@ -111,6 +112,7 @@ workdir/
     ├── 3.align/             # filter/{class}/ cascade stages + genome/ alignment
     ├── 4.expression/        # per-class counts/RPM matrices + all_classes_counts.tsv
     ├── 5.QC/                # cascade summary + multiqc_report.html + software_versions.yaml
+    ├── 6.DEG/               # optional DE results per analyzed class (deg stage)
     └── logs/                # per-rule logs
 ```
 
@@ -137,6 +139,8 @@ All derived artifacts live under `results/` in the working directory (rename via
 | Cascade read-fate summary | `results/5.QC/cascade_summary.tsv` |
 | Combined QC report | `results/5.QC/multiqc/multiqc_report.html` |
 | Software version record | `results/5.QC/software_versions.yaml` |
+| DE contrast table | `results/6.DEG/{class}/{treat}_vs_{control}_DESeq2.output.tsv` (deg stage) |
+| DE plots | `results/6.DEG/{class}/*_VolcanoPlot.pdf`, `*_MAPlot.pdf`, `{class}_DESeq2.normalized.vst.PCA_plot.pdf`, `{class}_DESeq2.normalized.vst.Pearson_heatmap.pdf` (deg stage) |
 | Per-rule logs | `results/logs/` |
 
 `cascade_summary.tsv` has one row per sample with columns `sample`, `raw`, `trimmed`, then `{class}_mapped` / `{class}_unmapped` for each configured class, then `genome_unmapped`:
@@ -155,7 +159,17 @@ The MultiQC report aggregates, per sample:
 - **FastQC** (`*_trimmed_fastqc.zip`): per-base quality, GC content, and other module checks on the trimmed reads;
 - **Cascade read fate** (`cascade_summary_mqc.tsv`): a MultiQC custom-content **bargraph** ("sRNA cascade read fate") plotting `raw → trimmed → {class}_mapped → {class}_unmapped → genome_unmapped` per sample — the at-a-glance view of where every read went.
 
-There is no bowtie-specific MultiQC module: per-stage mapping behaviour is judged from the cascade summary numbers. Pipeline health is read as the chain raw → trimmed yield → per-class assignment → genome-unmapped remainder (§7 of the user guide). Differential expression across conditions is out of scope for v0.1 (see [docs/TODO.md](docs/TODO.md)).
+There is no bowtie-specific MultiQC module: per-stage mapping behaviour is judged from the cascade summary numbers. Pipeline health is read as the chain raw → trimmed yield → per-class assignment → genome-unmapped remainder (§7 of the user guide).
+
+## Differential expression (optional, default off)
+
+The `deg` stage (v0.2.0) runs DESeq2 over the per-class count matrices, ported from the rna-seq workflow. It is off unless you ask for it:
+
+1. Add a `group` column to the sample table (and optionally `batch`); accepted headers are exactly `sample_id`, `sample_id,group`, or `sample_id,group,batch`. Single-column tables keep working with the stage off.
+2. Set `deg.enabled: true` in the project config; tune `classes` (cascade classes to analyze), `control_group`, `foldchange`, `padj`, `batch_correction` (`"T"` fits `~ batch + group`), and `pca_ntop`.
+3. `results/6.DEG/{class}/` then receives one contrast table per `<treat>_vs_<control>` comparison (first column `feature`), volcano + MA plots per contrast, a vst PCA plot and sample Pearson heatmap, and `sessionInfo.txt`.
+
+Design rules enforced at parse time: the group column must exist when the stage is enabled, `control_group` must be one of the observed groups, at least two distinct groups are required, and a single replicate per group only warns (legal but weak). Details in [docs/user-guide.md](docs/user-guide.md) §3/§4.2/§8.
 
 ## Differences from the legacy pipeline
 
@@ -179,8 +193,11 @@ Regression tests (need snakemake):
 
 ```bash
 bash tests/run_test.sh               # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
+bash tests/run_test.sh --deg         # dry-run the optional DE stage (group column + deg enabled; asserts deg_deseq2 in the DAG)
 bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
+
+A pytest unit suite covers the sample-table loader, config/deg validation, and the species-merge parity: `python -m pytest tests -q` (needs pytest; no snakemake required for the extracted common.smk logic).
 
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, rRNA/tRNA/miRNA reference fastas, 2 samples of 21-26 nt SE reads) and is never committed. The dry-run baseline DAG is **27 jobs** (2 samples x 9 sample-local jobs (trim, raw count, 3 cascade stages, genome alignment, 3 counts) + 4 index builds (rRNA/tRNA/miRNA/genome) + merge_counts + cascade_summary + multiqc + software_versions + rule all) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)).
 
@@ -192,14 +209,16 @@ A lightweight CI job (lint + `--reads 2000` dry-run regression) is planned as pa
 
 Mirrors [docs/TODO.md](docs/TODO.md):
 
-1. **Differential expression**: v0.1 produces per-class count/RPM matrices only; DESeq2-style DE across conditions (needs a group/batch design in the sample table) is the first v0.2 candidate.
+1. ~~Differential expression~~ — done in v0.2.0: the optional, default-off `deg` stage (DESeq2 over the per-class count matrices, group/batch sample-table design).
 2. **Novel miRNA discovery**: v0.1 quantifies only the mature sequences listed in the configured `miRNA` fasta; miRDeep-P2-style prediction from the genome-aligned reads is deferred.
-3. **No unit-test suite**: the regression is a synthetic-data dry-run; pytest coverage for the pure-Python pieces (`count_features.py`, `merge_counts.py`, `cascade_summary.py`, the `common.smk` validation) is deferred.
+3. **Unit-test coverage**: `tests/test_common.py` covers the sample-table loader, config/deg validation, and the species-merge parity; the counting scripts (`count_features.py`, `merge_counts.py`, `cascade_summary.py`) are still uncovered.
 
 ## License
 
 [Apache-2.0](LICENSE) © 2026 ChengYu
 
 ## Versions
+
+v0.2.0 (2026-09-08): optional, default-off differential-expression stage — DESeq2 over the per-class count matrices with an optional group/batch sample-table design (`6.DEG/`), R plumbing in `software.yaml`/`environment.yaml`, `--deg` dry-run scenario, and loader/validation coverage in `tests/test_common.py` (see [CHANGELOG.md](CHANGELOG.md)).
 
 v0.1.0 (2026-09-05): initial release — config layer, trim / bowtie-index / cascade / genome-alignment / counting rules, cascade summary + MultiQC, unified launcher, regression tests, and docs (see [CHANGELOG.md](CHANGELOG.md)).

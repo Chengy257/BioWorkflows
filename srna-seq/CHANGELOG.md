@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-09-08
+
+### Added
+
+- **Differential-expression stage (default off)** — DESeq2 over the per-class count matrices, closing docs/TODO.md item 1 (the first v0.2 candidate), ported from the rna-seq reference implementation:
+  - `workflow/rules/deg.smk`: parse-time-guarded `deg_deseq2` rule (guarded by the new `_DEG_CLASSES` in common.smk) over `sorted(set(deg.classes) & set(cascade classes))`; input the class count TSV plus the resolved sample table, output `results/6.DEG/{class}/flag.log`; resources from the new `deg_deseq2` entry (threads 4 / mem 16000 MB / 240 min).
+  - `workflow/scripts/run_deseq2.R`: ported from rna-seq — design `~ batch + group` or `~ group`, all `<treat>_vs_<control>` contrast tables (first header column `feature`, written natively instead of via sed), volcano + MA plots per contrast, vst PCA + sample Pearson heatmap, sessionInfo; getopt CLI mirrors rna-seq plus a `-k/--class` flag; sample-table columns read by the srna-seq names (sample_id/group/batch) with `check.names=FALSE` so ids containing `-` survive.
+  - Sample-table loader (`workflow/rules/common.smk`): accepted headers are now exactly `sample_id`, `sample_id,group`, or `sample_id,group,batch` (anything else still fails with the accepted forms); group/batch values follow the sample-name rules and are exposed as the module-level `SAMPLE_GROUPS` / `SAMPLE_BATCH` dicts from the same single parse. Single-column tables parse exactly as before.
+  - deg config section (all three of `config/config.yaml`, `config/config.template.yaml`, `example/config.yaml`, default `enabled: false`): `enabled / classes / control_group / foldchange / padj / batch_correction / pca_ntop`; `validate_config` checks shapes/types and, when enabled, runs an aggregated design check (group column required, `control_group` must exist among the group values, >= 2 distinct groups, single-replicate groups warn only, `batch_correction: "T"` requires the batch column).
+  - R plumbing: `config/software.yaml` gains an `r:` section (rscript/version/version_check/lib_paths/lib_mode/package_sources, same shape as rna-seq); `workflow/environment.yaml` gains r-base=4.3, bioconductor-deseq2, bioconductor-biocparallel, r-getopt, r-ggplot2, r-gplots, r-amap, r-rcolorbrewer.
+  - `example/samples.csv` gains a `group` column (root/root/leaf/leaf) matching its sample names; the example config ships `control_group: "root"` so flipping `enabled: true` is enough.
+  - Tests: `bash tests/run_test.sh --deg` dry-run scenario (sample table s1=control/s2=treat, deg enabled for miRNA; asserts `deg_deseq2` in the DAG, and the default scenario asserts the stage is absent); `tests/test_common.py` updated for the relaxed loader plus new group/batch parsing and deg design-validation coverage.
+  - Default-off is preserved: with `deg.enabled: false` (the shipped default) the single-column sample table and the baseline 27-job dry-run DAG are unchanged.
+
 ## [0.1.0] - 2026-09-05
 
 Initial scaffold of the srna-seq subproject (small-RNA cascade filter + quantification, Snakemake 7): config layer, scheduler profiles, boilerplate, and the synthetic test-data contract. Workflow rules, launcher, and tests land in subsequent tasks.

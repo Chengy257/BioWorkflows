@@ -6,13 +6,17 @@
 # -> assert -> clean up
 #
 # Usage:
-#   bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
+#   bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--deg] [--help]
 #     --reads     SE reads per sample, default 50000 (CI passes 2000)
 #     --keep      keep tests/data and tests/work (cleaned up by default)
 #     --real-run  run end-to-end and assert that outputs exist (default is
 #                 a dry-run that only validates DAG integrity; a real run
 #                 needs a full analysis environment with STAR/umi-tools/
 #                 cutadapt/pureclip etc.)
+#     --deg       dry-run the optional differential-expression scenario:
+#                 sample table gains a group column (s1=control, s2=treat)
+#                 and the deg stage is enabled for the miRNA class; asserts
+#                 that the DAG contains the deg_deseq2 rule
 # Requires: dry-run only needs snakemake + python3(+pyyaml); --real-run
 # needs a full analysis environment.
 #########################################################################
@@ -29,12 +33,15 @@ One-command regression test: synthetic data -> assemble working directory
 -> dry-run (default) / --real-run end-to-end -> assertions
 
 Usage:
-  bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
+  bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--deg] [--help]
   --reads     SE reads per sample, default 50000
   --keep      keep tests/data and tests/work (cleaned up by default)
   --real-run  run end-to-end and assert that outputs exist (default only
               dry-runs to validate DAG integrity; a real run needs a full
               analysis environment; used for server validation)
+  --deg       dry-run the optional differential-expression scenario (group
+              column in the sample table, deg enabled for miRNA); asserts
+              that the DAG contains the deg_deseq2 rule
   -h, --help  show this help
 
 Requires:
@@ -47,6 +54,7 @@ EOF
 READS=50000
 KEEP=0
 REAL_RUN=0
+DEG=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
@@ -55,12 +63,18 @@ while [[ $# -gt 0 ]]; do
             READS="$2"; shift 2 ;;
         --keep)     KEEP=1; shift ;;
         --real-run) REAL_RUN=1; shift ;;
+        --deg)      DEG=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
     esac
 done
+if [[ "$DEG" == 1 && "$REAL_RUN" == 1 ]]; then
+    echo "[ERROR] --deg is a dry-run-only scenario (the deg stage needs R/DESeq2); drop --real-run" >&2
+    exit 1
+fi
 MODE="dry-run"
 [[ "$REAL_RUN" == 1 ]] && MODE="real-run"
+[[ "$DEG" == 1 ]] && MODE="${MODE}+deg"
 
 echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS)"
 command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exit 1; }
@@ -82,6 +96,23 @@ else
 fi
 cp -r "$DATA_DIR/ref" "$WORK_DIR/ref"
 cp "$DATA_DIR/samples.csv" "$DATA_DIR/config.yaml" "$WORK_DIR/"
+if [[ "$DEG" == 1 ]]; then
+    # Differential-expression scenario: the sample table gains a group column
+    # (single replicate per group -- legal, warns only) and the deg stage is
+    # enabled for the miRNA class (configured in the generated cascade).
+    printf 'sample_id,group\ns1,control\ns2,treat\n' > "$WORK_DIR/samples.csv"
+    cat >> "$WORK_DIR/config.yaml" <<'EOF'
+deg:
+  enabled: true
+  classes: ["miRNA"]
+  control_group: "control"
+  foldchange: 2
+  padj: 0.05
+  batch_correction: "F"
+  pca_ntop: 2000
+EOF
+    echo "[test]   deg scenario: group column written, deg stage enabled (miRNA)"
+fi
 
 echo "[test] 4/5 Running the workflow ($MODE)"
 RUN_ARGS=(-P "$WORK_DIR" -c "$WORK_DIR/config.yaml" -j 4)
@@ -117,20 +148,40 @@ if [[ "$REAL_RUN" == 1 ]]; then
     done
 else
     SNAKE_LOG="$WORK_DIR/snakemake.logs.txt"
-    for rule in cascade_stage genome_align merge_counts; do
+    RULES=(cascade_stage genome_align merge_counts)
+    if [[ "$DEG" == 1 ]]; then
+        RULES+=(deg_deseq2)
+    fi
+    for rule in "${RULES[@]}"; do
         if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
             echo "  PASS  DAG contains rule $rule"
         else
             echo "  FAIL  DAG does not contain rule $rule"; FAIL=1
         fi
     done
+    if [[ "$DEG" != 1 ]]; then
+        # Default-off contract: the deg stage must be absent from the DAG.
+        if grep -q "deg_deseq2" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  FAIL  default DAG must not contain rule deg_deseq2"; FAIL=1
+        else
+            echo "  PASS  default DAG does not contain rule deg_deseq2"
+        fi
+    fi
+    JOB_TOTAL="$(grep -hE '^total[[:space:]]+[0-9]+' "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null | tail -n1 | awk '{print $NF}')"
+    if [[ -n "$JOB_TOTAL" ]]; then
+        echo "  INFO  dry-run job total: $JOB_TOTAL"
+    else
+        echo "  INFO  dry-run job total: not found in the launcher output"
+    fi
 fi
 if [[ "$FAIL" != "0" ]]; then
     echo "[ERROR] Assertions failed; keeping workspace for debugging: $WORK_DIR" >&2
     exit 1
 fi
 
-if command -v dot >/dev/null 2>&1; then
+if [[ "$DEG" == 1 ]]; then
+    echo "[test] [INFO] --deg scenario: docs/dag_test.svg regeneration skipped (keeps the default-scenario DAG)"
+elif command -v dot >/dev/null 2>&1; then
     (cd "$WORK_DIR" && SRNA_CONFIG="$WORK_DIR/config.yaml" \
         snakemake -s "$REPO_DIR/workflow/Snakefile" --configfile "$WORK_DIR/config.yaml" --dag \
         | dot -Tsvg -o "$REPO_DIR/docs/dag_test.svg") \

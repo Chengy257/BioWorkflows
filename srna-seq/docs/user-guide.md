@@ -1,6 +1,6 @@
 # srna-seq workflow user guide
 
-> Updated: 2026-09-05 (v0.1.0)
+> Updated: 2026-09-08 (v0.2.0)
 > Intended audience: analysts running this workflow on their cluster/server
 > The workflow never creates Conda environments on its own: the runtime environment is created explicitly from `workflow/environment.yaml`, or reuses the server's existing environment via `config/software.yaml`. Cluster scheduling resources are declared per rule in `config/resources.yaml` and support project-level overrides. Raw inputs live in `1.rawdata/` at the working-directory root; every derived output is consolidated under the project's `results/` directory (`results_dir` in config).
 
@@ -16,6 +16,7 @@
 | Snakemake | reference version **7.32.4** (pinned in `workflow/environment.yaml`); see the version matrix in §1.4 |
 | Python 3 + PyYAML | the bootstrap dependency `run.sh` needs to resolve `software.yaml` and run preflight checks; must be on the main PATH |
 | Analysis tools | bowtie + bowtie-build (1.x) / Trim Galore (brings Cutadapt + FastQC) / MultiQC |
+| R + DESeq2 (optional) | only for the differential-expression stage (§8): R (>= 4.3), DESeq2, BiocParallel, getopt, ggplot2, gplots, amap, RColorBrewer — all pinned in `workflow/environment.yaml` |
 
 Launcher bootstrap order: `run.sh` first uses the `python3` on the system PATH (with PyYAML) to resolve `config/software.yaml`, then injects the main environment/tools into the current process — so even on the conda_prefix reuse route, the login-node PATH must have `python3` (snakemake is supplied by the main environment after resolution).
 
@@ -28,7 +29,7 @@ mamba env create -f workflow/environment.yaml   # environment name srna-seq
 conda activate srna-seq
 ```
 
-This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, bowtie 1.3.1, trim-galore 0.6.10, fastqc 0.11.9, multiqc 1.21.
+This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, bowtie 1.3.1, trim-galore 0.6.10, fastqc 0.11.9, multiqc 1.21, plus the R/DESeq2 stack (r-base 4.3, bioconductor-deseq2, bioconductor-biocparallel, r-getopt, r-ggplot2, r-gplots, r-amap, r-rcolorbrewer) used only by the optional differential-expression stage (§8).
 
 **Path 2: reuse an existing conda environment on the server**
 
@@ -54,7 +55,7 @@ environment:
   strict: true
 ```
 
-`strict: true` makes the preflight fail loudly when a required executable is missing instead of continuing silently. Ordinary tools (bowtie / bowtie-build / trim_galore / fastqc / multiqc / python3) resolve from PATH automatically; `software.yaml` needs no `tools:` overrides unless a binary lives outside PATH. Like the other v0.1 workflows there is no R section.
+`strict: true` makes the preflight fail loudly when a required executable is missing instead of continuing silently. Ordinary tools (bowtie / bowtie-build / trim_galore / fastqc / multiqc / python3) resolve from PATH automatically; `software.yaml` needs no `tools:` overrides unless a binary lives outside PATH. The `r:` section (§4.5) only matters for the optional differential-expression stage (§8): with the default `rscript: "Rscript"` the workflow assumes R is on PATH, and the stage never runs unless `deg.enabled` is true.
 
 ### 1.3 Preflight checks
 
@@ -110,7 +111,7 @@ cp root_rep1.fq.gz root_rep2.fq.gz leaf_rep1.fq.gz leaf_rep2.fq.gz ~/work/rice/1
 cp example/samples.csv ~/work/rice/samples.csv
 ```
 
-Edit the file with your own samples (a single `sample_id` column; validation rules in §3).
+Edit the file with your own samples (`sample_id` column; add `group`/`batch` only for the differential-expression stage — validation rules in §3).
 
 **Step 4: write the project config**
 
@@ -144,27 +145,42 @@ After a successful launch the main log is `~/work/rice/snakemake.logs.txt` (chan
 
 ## 3. Sample table in detail
 
-The sample table is a **single-column CSV** (template `config/samples.csv`):
+The sample table is a CSV with the column `sample_id` plus two **optional** design columns, `group` and `batch`, which drive the differential-expression stage (§8). Accepted headers are exactly:
 
 ```csv
 sample_id
-root_rep1
-root_rep2
-leaf_rep1
-leaf_rep2
 ```
 
-Every row is one sample; v0.1 has no other columns (no group/condition/batch design yet — see the [TODO backlog](TODO.md)). Each `sample_id` must match the prefix of a FASTQ file in `1.rawdata/`.
+```csv
+sample_id,group
+```
+
+```csv
+sample_id,group,batch
+```
+
+The template `config/samples.csv` ships the single-column form; `example/samples.csv` demonstrates the two-column form:
+
+```csv
+sample_id,group
+root_rep1,root
+root_rep2,root
+leaf_rep1,leaf
+leaf_rep2,leaf
+```
+
+Every row is one sample; each `sample_id` must match the prefix of a FASTQ file in `1.rawdata/`. With `deg.enabled: false` (the default) a single-column table is all you need; the `group` column only becomes mandatory when the differential-expression stage is switched on.
 
 ### 3.1 Validation rules (at parse time, errors carry line numbers)
 
 Validation runs centrally at Snakemake parse time (`load_sample_table` in `workflow/rules/common.smk`); any violation aborts the workflow before any job runs:
 
-1. The header must be **exactly one column named `sample_id`** — otherwise: `Sample table <path> must have exactly one column with header 'sample_id' (got [...]); see config/samples.csv`;
+1. The header must be **exactly one of `sample_id`, `sample_id,group`, or `sample_id,group,batch`** (same order, no extra columns) — otherwise: `Sample table <path> must have exactly one of these headers: ['sample_id'], ['sample_id', 'group'], or ['sample_id', 'group', 'batch'] (got [...]); see config/samples.csv`;
 2. `sample_id` must not be empty — `Sample table line <n>: sample_id must not be empty`;
 3. `sample_id` allows only **alphanumerics plus `. _ -`**, must start alphanumeric, must not start with `-`, and must not contain consecutive underscores `__` (ids become file names and bowtie command-line arguments) — `Sample table line <n>: sample_id='...' contains illegal characters; only alphanumerics and . _ - are allowed (no leading '-', no '__')`;
-4. `sample_id` must be unique — `Sample table line <n>: duplicate sample_id '...'`;
-5. The table must have at least one data row — `Sample table <path> has no data rows`.
+4. `sample_id` must be unique — `Sample table line <n>: duplicate sample_id '...'` (duplicates in `group`/`batch` are of course fine — that is the point of the columns);
+5. The table must have at least one data row — `Sample table <path> has no data rows`;
+6. When the `group`/`batch` columns are present, their values follow the same name rules as `sample_id` and must not be empty — `Sample table line <n>: group must not be empty` / `Sample table line <n>: batch='...' contains illegal characters ...`. Leave a column out entirely instead of leaving values blank.
 
 ### 3.2 Raw FASTQ resolution
 
@@ -205,6 +221,13 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 | `cascade` | non-empty ordered list of `{name, fasta}` | 7 entries (rRNA, snoRNA, snRNA, tRNA, miRNA, mRNA, rhizo) | the sncRNA filter cascade; semantics below |
 | `bowtie.extra` | string | `""` | extra bowtie1 arguments appended to every alignment (cascade stages and genome alike), e.g. `"-v 1 --best --strata"` |
 | `resources` | mapping of rule -> {threads, mem_mb, runtime_min} | `{}` | per-rule scheduler-resource overrides, same shape as `config/resources.yaml` (§4.4) |
+| `deg.enabled` | bool | `false` | turn on the differential-expression stage (§8); the section is optional and off by default |
+| `deg.classes` | non-empty list of legal class names | `["miRNA"]` | cascade classes to analyze; a class that is not in the configured cascade warns and is skipped |
+| `deg.control_group` | legal name | `"control"` | reference group; contrast tables are emitted as `<treat>_vs_<control>` |
+| `deg.foldchange` | number > 1 | `2` | DEG fold-change threshold (Up >= FC, Down <= 1/FC) |
+| `deg.padj` | number in (0, 1) | `0.05` | adjusted-pvalue threshold |
+| `deg.batch_correction` | `"T"` or `"F"` | `"F"` | `"T"` fits `design = ~ batch + group` (requires a `batch` column); `"F"` fits `~ group` |
+| `deg.pca_ntop` | int >= 1 | `2000` | top variable features used in the PCA plot |
 
 **Cascade entry semantics** (the most important config in this workflow):
 
@@ -215,6 +238,8 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 - Validation requires **at least one configured cascade class or a configured genome** — a config with neither has nothing to align and is rejected at parse time (`neither any cascade class nor the genome has a configured fasta — nothing to align`). Keep at least one cascade class configured: the per-class quantification stage is defined over the configured classes.
 
 Validation runs at parse time (`validate_config` in `workflow/rules/common.smk`) and aggregates all problems into a single `WorkflowError` report. Reference files that do not exist (or are still `/path/to/` placeholders) only **print a warning and do not abort** — dry-run/lint often run on machines without the reference files; in a real run a missing reference fails the corresponding rule, so confirm each warning before launching. Skipped classes warn too: `[config warning] cascade class 'x' has no fasta and is skipped`.
+
+The `deg` section is validated the same way whenever it is present (shape/type checks, aggregated); when `deg.enabled` is true an additional parse-time **design check** runs against the loaded sample table (§8).
 
 ### 4.3 Species presets
 
@@ -268,6 +293,7 @@ Built-in defaults per rule (identical to `config/resources.yaml`):
 | `count_stage` | 1 | 2048 | 30 |
 | `merge_counts` | 1 | 4096 | 30 |
 | `cascade_summary` | 1 | 2048 | 30 |
+| `deg_deseq2` | 4 | 16000 | 240 |
 
 (`fastqc` has its own entry for completeness; in v0.1 FastQC runs inside `rule trim` via `trim_galore --fastqc`.)
 
@@ -282,12 +308,20 @@ environment:
   conda_name: ""                # alternative to conda_prefix
   strict: true
 
+r:
+  rscript: "Rscript"            # command name or absolute executable path
+  version: ""                   # optional, e.g. "4.3" or "4.3.3"
+  version_check: major_minor    # major_minor | exact | warn | off
+  lib_paths: []                 # optional R library directories
+  lib_mode: prepend             # prepend | append | replace
+  package_sources: {}           # optional package -> local tarball, used for install hints only
+
 tools: {}          # add overrides only for binaries outside the main PATH
 paths: {}
 databases: {}
 ```
 
-All analysis tools (bowtie, bowtie-build, trim_galore, fastqc, multiqc, python3) are ordinary PATH executables resolved through `workflow/scripts/runtime_config.py`; `run.sh` exports the resolved values to the workflow. Unlike seclip-seq there is no external-legacy-tool equivalent — nothing here needs a hand-installed absolute path.
+All analysis tools (bowtie, bowtie-build, trim_galore, fastqc, multiqc, python3) are ordinary PATH executables resolved through `workflow/scripts/runtime_config.py`; `run.sh` exports the resolved values to the workflow. The `r:` section configures the R runtime used by the differential-expression stage (§8): `rscript` names the Rscript executable (the workflow falls back to `SRNA_RSCRIPT` in the environment, then to `Rscript` on PATH), and `lib_paths`/`lib_mode` point at site-local R libraries when DESeq2 is not installed in the default library tree. Unlike seclip-seq there is no external-legacy-tool equivalent — nothing here needs a hand-installed absolute path.
 
 ---
 
@@ -473,7 +507,8 @@ workdir/
     │   ├── multiqc/multiqc_report.html
     │   ├── software_versions.yaml
     │   └── logs/               # QC rule logs (e.g. software_versions.log.txt)
-    └── logs/                   # per-rule logs (trim/, cascade/{class}/, genome_align/, count/{class}/, ...)
+    ├── 6.DEG/                  # optional differential-expression results per class (§8)
+    └── logs/                   # per-rule logs (trim/, cascade/{class}/, genome_align/, count/{class}/, deg_deseq2/, ...)
 ```
 
 ### 7.2 Results quick reference
@@ -497,6 +532,9 @@ workdir/
 | cascade summary | `results/5.QC/cascade_summary.tsv` | per-sample read fate across all stages (§7.3) |
 | QC report | `results/5.QC/multiqc/multiqc_report.html` | trimming + FastQC + cascade bargraph in one HTML |
 | version record | `results/5.QC/software_versions.yaml` | tool versions actually resolved for the run (incl. Snakemake) |
+| DE contrast table | `results/6.DEG/{class}/{treat}_vs_{control}_DESeq2.output.tsv` | per-feature DESeq2 statistics; first header column is `feature` (§8) |
+| DE contrast plots | `results/6.DEG/{class}/{treat}_vs_{control}_DESeq2.output.tsv_VolcanoPlot.pdf` / `_MAPlot.pdf` | volcano and MA plot per contrast (§8) |
+| DE sample plots | `results/6.DEG/{class}/{class}_DESeq2.normalized.vst.PCA_plot.pdf` / `.Pearson_heatmap.pdf` | vst PCA and sample Pearson-correlation heatmap (§8) |
 | per-rule logs | `results/logs/` | one log per rule/sample |
 
 ### 7.3 Reading the numbers
@@ -528,7 +566,75 @@ Everything above lands in `results/5.QC/multiqc/multiqc_report.html` (title "sRN
 
 ---
 
-## 8. FAQ
+## 8. Differential expression stage (optional, default off)
+
+The `deg` stage (added in v0.2.0, ported from the rna-seq workflow) runs DESeq2 over the per-class count matrices. With the shipped default (`deg.enabled: false`) it is completely absent from the DAG; nothing in §1-§7 changes.
+
+### 8.1 Requirements
+
+1. **Sample table**: add a `group` column; add `batch` only when you want `~ batch + group` (§3). Accepted headers are exactly `sample_id`, `sample_id,group`, `sample_id,group,batch`.
+2. **Config**: a `deg:` section (all keys shown in §4.2) with `enabled: true`. The section can also be copied from `config/config.template.yaml` and edited.
+3. **R runtime**: Rscript with DESeq2, BiocParallel, getopt, ggplot2, gplots, amap, and RColorBrewer — all in `workflow/environment.yaml`; point `software.yaml` `r.lib_paths` at site-local libraries when needed (§4.5).
+
+### 8.2 Design rules (parse time)
+
+When `deg.enabled` is true, `validate_config` runs an aggregated design check against the loaded sample table:
+
+| condition | outcome |
+|---|---|
+| no `group` column in the sample table | error: `deg.enabled is true but the sample table has no 'group' column ...` |
+| `deg.control_group` not among the observed group values | error naming the observed values |
+| fewer than 2 distinct groups | error: the DESeq2 design cannot be formed |
+| any group has fewer than 2 replicates | **warning only** (`DESeq2 will run but the statistics are weak`) — legal, but a single replicate per group carries no error degrees of freedom |
+| `batch_correction: "T"` without a `batch` column | error |
+
+Shape/type violations of the `deg` section itself (bad `enabled`/`classes`/`foldchange`/`padj`/`batch_correction`/`pca_ntop`) are reported in the same aggregated parse-time report. A `deg.classes` entry that is not a configured cascade class only warns and is skipped.
+
+### 8.3 What runs
+
+One `deg_deseq2` job per analyzed class (`deg.classes` ∩ configured cascade classes): the rule reads `results/4.expression/{class}/{class}_counts.tsv` (integer counts, all-zero rows dropped by the script) plus the sample table, fits `design = ~ batch + group` (or `~ group`), and writes everything under `results/6.DEG/{class}/`:
+
+- `{treat}_vs_{control}_DESeq2.output.tsv` — one table per non-control group against `deg.control_group` (exact name match): per-feature `log2FoldChange`, `FoldChange`, statistics, normalized counts per compared sample, and an `Up`/`Down`/`Unsig` `type` column per the `foldchange`/`padj` thresholds; the first header column is `feature`;
+- one volcano and one MA plot per contrast (PDF);
+- `{class}_DESeq2.normalized.vst.PCA_plot.pdf` and `{class}_DESeq2.normalized.vst.Pearson_heatmap.pdf`;
+- `sessionInfo.txt` provenance; the rule finishes by writing the `flag.log` marker that the DAG tracks.
+
+With two groups (`control` + one treatment) there is exactly one contrast; with more groups every non-control group gets its own `_vs_` table.
+
+### 8.4 Worked example
+
+```bash
+# sample table (headers + two replicates per group)
+cat > samples.csv <<'EOF'
+sample_id,group
+root_rep1,root
+root_rep2,root
+leaf_rep1,leaf
+leaf_rep2,leaf
+EOF
+
+# deg section (copy into the project config)
+cat >> config.yaml <<'EOF'
+deg:
+  enabled: true
+  classes: ["miRNA"]
+  control_group: "root"
+  foldchange: 2
+  padj: 0.05
+  batch_correction: "F"
+  pca_ntop: 2000
+EOF
+
+bash run.sh -P . --check-software
+bash run.sh -P . -n                  # dry-run: the DAG gains the deg_deseq2 job(s)
+bash run.sh -P . -j 10
+# the preflight does not check R; verify DESeq2 loads before a real run:
+Rscript -e 'library(DESeq2)'
+```
+
+The `example/` project ships exactly this shape (`samples.csv` with root/leaf groups, `control_group: "root"`); flip `deg.enabled` to `true` there to switch the stage on.
+
+## 9. FAQ
 
 **Q1: How do I add a new sncRNA class (e.g. piRNA, or another exogenous index)?**
 Append an entry to the `cascade:` list at the position where it should run — order matters, because it defines assignment priority:
@@ -570,7 +676,12 @@ Parse-time validation warns when a configured class fasta or `genome.fasta` stil
 make check                          # bash -n syntax checks (no snakemake needed)
 make lint                           # static suite (missing optional tools are skipped)
 bash tests/run_test.sh              # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
+bash tests/run_test.sh --deg        # dry-run the differential-expression scenario
 bash tests/run_test.sh --real-run   # end-to-end run + output assertions (needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, rRNA/tRNA/miRNA references, 2 samples); the dry-run baseline DAG is 27 jobs (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, rRNA/tRNA/miRNA references, 2 samples); the dry-run baseline DAG is 27 jobs (CI passes `--reads 2000`), and the `--deg` scenario adds the differential-expression job on top. Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+
+**Q11: How do I run differential expression on my data?**
+
+Add a `group` column to the sample table and enable the stage in the project config — the full recipe is §8 (`example/` demonstrates it with root/leaf groups). Without `deg.enabled: true` the stage never enters the DAG and the plain single-column sample table keeps working.

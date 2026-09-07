@@ -59,14 +59,18 @@ def _extract_workflow_source():
     blocks = [
         # Module-level regex compile; referenced by the extracted defs.
         _segment(common_src, "_NAME_RE = ", ["\nSCRIPTS = "]),
-        _segment(common_src, "def _resolve_sample_table(", ["\nSAMPLES = "]),
+        _segment(common_src, "def _resolve_sample_table(", ["\n_SAMPLE_TABLE = "]),
+        _segment(common_src, "def _validate_deg_design(", ["\ndef validate_config("]),
         _segment(common_src, "def validate_config(",
                  ["\nvalidate_config(config)", "\ndef "]),
         _segment(common_src, "def apply_species_presets(",
                  ["\ndef cascade_classes("]),
     ]
     ns = {"csv": csv, "os": os, "re": re, "WorkflowError": WorkflowError,
-          "BASE_DIR": REPO}
+          "BASE_DIR": REPO,
+          # Module-level sample annotations; load_sample_table populates them
+          # in the same single parse that returns the sample-id list.
+          "SAMPLE_GROUPS": {}, "SAMPLE_BATCH": {}}
     for block in blocks:
         exec(compile(block, "common.smk(extracted)", "exec"), ns)
     return ns
@@ -77,7 +81,10 @@ _NAME_RE = WF["_NAME_RE"]
 _resolve_sample_table = WF["_resolve_sample_table"]
 load_sample_table = WF["load_sample_table"]
 validate_config = WF["validate_config"]
+_validate_deg_design = WF["_validate_deg_design"]
 apply_species_presets = WF["apply_species_presets"]
+SAMPLE_GROUPS = WF["SAMPLE_GROUPS"]
+SAMPLE_BATCH = WF["SAMPLE_BATCH"]
 
 
 # ---------------------------------------------------------------------
@@ -109,7 +116,84 @@ def test_load_sample_table_keeps_order_and_accepts_legal_names(tmp_path):
 
 def test_load_sample_table_rejects_bad_header(tmp_path):
     _expect_table_error(tmp_path, [["sample"], ["s1"]],
-                        "must have exactly one column")
+                        "must have exactly one of these headers")
+
+
+def test_load_sample_table_single_column_builds_none_annotations(tmp_path):
+    """The v0.1 single-column contract is unchanged; the annotation dicts are
+    populated with None values in the same single parse."""
+    path = _write_table(tmp_path, [["sample_id"], ["s1"], ["s2"]])
+    assert load_sample_table(path) == ["s1", "s2"]
+    assert SAMPLE_GROUPS == {"s1": None, "s2": None}
+    assert SAMPLE_BATCH == {"s1": None, "s2": None}
+
+
+def test_load_sample_table_group_column_parses(tmp_path):
+    path = _write_table(tmp_path, [["sample_id", "group"],
+                                   ["s1", "control"], ["s2", "treat"]])
+    assert load_sample_table(path) == ["s1", "s2"]
+    assert SAMPLE_GROUPS == {"s1": "control", "s2": "treat"}
+    assert SAMPLE_BATCH == {"s1": None, "s2": None}
+
+
+def test_load_sample_table_group_and_batch_columns_parse(tmp_path):
+    path = _write_table(tmp_path, [["sample_id", "group", "batch"],
+                                   ["s1", "control", "b1"],
+                                   ["s2", "treat", "b2"]])
+    assert load_sample_table(path) == ["s1", "s2"]
+    assert SAMPLE_GROUPS == {"s1": "control", "s2": "treat"}
+    assert SAMPLE_BATCH == {"s1": "b1", "s2": "b2"}
+
+
+def test_load_sample_table_duplicate_group_values_are_legal(tmp_path):
+    """Duplicates are only rejected on sample_id, never on group/batch."""
+    path = _write_table(tmp_path, [["sample_id", "group"],
+                                   ["s1", "control"], ["s2", "control"]])
+    assert load_sample_table(path) == ["s1", "s2"]
+    assert SAMPLE_GROUPS == {"s1": "control", "s2": "control"}
+
+
+def test_load_sample_table_rejects_batch_without_group(tmp_path):
+    _expect_table_error(tmp_path, [["sample_id", "batch"], ["s1", "b1"]],
+                        "must have exactly one of these headers")
+
+
+def test_load_sample_table_rejects_wrong_column_order(tmp_path):
+    _expect_table_error(tmp_path, [["group", "sample_id"], ["control", "s1"]],
+                        "must have exactly one of these headers")
+
+
+def test_load_sample_table_rejects_unknown_extra_column(tmp_path):
+    _expect_table_error(tmp_path, [["sample_id", "group", "strain"],
+                                   ["s1", "control", "x"]],
+                        "must have exactly one of these headers")
+
+
+def test_load_sample_table_rejects_empty_group(tmp_path):
+    _expect_table_error(tmp_path, [["sample_id", "group"], ["s1", ""]],
+                        "group must not be empty")
+
+
+def test_load_sample_table_rejects_illegal_group(tmp_path):
+    _expect_table_error(tmp_path, [["sample_id", "group"], ["s1", "a b"]],
+                        "group='a b' contains illegal characters")
+
+
+def test_load_sample_table_rejects_double_underscore_group(tmp_path):
+    _expect_table_error(tmp_path, [["sample_id", "group"], ["s1", "a__b"]],
+                        "group='a__b' contains illegal characters")
+
+
+def test_load_sample_table_rejects_illegal_batch(tmp_path):
+    _expect_table_error(tmp_path,
+                        [["sample_id", "group", "batch"], ["s1", "control", "-b1"]],
+                        "batch='-b1' contains illegal characters")
+
+
+def test_load_sample_table_duplicates_still_checked_on_sample_id_only(tmp_path):
+    _expect_table_error(tmp_path,
+                        [["sample_id", "group"], ["s1", "control"], ["s1", "treat"]],
+                        "duplicate sample_id")
 
 
 def test_load_sample_table_rejects_empty_id(tmp_path):
@@ -366,6 +450,132 @@ def test_validate_config_fails_without_species_merge():
         "bowtie": {"extra": ""},
     }
     assert "nothing to align" in _validated_errors(cfg)
+
+
+# ---------------------------------------------------------------------
+# deg section: optional differential-expression stage (default off)
+# ---------------------------------------------------------------------
+DEG_ENABLED = {"enabled": True, "classes": ["miRNA"], "control_group": "control",
+               "foldchange": 2, "padj": 0.05, "batch_correction": "F",
+               "pca_ntop": 2000}
+
+
+def _set_annotations(groups, batches=None):
+    """Seed the module-level sample-annotation dicts as load_sample_table
+    would (used to test the design checks without writing table files)."""
+    SAMPLE_GROUPS.clear()
+    SAMPLE_GROUPS.update(groups)
+    SAMPLE_BATCH.clear()
+    SAMPLE_BATCH.update(batches if batches is not None else {k: None for k in groups})
+
+
+def _deg_cfg(**overrides):
+    """GOOD_CFG with the full deg contract section, deg fields overridable."""
+    cfg = copy.deepcopy(GOOD_CFG)
+    cfg["deg"] = {**DEG_ENABLED, **overrides}
+    return cfg
+
+
+def test_validate_config_accepts_full_deg_defaults_when_disabled():
+    _set_annotations({"s1": None, "s2": None})  # no group column needed
+    assert _validated_errors(_deg_cfg(enabled=False)) is None
+
+
+def test_validate_config_rejects_non_mapping_deg():
+    cfg = copy.deepcopy(GOOD_CFG)
+    cfg["deg"] = ["enabled"]
+    assert "deg must be a mapping" in _validated_errors(cfg)
+
+
+@pytest.mark.parametrize("bad", ["yes", 1, None])
+def test_validate_config_rejects_bad_deg_enabled(bad):
+    assert "deg.enabled must be a boolean" in _validated_errors(_deg_cfg(enabled=bad))
+
+
+@pytest.mark.parametrize("bad", [[], "miRNA", ["miRNA", "a__b"], ["x y"], [5]])
+def test_validate_config_rejects_bad_deg_classes(bad):
+    assert "deg.classes must be a non-empty list of legal class names" in _validated_errors(_deg_cfg(classes=bad))
+
+
+@pytest.mark.parametrize("bad", [1, 0.5, "2", True, None])
+def test_validate_config_rejects_bad_deg_foldchange(bad):
+    assert "deg.foldchange must be a number > 1" in _validated_errors(_deg_cfg(foldchange=bad))
+
+
+@pytest.mark.parametrize("bad", [0, 1, -0.1, "0.05", True])
+def test_validate_config_rejects_bad_deg_padj(bad):
+    assert "deg.padj must be in (0, 1)" in _validated_errors(_deg_cfg(padj=bad))
+
+
+@pytest.mark.parametrize("bad", ["true", False, 1, None])
+def test_validate_config_rejects_bad_deg_batch_correction(bad):
+    assert "deg.batch_correction must be 'T' or 'F'" in _validated_errors(_deg_cfg(batch_correction=bad))
+
+
+@pytest.mark.parametrize("bad", [0, 1.5, "2000", True, None])
+def test_validate_config_rejects_bad_deg_pca_ntop(bad):
+    assert "deg.pca_ntop must be an integer >= 1" in _validated_errors(_deg_cfg(pca_ntop=bad))
+
+
+def test_validate_config_warns_deg_class_not_in_cascade(capsys):
+    _set_annotations({"s1": "control", "s2": "treat"})
+    assert _validated_errors(_deg_cfg(classes=["piRNA"])) is None
+    out = capsys.readouterr().out
+    assert ("[config warning] deg class 'piRNA' is not a configured cascade "
+            "class and will be skipped") in out
+
+
+def test_validate_config_deg_design_requires_group_column():
+    _set_annotations({"s1": None, "s2": None})
+    message = _validated_errors(_deg_cfg())
+    assert "deg.enabled is true but the sample table has no 'group' column" in message
+
+
+def test_validate_config_deg_design_requires_control_among_groups():
+    _set_annotations({"s1": "treat", "s2": "treat2"})
+    message = _validated_errors(_deg_cfg())
+    assert ("deg.control_group='control' is not among the sample-table "
+            "group values ['treat', 'treat2']") in message
+
+
+def test_validate_config_deg_design_requires_two_distinct_groups():
+    _set_annotations({"s1": "control", "s2": "control"})
+    message = _validated_errors(_deg_cfg())
+    assert "deg design needs at least 2 distinct groups" in message
+
+
+def test_validate_config_deg_design_warns_on_single_replicate_group(capsys):
+    _set_annotations({"s1": "control", "s2": "treat"})
+    assert _validated_errors(_deg_cfg()) is None
+    out = capsys.readouterr().out
+    assert "[config warning] deg design: group 'control' has 1 replicate(s)" in out
+    assert "[config warning] deg design: group 'treat' has 1 replicate(s)" in out
+
+
+def test_validate_config_deg_design_accepts_replicated_groups():
+    _set_annotations({"s1": "control", "s2": "control", "s3": "treat", "s4": "treat"})
+    assert _validated_errors(_deg_cfg()) is None
+
+
+def test_validate_config_deg_batch_correction_requires_batch_column():
+    _set_annotations({"s1": "control", "s2": "treat"})
+    message = _validated_errors(_deg_cfg(batch_correction="T"))
+    assert "deg.batch_correction is 'T' but the sample table has no 'batch' column" in message
+
+
+def test_validate_config_deg_batch_correction_accepts_batch_column():
+    _set_annotations({"s1": "control", "s2": "treat"}, {"s1": "b1", "s2": "b2"})
+    assert _validated_errors(_deg_cfg(batch_correction="T")) is None
+
+
+def test_validate_config_deg_design_aggregates_with_other_errors():
+    """Design errors land in the same aggregated report as shape errors."""
+    _set_annotations({"s1": None, "s2": None})
+    cfg = _deg_cfg(foldchange=0)
+    message = _validated_errors(cfg)
+    assert message.startswith("config validation failed (2 issues):")
+    assert "deg.foldchange must be a number > 1" in message
+    assert "deg.enabled is true but the sample table has no 'group' column" in message
 
 
 # ---------------------------------------------------------------------

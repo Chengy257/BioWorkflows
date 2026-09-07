@@ -16,6 +16,11 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 SCRIPTS = os.path.join(WORKFLOW_DIR, "scripts")
 
+# R executable for the optional differential-expression stage (deg). Env
+# channel fallback (chip-style): the launcher exports SRNA_RSCRIPT from
+# software.yaml r.rscript when set; the default assumes Rscript on PATH.
+RSCRIPT = os.environ.get("SRNA_RSCRIPT", "Rscript")
+
 
 def _resolve_sample_table(path):
     """Resolve the sample table: absolute > relative to the working
@@ -29,15 +34,26 @@ def _resolve_sample_table(path):
 
 
 def load_sample_table(path):
-    """Parse the single-column sample table (header must be exactly
-    sample_id); returns the ordered list of unique sample ids."""
+    """Parse the sample table; returns the ordered list of unique sample ids.
+
+    Accepted headers are exactly ["sample_id"], ["sample_id", "group"], or
+    ["sample_id", "group", "batch"] (the optional group/batch columns drive
+    the differential-expression design; see the deg config section). The
+    group/batch values follow the same name rules as sample ids and are
+    stored in the module-level SAMPLE_GROUPS / SAMPLE_BATCH dicts
+    ({sample_id: value}, None when the column is absent), populated in this
+    same single parse. Duplicates are still only checked on sample_id."""
     samples = []
+    groups, batches = {}, {}
     with open(path, newline="") as fh:
         reader = csv.DictReader(fh)
-        if reader.fieldnames != ["sample_id"]:
+        if reader.fieldnames not in (["sample_id"], ["sample_id", "group"],
+                                     ["sample_id", "group", "batch"]):
             raise WorkflowError(
-                f"Sample table {path} must have exactly one column with header "
-                f"'sample_id' (got {reader.fieldnames}); see config/samples.csv"
+                f"Sample table {path} must have exactly one of these headers: "
+                "['sample_id'], ['sample_id', 'group'], or "
+                f"['sample_id', 'group', 'batch'] (got {reader.fieldnames}); "
+                "see config/samples.csv"
             )
         for lineno, row in enumerate(reader, start=2):
             sid = (row["sample_id"] or "").strip()
@@ -51,14 +67,83 @@ def load_sample_table(path):
                 )
             if sid in samples:
                 raise WorkflowError(f"Sample table line {lineno}: duplicate sample_id {sid!r}")
+            for column, values in (("group", groups), ("batch", batches)):
+                if column not in reader.fieldnames:
+                    continue
+                value = (row[column] or "").strip()
+                if not value:
+                    raise WorkflowError(
+                        f"Sample table line {lineno}: {column} must not be empty "
+                        "(drop the column instead of leaving it blank)"
+                    )
+                if not _NAME_RE.match(value) or "__" in value:
+                    raise WorkflowError(
+                        f"Sample table line {lineno}: {column}={value!r} contains illegal "
+                        "characters; only alphanumerics and . _ - are allowed "
+                        "(no leading '-', no '__')"
+                    )
+                values[sid] = value
             samples.append(sid)
     if not samples:
         raise WorkflowError(f"Sample table {path} has no data rows")
+    SAMPLE_GROUPS.clear()
+    SAMPLE_GROUPS.update({sid: groups.get(sid) for sid in samples})
+    SAMPLE_BATCH.clear()
+    SAMPLE_BATCH.update({sid: batches.get(sid) for sid in samples})
     return samples
 
 
-SAMPLES = load_sample_table(_resolve_sample_table(config["SampleListFile"]))
+_SAMPLE_TABLE = _resolve_sample_table(config["SampleListFile"])
+# Group/batch annotations from the optional sample-table columns
+# ({sample_id: value-or-None}); populated by load_sample_table above.
+SAMPLE_GROUPS = {}
+SAMPLE_BATCH = {}
+SAMPLES = load_sample_table(_SAMPLE_TABLE)
 SAMPLE_WILDCARD = "(?:" + "|".join(re.escape(s) for s in SAMPLES) + ")"
+
+
+def _validate_deg_design(deg, errors, warnings):
+    """Design checks for the optional differential-expression stage
+    (deg.enabled true), aggregated WorkflowError style. Runs at parse time
+    after the sample table is loaded: the group column must exist (the
+    loader stores it in SAMPLE_GROUPS), control_group must be one of the
+    observed group values, at least two distinct groups are required for
+    the DESeq2 design, single-replicate groups only warn (legal but weak),
+    and batch_correction "T" additionally requires the batch column."""
+    groups = [g for g in SAMPLE_GROUPS.values() if g is not None]
+    if not groups:
+        errors.append(
+            "deg.enabled is true but the sample table has no 'group' column "
+            "(accepted headers: sample_id[, group[, batch]])"
+        )
+        return
+    control = deg.get("control_group")
+    levels = sorted(set(groups))
+    if control not in levels:
+        errors.append(
+            f"deg.control_group={control!r} is not among the sample-table "
+            f"group values {levels}"
+        )
+    if len(levels) < 2:
+        errors.append(
+            f"deg design needs at least 2 distinct groups for the DESeq2 "
+            f"design, got {levels}"
+        )
+    counts = {}
+    for g in groups:
+        counts[g] = counts.get(g, 0) + 1
+    for name, n in sorted(counts.items()):
+        if n < 2:
+            warnings.append(
+                f"deg design: group {name!r} has {n} replicate(s); DESeq2 will "
+                "run but the statistics are weak"
+            )
+    if deg.get("batch_correction") == "T" and all(
+            b is None for b in SAMPLE_BATCH.values()):
+        errors.append(
+            "deg.batch_correction is 'T' but the sample table has no 'batch' "
+            "column (accepted headers: sample_id[, group[, batch]])"
+        )
 
 
 def validate_config(cfg):
@@ -131,6 +216,42 @@ def validate_config(cfg):
             for field in entry:
                 if field not in ("threads", "mem_mb", "runtime_min"):
                     errors.append(f"resources.{rule}.{field}: unknown field (supported: threads/mem_mb/runtime_min)")
+    deg = cfg.get("deg")
+    if deg is not None:
+        if not isinstance(deg, dict):
+            errors.append(f"deg must be a mapping, got {deg!r}")
+        else:
+            enabled = deg.get("enabled")
+            if not isinstance(enabled, bool):
+                errors.append(f"deg.enabled must be a boolean, got {enabled!r}")
+            classes = deg.get("classes")
+            if (not isinstance(classes, list) or not classes
+                    or not all(isinstance(c, str) and _NAME_RE.match(c) and "__" not in c
+                               for c in classes)):
+                errors.append("deg.classes must be a non-empty list of legal class names")
+            else:
+                cascade_names = {str(e.get("name") or "").strip()
+                                 for e in cfg.get("cascade") or [] if isinstance(e, dict)}
+                for c in classes:
+                    if c not in cascade_names:
+                        warnings.append(
+                            f"deg class {c!r} is not a configured cascade class "
+                            "and will be skipped"
+                        )
+            fc = deg.get("foldchange")
+            if isinstance(fc, bool) or not isinstance(fc, (int, float)) or not fc > 1:
+                errors.append(f"deg.foldchange must be a number > 1, got {fc!r}")
+            padj = deg.get("padj")
+            if isinstance(padj, bool) or not isinstance(padj, (int, float)) or not 0 < padj < 1:
+                errors.append(f"deg.padj must be in (0, 1), got {padj!r}")
+            bc = deg.get("batch_correction")
+            if bc not in ("T", "F"):
+                errors.append(f"deg.batch_correction must be 'T' or 'F', got {bc!r}")
+            ntop = deg.get("pca_ntop")
+            if isinstance(ntop, bool) or not isinstance(ntop, int) or ntop < 1:
+                errors.append(f"deg.pca_ntop must be an integer >= 1, got {ntop!r}")
+            if enabled is True:
+                _validate_deg_design(deg, errors, warnings)
     if errors:
         raise WorkflowError(
             f"config validation failed ({len(errors)} issues):\n  " + "\n  ".join(errors)
@@ -246,6 +367,7 @@ RESOURCE_DEFAULTS = {
     "count_stage": {"threads": 1, "mem_mb": 2048, "runtime_min": 30},
     "merge_counts": {"threads": 1, "mem_mb": 4096, "runtime_min": 30},
     "cascade_summary": {"threads": 1, "mem_mb": 2048, "runtime_min": 30},
+    "deg_deseq2": {"threads": 4, "mem_mb": 16000, "runtime_min": 240},
 }
 
 
@@ -282,6 +404,17 @@ def rruntime_sec(name):
 
 
 # ---------------------------------------------------------------------
+# Optional differential-expression stage (default off)
+# ---------------------------------------------------------------------
+# deg.classes restricted to the cascade classes that actually run; the deg
+# rules module (rules/deg.smk) is parse-time guarded by _DEG_CLASSES, so a
+# disabled stage (the default) leaves the DAG untouched.
+_DEG_CONFIG = config.get("deg") or {}
+_DEG_ENABLED = bool(_DEG_CONFIG.get("enabled", False))
+_DEG_CLASSES = sorted(set(_DEG_CONFIG.get("classes") or []) & set(_CLASSES)) \
+    if (_DEG_ENABLED and _CLASSES) else []
+
+# ---------------------------------------------------------------------
 # Target aggregation
 # ---------------------------------------------------------------------
 TARGETS = [
@@ -294,3 +427,5 @@ if _CLASSES:
     TARGETS += [expand(R("4.expression/{klass}/{klass}_counts.tsv"), klass=_CLASSES)]
 if _GENOME_CONFIGURED:
     TARGETS += [expand(R("3.align/genome/{sample}.sam"), sample=SAMPLES)]
+if _DEG_CLASSES:
+    TARGETS += [expand(R("6.DEG/{klass}/flag.log"), klass=_DEG_CLASSES)]

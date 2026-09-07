@@ -68,4 +68,5 @@ rule all:
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "cascade.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "quant.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "deg.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")
