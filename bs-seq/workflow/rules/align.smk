@@ -8,25 +8,22 @@
 # and per sample on the dedup BAM (the per-sample definition therefore also
 # blocks on the genome-wide totals).
 #
-# Derived-name convention these definitions emit (keep in sync with TARGETS
-# in common.smk and the C5 methylation module):
-# - bismark --basename {sample} writes {sample}.bam plus
-#   {sample}_report.txt into the --od folder (3.align/);
-# - deduplicate_bismark inherits the full alignment basename and writes
-#   into --od, so the dedup BAM is {sample}.deduplicated.bam; the
-#   declared dedup report is {sample}.deduplication_report.txt (4.dedup/) while
-#   the tool may itself write {sample}.bam.dedup_report.txt (Phase D
-#   reconciliation);
-# - bam2nuc names the per-sample output after the input BAM; the declared
-#   stats path is {sample}.nucleotide_stats.txt under
-#   5.methylation/{sample}/.
-#
-# Phase D real-run validation against the pinned bismark 0.24.0 (tracked
-# in docs/TODO.md) must confirm: bismark accepts --basename in the pinned
-# version (fallback = post-run rename, documented in docs/TODO.md), the
-# legacy "--pe"/-p paired flag, the exact dedup report name, and the exact
-# bam2nuc output name — adjust the declared names if the tools differ.
-# Keep --phred33-quals in bismark.align_extra.
+# Derived-name convention these definitions emit (reconciled against the
+# pinned bismark 0.24.0 in WSL real-run validation, 2026-09-05/06; keep in
+# sync with TARGETS in common.smk and the methylation module):
+# - bismark --basename {sample} writes {sample}_pe.bam/_se.bam plus
+#   {sample}_PE_report.txt/_SE_report.txt into --output_dir; the rule
+#   renames/copies them to the layout-neutral {sample}.bam +
+#   {sample}_report.txt and keeps the native copies + a {sample}_pe.bam
+#   symlink for bismark2summary discovery (see the rule body);
+# - deduplicate_bismark writes {sample}.deduplicated.bam plus
+#   {sample}.deduplication_report.txt into --output_dir (4.dedup/);
+# - bam2nuc names the per-sample output after the input BAM:
+#   {sample}.deduplicated.nucleotide_stats.txt under 5.methylation/{sample}/
+#   (composition auto-detected from the genome folder — never pass
+#   --genomic_composition, see the bam2nuc_sample rule body).
+# No per-job --parallel: bismark 0.24 rejects --basename together with
+# --multicore (docs/TODO.md §1); keep --phred33-quals in bismark.align_extra.
 
 rule bismark_align:
     input:
@@ -135,7 +132,12 @@ rule bam2nuc_sample:
         runtime_sec=rruntime_sec("bam2nuc_sample"),
     shell:
         """
+        ## Do NOT pass --genomic_composition: bam2nuc has no such option,
+        ## and Perl Getopt abbreviation silently resolves it to
+        ## --genomic_composition_only (genome composition, exit, BAM never
+        ## processed). The composition file is auto-detected from the
+        ## genome folder; the totals input stays as the DAG ordering edge.
         bam2nuc --genome_folder {params.genome_dir} \
-            --genomic_composition {input.totals} --dir {params.outdir} \
+            --dir {params.outdir} \
             {input.bam} > {log} 2>&1
         """

@@ -39,6 +39,6 @@ bismark:
 ## ---- Methylation extraction (bismark_methylation_extractor) ----
 methylation_extractor:
   cx_report: false              # true = also write the full CX-context cytosine report (large)
-  merge_cpg: true               # per-sample coverage2cytosine --merge_CpG ({sample}.CpG_merged.tsv.gz)
+  merge_cpg: true               # per-sample coverage2cytosine --merge_CpG ({sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz)
   buffer_frac: 4                # extractor --buffer_size = mem_mb / buffer_frac (in GB); lower it
                                 # (or raise the rule's mem_mb in resources.yaml) if jobs OOM

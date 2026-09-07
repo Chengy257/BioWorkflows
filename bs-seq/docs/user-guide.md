@@ -205,7 +205,7 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 | `trim.extra` | string | `""` | extra Trim Galore arguments appended verbatim |
 | `bismark.align_extra` | string | `"--phred33-quals"` | extra bismark arguments appended verbatim (keep the phred encoding in sync with your data) |
 | `methylation_extractor.cx_report` | bool | `false` | `true` = also run the extractor with `--CX --cytosine_report` (the full all-context cytosine report; large) |
-| `methylation_extractor.merge_cpg` | bool | `true` | request the per-sample `coverage2cytosine --merge_CpG` step (`{sample}.CpG_merged.tsv.gz`) |
+| `methylation_extractor.merge_cpg` | bool | `true` | request the per-sample `coverage2cytosine --merge_CpG` step (`{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz`) |
 | `methylation_extractor.buffer_frac` | int >= 1 | `4` | the extractor `--buffer_size` (GB) = the rule's `mem_mb / 1024 / buffer_frac`, minimum 1 (§5.2) |
 | `resources` | mapping of rule -> {threads, mem_mb, runtime_min} | `{}` | per-rule scheduler-resource overrides, same shape as `config/resources.yaml` (§4.4) |
 
@@ -445,7 +445,7 @@ workdir/
 │                            #   {sample}_1.fastq.gz + {sample}_2.fastq.gz (PE) or {sample}.fastq.gz (SE)
 └── results/                 # ALL derived artifacts (rename via results_dir in config)
     ├── 0.index/
-    │   └── bismark_genome/    # bisulfite genome (Bisulfite_Genome/{CT,GA}_conversion/) + genomic_nucleotide_totals.txt
+    │   └── bismark_genome/    # bisulfite genome (Bisulfite_Genome/{CT,GA}_conversion/) + genomic_nucleotide_frequencies.txt
     ├── 2.cleandata/
     │   ├── {sample}_trimmed.fq.gz / {sample}_{1_val_1,2_val_2}.fq.gz   # alignment inputs
     │   ├── {sample}_trimming_report.txt (+ per-mate for PE)            # Trim Galore statistics
@@ -453,10 +453,10 @@ workdir/
     ├── 3.align/
     │   └── {sample}.bam + {sample}_report.txt                          # Bismark alignment + report
     ├── 4.dedup/
-    │   └── {sample}.bam.deduplicated.bam + {sample}.dedup_report.txt   # deduplicated alignment
+    │   └── {sample}.deduplicated.bam + {sample}.deduplication_report.txt   # deduplicated alignment
     ├── 5.methylation/
     │   └── {sample}/           # cytosine report, bedGraph, M-bias, splitting report,
-    │                           # nucleotide stats, CpG_merged table, {sample}_seq_context.html
+    │                           # nucleotide stats, merged CpG table, {sample}.html
     ├── 5.QC/
     │   ├── bismark2summary.html
     │   ├── multiqc/multiqc_report.html
@@ -470,33 +470,33 @@ workdir/
 | Result | Path | Meaning |
 |---|---|---|
 | bisulfite genome index | `results/0.index/bismark_genome/Bisulfite_Genome/` | C→T and G→A converted bowtie2 indexes built by `bismark_genome_preparation` |
-| genome nucleotide totals | `results/0.index/bismark_genome/genomic_nucleotide_totals.txt` | genome-wide nucleotide composition (bam2nuc; input to the per-sample stats) |
+| genome nucleotide totals | `results/0.index/bismark_genome/genomic_nucleotide_frequencies.txt` | genome-wide nucleotide composition (bam2nuc; input to the per-sample stats) |
 | trimmed reads | `results/2.cleandata/{sample}_trimmed.fq.gz` (SE) or `{sample}_1_val_1.fq.gz` + `{sample}_2_val_2.fq.gz` (PE) | quality- + adapter-trimmed, `min_len`-filtered; the alignment input when trimming is enabled |
 | trimming report | `results/2.cleandata/{sample}_trimming_report.txt` | Trim Galore statistics (aggregated into MultiQC) |
 | FastQC | `results/2.cleandata/fastqc/{sample}_trimmed_fastqc.html` | per-base quality of the trimmed reads |
 | alignment BAM | `results/3.align/{sample}.bam` | Bismark alignment of the trim-aware reads |
 | alignment report | `results/3.align/{sample}_report.txt` | alignment efficiency, conversion efficiency, per-context yields |
-| deduplicated BAM | `results/4.dedup/{sample}.bam.deduplicated.bam` | PCR duplicates removed (input of every downstream step) |
-| dedup report | `results/4.dedup/{sample}.dedup_report.txt` | duplication rate |
-| cytosine report | `results/5.methylation/{sample}/{sample}.bam.deduplicated.bismark.cov.gz` | per-cytosine methylation (6 columns: chromosome, start, end, methylation %, methylated, unmethylated counts) |
-| methylation bedGraph | `results/5.methylation/{sample}/{sample}.bam.deduplicated.bedGraph.gz` | context-level methylation percentage per region |
-| splitting report | `results/5.methylation/{sample}/{sample}.bam.deduplicated.splitting_report.txt` | methylation per context (CpG/CHG/CHH) and strand |
-| M-bias | `results/5.methylation/{sample}/{sample}.bam.deduplicated.M-bias.txt` | per-read-position methylation (basis for `--mbias` decisions) |
-| nucleotide stats | `results/5.methylation/{sample}/{sample}.nucleotide_stats.txt` | input-DNA nucleotide composition of the sample (bam2nuc) |
-| merged CpG table | `results/5.methylation/{sample}/{sample}.CpG_merged.tsv.gz` | coverage2cytosine `--merge_CpG` product (CpG sites merged across strands) |
-| per-sample report | `results/5.methylation/{sample}/{sample}_seq_context.html` | alignment + dedup + splitting + M-bias + nucleotide stats in one HTML |
+| deduplicated BAM | `results/4.dedup/{sample}.deduplicated.bam` | PCR duplicates removed (input of every downstream step) |
+| dedup report | `results/4.dedup/{sample}.deduplication_report.txt` | duplication rate |
+| cytosine report | `results/5.methylation/{sample}/{sample}.deduplicated.bismark.cov.gz` | per-cytosine methylation (6 columns: chromosome, start, end, methylation %, methylated, unmethylated counts) |
+| methylation bedGraph | `results/5.methylation/{sample}/{sample}.deduplicated.bedGraph.gz` | context-level methylation percentage per region |
+| splitting report | `results/5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt` | methylation per context (CpG/CHG/CHH) and strand |
+| M-bias | `results/5.methylation/{sample}/{sample}.deduplicated.M-bias.txt` | per-read-position methylation (basis for `--mbias` decisions) |
+| nucleotide stats | `results/5.methylation/{sample}/{sample}.deduplicated.nucleotide_stats.txt` | input-DNA nucleotide composition of the sample (bam2nuc) |
+| merged CpG table | `results/5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz` | coverage2cytosine `--merge_CpG` product (CpG sites merged across strands) |
+| per-sample report | `results/5.methylation/{sample}/{sample}.html` | alignment + dedup + splitting + M-bias + nucleotide stats in one HTML |
 | run-level summary | `results/5.QC/bismark2summary.html` | one-row-per-sample overview of all Bismark numbers |
 | QC report | `results/5.QC/multiqc/multiqc_report.html` | trimming + FastQC + Bismark reports in one HTML |
 | version record | `results/5.QC/software_versions.yaml` | tool versions actually resolved for the run (incl. Snakemake) |
 | per-rule logs | `results/logs/` | one log per rule/sample |
 
-Note the derived-name chain: every methylation output carries the `.bam.deduplicated` infix inherited from the input BAM name (see "Bismark output naming" in the [README](../README.md)).
+Note the derived-name chain: every methylation output carries the `.deduplicated` infix inherited from the input BAM name (see "Bismark output naming" in the [README](../README.md)).
 
 ### 7.3 Reading the numbers
 
 1. **Trimming yield** (`*_trimming_report.txt`, MultiQC): the trimmed library size vs raw. BS-seq libraries are adapter-heavy when fragments are shorter than the read length, so a substantial adapter-contaminated fraction is normal — what matters is how many pairs survive `--length` afterwards.
 2. **Alignment efficiency** (`{sample}_report.txt`, bismark2summary): unique alignment rate. On a well-matched reference genome, bisulfite libraries typically align somewhat below ordinary DNA-seq rates (the C→T conversion collapses strand complexity); a rate near zero means wrong genome, wrong `--phred33-quals`/`--phred64-quals` encoding, or a non-converted library.
-3. **Duplication rate** (`{sample}.dedup_report.txt`): the fraction of duplicate read pairs removed. Bisulfite libraries duplicate heavily (complexity loss from the conversion); judge it together with coverage.
+3. **Duplication rate** (`{sample}.deduplication_report.txt`): the fraction of duplicate read pairs removed. Bisulfite libraries duplicate heavily (complexity loss from the conversion); judge it together with coverage.
 4. **CpG methylation level** (splitting report, cytosine report): the CpG-context methylation percentage should be in the organism's expected range (rice/human endogenous CG methylation is high, tens of percent); near-zero CpG methylation with high CHH is the signature of chloroplast/organellar contamination or a conversion problem. CHG/CHH levels in rice are distinctly non-zero (plant contexts).
 5. **M-bias** (`*.M-bias.txt`): methylation percentage per read position. Strong end-of-read biases are the reason people trim the first/last bases with bismark's `--mbias`; inspect before adding such trims to `bismark.align_extra`.
 
@@ -518,8 +518,8 @@ Yes. The layout is detected per sample from the `1.rawdata/` file names (§3.2) 
 **Q4: The methylation extractor was killed for memory. What do I tune?**
 The extractor's `--buffer_size` is derived from the rule's `mem_mb` (§5.2). Either lower `methylation_extractor.buffer_frac` (smaller buffer) in the project config, or override the rule's memory in a project `resources.yaml` (`resources: {methylation_extractor: {mem_mb: 64000}}`) so the derived buffer grows with the request — never hard-code a buffer bigger than the scheduler grants.
 
-**Q5: Why are my methylation files called `{sample}.bam.deduplicated.*`?**
-Bismark tools derive output names from the input file name: the extractor consumes the deduplicated BAM and inherits its full basename, so every report carries the `.bam.deduplicated` infix. The full chain is tabulated in the [README](../README.md#bismark-output-naming).
+**Q5: Why are my methylation files called `{sample}.deduplicated.*`?**
+Bismark tools derive output names from the input file name: the extractor consumes the deduplicated BAM (`{sample}.deduplicated.bam`) and inherits its basename, so every report carries the `.deduplicated` infix. The full chain is tabulated in the [README](../README.md#bismark-output-naming).
 
 **Q6: How do I resume after an interruption? What about lock errors?**
 Snakemake skips completed steps by output timestamps — **rerun the same command to resume** (profiles pin keep-going and rerun-incomplete). If you hit a working-directory lock error (`Directory cannot be locked`, usually after a force-killed job), run `bash run.sh -P . --unlock` and rerun.

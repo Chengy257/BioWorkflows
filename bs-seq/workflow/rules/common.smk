@@ -278,14 +278,15 @@ def rruntime_sec(name):
 # ---------------------------------------------------------------------
 # Target aggregation.
 #
-# Derived Bismark naming convention (keep the rule modules in sync):
-# deduplicate_bismark inherits the full alignment basename, so the dedup
-# BAM is {sample}.deduplicated.bam; the methylation extractor output
-# inherits that deduplicated basename again, i.e.
-# {sample}.deduplicated.bismark.cov.gz (+ the _seq_context.html
-# report), and coverage2cytosine --merge_CpG writes
-# {sample}.CpG_merged.tsv.gz. The C3-C5 modules must emit exactly these
-# paths.
+# Derived Bismark naming convention (reconciled against bismark 0.24.0,
+# 2026-09-05/06; keep the rule modules in sync): deduplicate_bismark
+# inherits the full alignment basename, so the dedup BAM is
+# {sample}.deduplicated.bam; the methylation extractor output inherits
+# that deduplicated basename again, i.e.
+# {sample}.deduplicated.bismark.cov.gz (+ the {sample}.html report),
+# and coverage2cytosine --merge_CpG writes
+# {sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz. The C3-C5
+# modules must emit exactly these paths.
 # ---------------------------------------------------------------------
 TARGETS = [
     R("5.QC/bismark2summary.html"),

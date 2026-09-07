@@ -22,6 +22,23 @@ All notable changes to this project are documented in this file. Format based on
   `bam2nuc_sample` genome-folder path fix and the bismark2report naming were applied after that run and are
   DAG-verified (dry-run) but not re-run end-to-end (recorded honestly; see docs/TODO.md §1).
 
+### Changed (2026-09-07, first full end-to-end real-run green)
+
+- `bam2nuc_sample` no longer passes `--genomic_composition <totals>`: bam2nuc has no such option, and Perl
+  Getopt abbreviation silently resolves it to `--genomic_composition_only` (genome composition, exit 0, BAM
+  never processed — the declared `{sample}.deduplicated.nucleotide_stats.txt` was never written). The
+  composition file is auto-detected from the genome folder; the totals input stays as the DAG ordering edge.
+- `bismark2report` passes `--output {sample}.html`: `--output` uses the file name VERBATIM (passing
+  `{sample}` writes a file literally named `{sample}`, missing the declared `.html` output).
+- Real-run regression verified end-to-end in WSL on 2026-09-07 (`bash tests/run_test.sh --real-run
+  --reads 3000`, bs-seq-pinned env): all 20 jobs green, all four EXPECTED output assertions PASS; the two
+  fixes above close the previously recorded 15/20 gap, and also verify the `bam2nuc_sample` genome-folder
+  path fix and the `bismark2report` output name at runtime.
+- Documentation synced to the reconciled naming chain (final-review TODO §5 backlog): README results
+  quick-reference / QC notes / limitations, user-guide §4/§7/§8 + FAQ Q5, rule header comments, and the
+  example config `merge_cpg` comment. The lightweight CI job (lint + `--reads 2000` dry-run regression) is
+  wired at the repository root `.github/workflows/ci.yml` (see docs/TODO.md §4).
+
 Initial scaffold of the bs-seq subproject (Bismark bisulfite-seq calling + QC, Snakemake 7): config layer, scheduler profiles, boilerplate, and the synthetic test-data contract. Workflow rules, launcher, and tests land in subsequent tasks.
 
 ### Added

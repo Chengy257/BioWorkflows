@@ -11,18 +11,17 @@
 #   5.methylation/{sample}/{sample}.deduplicated.M-bias.txt
 # The extractor may also drop a side-effect splitter report next to them
 # (not a declared output). coverage2cytosine --merge_CpG writes
-# 5.methylation/{sample}/{sample}.CpG_merged.tsv.gz; the
-# definition is unconditional but only requested when
+# 5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov
+# (plain); the rule gzips it to the declared .cov.gz, and the large
+# {sample}.CpG_merged.CpG_report.txt cytosine report stays beside it as a
+# side effect. The definition is unconditional but only requested when
 # methylation_extractor.merge_cpg is true (via TARGETS in common.smk).
 #
-# Phase D real-run validation against the pinned bismark 0.24.0 (tracked in
-# docs/TODO.md) must confirm: the exact extractor output names, the exact
-# coverage2cytosine -o / ".gz" naming (the trailing `gzip -f` line is the
-# safe fallback and stays until confirmed), the bismark2report html name
-# ({sample}.html: bismark2report -o X writes X.html),
-# that bismark2summary (-o bismark2summary) writes into the working
-# directory (hence the `cd` into 5.QC/ below; a --basename alternative is
-# documented in docs/TODO.md).
+# All names below reconciled against the pinned bismark 0.24.0 in WSL
+# real-run validation (2026-09-05/06, docs/TODO.md §1): bismark2report
+# --output {sample} writes {sample}.html; bismark2summary writes into the
+# working directory (hence the `cd` into 5.QC/ and the absolute paths in
+# the rule body below).
 
 rule methylation_extractor:
     input:
@@ -100,7 +99,9 @@ rule bismark2report:
         runtime_sec=rruntime_sec("bismark2report"),
     shell:
         """
-        bismark2report --dir {params.outdir} --output {wildcards.sample} \
+        ## --output takes the file name VERBATIM (passing "s1" writes a
+        ## file literally named "s1"); include the .html extension.
+        bismark2report --dir {params.outdir} --output {wildcards.sample}.html \
             --alignment_report {input.align_report} \
             --dedup_report {input.dedup_report} \
             --splitting_report {input.splitting} \

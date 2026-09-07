@@ -33,10 +33,10 @@ Bismark tools derive most output file names from the **input** file name, so the
 | `coverage2cytosine --merge_CpG` | `{sample}.deduplicated.bismark.cov.gz` | `results/5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz` (the tool writes `...merged_CpG_evidence.cov`; the rule gzips it; the large `{sample}.CpG_merged.CpG_report.txt` cytosine report stays beside it as a side effect) |
 | `bam2nuc` (genome) | prepared genome folder | `results/0.index/bismark_genome/genomic_nucleotide_frequencies.txt` |
 | `bam2nuc` (sample) | `4.dedup/{sample}.deduplicated.bam` | `results/5.methylation/{sample}/{sample}.deduplicated.nucleotide_stats.txt` |
-| `bismark2report --output {sample}` | the per-sample Bismark reports | `results/5.methylation/{sample}/{sample}.html` |
+| `bismark2report --output {sample}.html` | the per-sample Bismark reports | `results/5.methylation/{sample}/{sample}.html` (the `--output` name is used verbatim) |
 | `bismark2summary` | alignment BAMs (via `_pe`/`_se` symlinks) | `results/5.QC/bismark2summary.html` (`-o bismark2summary`; the rule `cd`s into `5.QC/` with absolute paths) |
 
-These names were **reconciled against the pinned Bismark 0.24.0 in the 2026-09-05/06 WSL real-run validation** (13 reconciliation rounds). Remaining caveats — `bam2nuc_sample`'s genome-folder path fix applied after the last recorded run, per-sample `--parallel` alignment deferred (Bismark 0.24 rejects `--basename` + `--multicore` together; parallelism comes from Snakemake scheduling samples, like the legacy ParaFly model), and `bismark2summary` skipping dedup/splitting stats unless reports sit beside the BAM — are tracked in [docs/TODO.md](docs/TODO.md) §1.
+These names were **reconciled against the pinned Bismark 0.24.0 in the 2026-09-05/06 WSL real-run validation** (13 reconciliation rounds) and confirmed by the full 20/20 real-run on 2026-09-07 (which also verified the `bam2nuc_sample` genome-folder path fix and the `bismark2report` output name). Remaining caveats — per-sample `--parallel` alignment deferred (Bismark 0.24 rejects `--basename` + `--multicore` together; parallelism comes from Snakemake scheduling samples, like the legacy ParaFly model), and `bismark2summary` skipping dedup/splitting stats unless reports sit beside the BAM — are tracked in [docs/TODO.md](docs/TODO.md) §1.
 
 ## Environment setup
 
@@ -131,21 +131,21 @@ All derived artifacts live under `results/` in the working directory (rename via
 | Result | Path |
 |---|---|
 | Bisulfite genome index | `results/0.index/bismark_genome/Bisulfite_Genome/{CT,GA}_conversion/` |
-| Genome nucleotide totals | `results/0.index/bismark_genome/genomic_nucleotide_totals.txt` |
+| Genome nucleotide totals | `results/0.index/bismark_genome/genomic_nucleotide_frequencies.txt` |
 | Trimmed reads (PE) | `results/2.cleandata/{sample}_1_val_1.fq.gz` (+ `{sample}_2_val_2.fq.gz`) |
 | Trimmed reads (SE) | `results/2.cleandata/{sample}_trimmed.fq.gz` |
 | Trim Galore reports | `results/2.cleandata/{sample}_trimming_report.txt` (PE: one per mate, keyed by the mate name) |
 | FastQC on trimmed reads | `results/2.cleandata/fastqc/{sample}_trimmed_fastqc.zip` (+ `.html`; PE: per mate) |
 | Alignment BAM | `results/3.align/{sample}.bam` |
 | Bismark alignment report | `results/3.align/{sample}_report.txt` |
-| Deduplicated BAM | `results/4.dedup/{sample}.bam.deduplicated.bam` |
-| Deduplication report | `results/4.dedup/{sample}.dedup_report.txt` |
-| Nucleotide stats (per sample) | `results/5.methylation/{sample}/{sample}.nucleotide_stats.txt` |
-| Cytosine report | `results/5.methylation/{sample}/{sample}.bam.deduplicated.bismark.cov.gz` |
-| Methylation bedGraph | `results/5.methylation/{sample}/{sample}.bam.deduplicated.bedGraph.gz` |
-| Splitting report / M-bias | `results/5.methylation/{sample}/{sample}.bam.deduplicated.splitting_report.txt` / `.M-bias.txt` |
-| Merged CpG table | `results/5.methylation/{sample}/{sample}.CpG_merged.tsv.gz` (when `merge_cpg: true`) |
-| Per-sample HTML report | `results/5.methylation/{sample}/{sample}_seq_context.html` |
+| Deduplicated BAM | `results/4.dedup/{sample}.deduplicated.bam` |
+| Deduplication report | `results/4.dedup/{sample}.deduplication_report.txt` |
+| Nucleotide stats (per sample) | `results/5.methylation/{sample}/{sample}.deduplicated.nucleotide_stats.txt` |
+| Cytosine report | `results/5.methylation/{sample}/{sample}.deduplicated.bismark.cov.gz` |
+| Methylation bedGraph | `results/5.methylation/{sample}/{sample}.deduplicated.bedGraph.gz` |
+| Splitting report / M-bias | `results/5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt` / `{sample}.deduplicated.M-bias.txt` |
+| Merged CpG table | `results/5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz` (when `merge_cpg: true`) |
+| Per-sample HTML report | `results/5.methylation/{sample}/{sample}.html` |
 | Run-level Bismark summary | `results/5.QC/bismark2summary.html` |
 | Combined QC report | `results/5.QC/multiqc/multiqc_report.html` |
 | Software version record | `results/5.QC/software_versions.yaml` |
@@ -159,7 +159,7 @@ The MultiQC report aggregates, per sample:
 
 - **Trim Galore** (`*_trimming_report.txt`): adapter-contaminated fraction and the length distribution after trimming;
 - **FastQC** (`*_trimmed_fastqc.zip`): per-base quality, GC content, and other module checks on the trimmed reads;
-- **Bismark** (`3.align/{sample}_report.txt`, `4.dedup/{sample}.dedup_report.txt`, `5.methylation/{sample}/...splitting_report.txt`): alignment efficiency, deduplication rate, and per-context methylation percentages.
+- **Bismark** (`3.align/{sample}_report.txt`, `4.dedup/{sample}.deduplication_report.txt`, `5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt`): alignment efficiency, deduplication rate, and per-context methylation percentages.
 
 `bismark2summary.html` is the run-level view of the same numbers (one row per sample). Pipeline health is read as: raw → trimmed yield → alignment efficiency → duplication rate → CpG methylation level sane for the organism (rice ~80-90% CG context methylation; a near-zero CpG level usually means a wrong genome or a non-bisulfite library). Differential methylation across conditions is out of scope for v0.1 (see [docs/TODO.md](docs/TODO.md)).
 
@@ -192,15 +192,15 @@ bash tests/run_test.sh --real-run    # end-to-end run + output assertions (serve
 
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, paired-end 100 bp reads simulated post-bisulfite: C→T on read 1, G→A on read 2, 1% errors, 30% adapter-tailed pairs) and is never committed. The dry-run baseline DAG is **20 jobs** (rule all + 2 x trim_pe + bismark_genome_prep + 2 x bismark_align + 2 x deduplicate + bam2nuc_genome + 2 x bam2nuc_sample + 2 x methylation_extractor + 2 x coverage2cytosine + 2 x bismark2report + bismark2summary + multiqc + software_versions, 2 samples) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)).
 
-The regression config runs with `species: "none"` and a relative miniature `ref/genome.fa`, exercising the full repository config schema. A handful of Bismark derived output names stay open until a Phase D `--real-run` against the pinned Bismark 0.24.0 ([docs/TODO.md](docs/TODO.md) §1).
+The regression config runs with `species: "none"` and a relative miniature `ref/genome.fa`, exercising the full repository config schema. A handful of Bismark derived output names were reconciled against the pinned Bismark 0.24.0 in WSL `--real-run` validation (see the naming table above and [docs/TODO.md](docs/TODO.md) §1).
 
-A lightweight CI job (lint + `--reads 2000` dry-run regression) is planned as part of Phase D integration (plan Task D3); until it lands, use `make test` + `bash tests/run_test.sh --reads 2000` locally.
+A lightweight CI job (lint + `--reads 2000` dry-run regression) runs at the repository root (`.github/workflows/ci.yml`, added 2026-09-07); locally, use `make test` + `bash tests/run_test.sh --reads 2000`.
 
 ## Known limitations and TODOs
 
 Mirrors [docs/TODO.md](docs/TODO.md):
 
-1. **Bismark derived output names**: the declared `.bam.deduplicated`-infix paths follow Bismark's naming convention, but a few exact on-disk names (dedup report, extractor side files, `bismark2report` HTML) must be confirmed at the Phase D real-run validation before release.
+1. **Bismark derived output names**: reconciled against Bismark 0.24.0 in WSL real-run validation (naming table above, [docs/TODO.md](docs/TODO.md) §1). Remaining caveats: `bismark2summary` skips dedup/splitting stats unless reports sit beside the BAM under the tool's own names, and per-sample `--parallel` alignment is deferred (Bismark 0.24 rejects `--basename` + `--multicore`).
 2. **Differential methylation / DMR**: v0.1 stops at per-sample cytosine reports and merged CpG tables; methylKit/DSS-style DMR calling (needs a group/batch design in the sample table) is the first v0.2 candidate.
 3. **No unit-test suite**: the regression is a synthetic-data dry-run; pytest coverage for the pure-Python pieces and the `common.smk` validation is deferred.
 
