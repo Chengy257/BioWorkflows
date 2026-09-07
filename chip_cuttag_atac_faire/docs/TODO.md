@@ -3,7 +3,9 @@
 > Produced during the enhancer_lncRNA_2026 real-data preparation (2026-09-05).
 > Status update (2026-09-05, branch fix/realdata-todos): items 1-4 below are all
 > resolved at the repository level; the notes under each item record what server
-> deployments can retire after pulling this branch.
+> deployments can retire after pulling this branch. Item 5 was closed on
+> 2026-09-08 (runtime_config.py migrated onto the shared WorkflowSpec framework);
+> all five items are now resolved at the repository level.
 
 ## 1. FASTQ naming-variant support — DONE
 
@@ -65,25 +67,36 @@
   preceding `plotAvgProf(..., xlim = c(-flank, flank))` line (flank=3000, i.e.
   the TSS +/-3kb window).
 
-## 5. Migrate `runtime_config.py` onto the shared WorkflowSpec framework — DEFERRED
+## 5. Migrate `runtime_config.py` onto the shared WorkflowSpec framework — DONE
 
-- **Current state**: chip is the only workflow whose
-  `workflow/scripts/runtime_config.py` (278 lines, ported from rna-seq v0.8.0
-  before the shared-layer extraction) does not import
+- **Original issue**: chip was the only workflow whose
+  `workflow/scripts/runtime_config.py` (279 lines, ported from rna-seq v0.8.0
+  before the shared-layer extraction) did not import
   `shared/python/bioworkflows_runtime.py`; the other four workflows declare a
-  thin `WorkflowSpec` wrapper (43-95 lines). chip already consumes the other
+  thin `WorkflowSpec` wrapper (43-95 lines). chip already consumed the other
   two shared pieces (`bioworkflows_versions.py` via `collect_versions.py`,
   `lib/launcher.sh` via `run.sh`).
-- **Why deferred**: the standalone file carries assay-specific surface — tool
-  tables for four assays, R version policy and `R_LIBS_USER` handling,
-  orgdb/annotation-database checks — so the migration is behavior-affecting
-  rather than mechanical. It needs its own validation window (the unit tests in
-  `tests/run_tests.py`, `--check-software` output parity, and a real-project
-  preflight), not a drive-by refactor.
-- **Scope sketch**: port the checks into `WorkflowSpec` (`default_tools`,
-  `pipeline_tools`, `r_packages`, `orgdb`, extra checks); keep every `CHIP_*`
-  exported key stable so `run.sh` and the rules keep working unchanged; verify
-  the `check --scope` semantics match the current preflight output.
+- **Fix**: the standalone resolver was replaced by a thin `WorkflowSpec`
+  wrapper in the bs-seq style (56 lines):
+  - the 14 `DEFAULT_TOOLS` entries keep their exact insertion order, so the
+    emitted `CHIP_TOOL_*` export lines stay byte-identical;
+  - `rscript` stays in `DEFAULT_TOOLS` (the framework resolves it
+    unconditionally and `export` emits `CHIP_RSCRIPT`/`CHIP_TOOL_RSCRIPT`)
+    but is excluded from `pipeline_tools`, so `--scope software` still skips
+    the R binary check while the r scope covers Rscript, its version, and the
+    packages;
+  - `r_packages = {"default": ["GenomicFeatures", "ChIPseeker"]}` keeps the
+    shared framework's R branch always active under `--scope r` / `--scope all`;
+  - `orgdb` stays empty: peak annotation is GTF-based (`makeTxDbFromGFF` in
+    `annoPeak_batch.R`), so no OrgDb checks exist (the "orgdb/annotation
+    checks" concern in the original deferral rationale was overstated).
+  `run.sh` and the rules work unchanged: the single-key `pipeline_tools` means
+  `check` needs no `--pipeline`, and `--analysis-config` is still accepted as
+  the reserved extension point.
+- **Validation**: `export --config config/software.yaml` output diffed
+  byte-identical against a pre-migration golden capture; `tests/run_tests.py`
+  all PASS; `tests/lint.sh` + `tests/run_test.sh` green with the 47-job
+  dry-run DAG unchanged.
 - **Reference**: the consumers matrix in `shared/README.md`; the root
   `AGENTS.md`.
 

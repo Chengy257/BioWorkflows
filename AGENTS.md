@@ -18,11 +18,9 @@ unvalidated for the cluster profiles).
   `docs/dag_test.svg`; seclip-seq v0.1 shipped it tracked by mistake — do not
   repeat that.
 - **Cross-project code lives in `shared/`, consumed in place (never copied)**,
-  and `shared/` stays project-agnostic. Consumers today: `lib/launcher.sh` and
-  `python/bioworkflows_versions.py` are used by all five workflows;
-  `python/bioworkflows_runtime.py` (the WorkflowSpec framework) by rna-seq,
-  seclip-seq, srna-seq, bs-seq — `chip_cuttag_atac_faire` is the documented
-  exception (see its `docs/TODO.md` §5; never migrate it as a drive-by).
+  and `shared/` stays project-agnostic. Consumers today: `lib/launcher.sh`,
+  `python/bioworkflows_versions.py`, and `python/bioworkflows_runtime.py`
+  (the WorkflowSpec framework) are used by all five workflows.
 - **Old implementations and process docs are archived to
   `D:\BioWorkflows_archive\` (outside the repo), never tracked.** Implementation
   plans go under its `plans/` directory.

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(_SHARED, "python"))
 
 from bioworkflows_versions import run_cli  # noqa: E402
 
-# Keep in sync with WORKFLOW_TOOLS in runtime_config.py: logical tool names.
+# Keep in sync with DEFAULT_TOOLS in runtime_config.py: logical tool names.
 TOOLS = [
     "python", "snakemake", "rscript", "trim_galore", "bowtie2", "bowtie2-build",
     "samtools", "picard", "macs2", "bedtools", "deeptools", "spp", "multiqc", "fastqc",
