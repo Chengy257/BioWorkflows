@@ -101,13 +101,14 @@ pbs, sge, slurm}}`, `tests/{lint.sh, make_testdata.py, run_test.sh}`,
    `paths:`, large references in `databases:`. `environment.yaml` carries the
    standard header ("Optional all-in-one environment template for a new server.
    This file is NOT created automatically by Snakemake.") with block-form
-   `channels:` and pinned versions (bs-seq's older headerless/inline-style file
-   is to be aligned on its next touch).
+   `channels:` and pinned versions.
 4. Add a CI job in `.github/workflows/ci.yml` following the seclip/srna/bs
-   template: setup-python 3.10, `snakemake==7.32.4` + `pulp==2.7.0` + pyyaml,
-   apt shellcheck graphviz, lint, `bash tests/run_test.sh --reads 2000`, DAG
-   artifact upload (uploads read the working tree; `.gitignore` is irrelevant
-   to artifact upload).
+   template: setup-python 3.10, `snakemake==7.32.4` + `pulp==2.7.0` + pyyaml
+   + pytest, apt shellcheck graphviz, unit tests (`python -m pytest tests -q`
+   when the project carries a pytest suite), lint, `bash tests/run_test.sh
+   --reads 2000` plus one enabled-stage scenario dry-run per new optional
+   stage, DAG artifact upload (uploads read the working tree; `.gitignore` is
+   irrelevant to artifact upload).
 5. Docs: register the workflow in the ROOT README table; write the per-project
    README / user-guide / TODO (deferred decisions and their rationale) /
    CHANGELOG entry.
