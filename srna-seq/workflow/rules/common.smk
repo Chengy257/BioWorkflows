@@ -152,6 +152,24 @@ def validate_config(cfg):
 validate_config(config)
 
 
+def apply_species_presets(cfg, preset):
+    """Fill empty reference paths from one species preset, in place.
+
+    A cascade entry whose fasta is empty inherits preset["cascade"][name];
+    genome.fasta falls back to preset["genome"]. An empty preset (species
+    "none") is a no-op. This mirrors the inline species merge in
+    workflow/Snakefile -- which must stay there because it runs before
+    this file is included (the parse-time validation above consumes the
+    merged references); tests/test_common.py pins the two together.
+    """
+    for entry in cfg.get("cascade") or []:
+        filled = (preset.get("cascade") or {}).get(entry.get("name"), "")
+        if not str(entry.get("fasta") or "").strip() and filled:
+            entry["fasta"] = filled
+    if not str((cfg.get("genome") or {}).get("fasta") or "").strip() and preset.get("genome"):
+        cfg["genome"] = dict(cfg.get("genome") or {}, fasta=preset["genome"])
+
+
 def cascade_classes():
     """Ordered list of cascade class names with a configured fasta."""
     return [str(c["name"]).strip() for c in (config.get("cascade") or [])
