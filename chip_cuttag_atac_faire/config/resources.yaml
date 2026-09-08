@@ -27,6 +27,10 @@ resources:
   callpeak_narrow:             {threads: 1,  mem_mb: 8192,  runtime_min: 180}
   callpeak_broad:              {threads: 1,  mem_mb: 8192,  runtime_min: 180}
   callpeak_atac:               {threads: 1,  mem_mb: 8192,  runtime_min: 180}
+  seacr_bedgraph_treat:        {threads: 2,  mem_mb: 8192,  runtime_min: 120}
+  seacr_bedgraph_control:      {threads: 2,  mem_mb: 8192,  runtime_min: 120}
+  seacr_callpeak:              {threads: 1,  mem_mb: 8192,  runtime_min: 180}
+  seacr_bigwig:                {threads: 1,  mem_mb: 4096,  runtime_min: 60}
   bigwig:                      {threads: 1,  mem_mb: 4096,  runtime_min: 60}
   peak_annotation:             {threads: 1,  mem_mb: 8192,  runtime_min: 120}
   frip:                        {threads: 1,  mem_mb: 4096,  runtime_min: 60}

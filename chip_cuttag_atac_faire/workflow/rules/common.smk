@@ -222,6 +222,38 @@ def validate_config(cfg):
                         and not rep.get("enabled", False)):
                     errors.append(
                         "peak.replicate.frip_on=consensus requires peak.replicate.enabled=true")
+        # Alternative pooled peak caller (v0.6): macs2 (default) | seacr. The
+        # SEACR knobs are validated whenever present; caller=seacr together
+        # with the replicate stage is an aggregated error (the replicate/IDR
+        # machinery is MACS2-based, see workflow/rules/callpeak_replicate.smk).
+        caller = p.get("caller", "macs2")
+        if caller not in ("macs2", "seacr"):
+            errors.append(f"peak.caller must be macs2 or seacr, got {caller!r}")
+        sc = p.get("seacr")
+        if sc is not None:
+            if not isinstance(sc, dict):
+                errors.append(f"peak.seacr must be a mapping, got {sc!r}")
+            else:
+                if sc.get("mode", "stringent") not in ("stringent", "relaxed"):
+                    errors.append("peak.seacr.mode must be stringent or relaxed, got "
+                                  f"{sc.get('mode')!r}")
+                if sc.get("normalize", "norm") not in ("norm", "non"):
+                    errors.append("peak.seacr.normalize must be norm or non, got "
+                                  f"{sc.get('normalize')!r}")
+                try:
+                    if not 0 < float(sc.get("fdr_threshold", 0.01)) < 1:
+                        errors.append("peak.seacr.fdr_threshold must be in (0, 1), got "
+                                      f"{sc.get('fdr_threshold')!r}")
+                except (TypeError, ValueError):
+                    errors.append("peak.seacr.fdr_threshold must be numeric, got "
+                                  f"{sc.get('fdr_threshold')!r}")
+        _rep_for_caller = p.get("replicate")
+        if (caller == "seacr" and isinstance(_rep_for_caller, dict)
+                and _rep_for_caller.get("enabled", False)):
+            errors.append(
+                "peak.caller=seacr and peak.replicate.enabled=true are mutually "
+                "exclusive: the replicate/IDR stage is MACS2-based; enable one "
+                "of the two switches, not both")
     bl = cfg.get("blacklist", "")
     if not isinstance(bl, str):
         errors.append(f"blacklist must be a string path (or empty to disable), got {bl!r}")
@@ -503,6 +535,27 @@ SPIKE_IN_DEFAULTS = {"enabled": False, "fasta": "", "name": "spike",
 SPIKE_IN = dict(SPIKE_IN_DEFAULTS)
 SPIKE_IN.update((config.get("spike_in") or {}))
 
+# Alternative pooled peak caller (v0.6, default off via caller=macs2): with
+# peak.caller=seacr the pooled MACS2 narrow/broad/atac group calls
+# (callpeak.smk) are replaced by SEACR (workflow/rules/seacr.smk) over
+# raw-depth bedGraph coverage, with SEACR's 6-column result converted back to
+# the standard narrowPeak/broadPeak contract at the same {group}_peaks.* paths,
+# so every downstream consumer (FRiP, annotation, blacklist, motif, DiffBind)
+# is unchanged. The caller=seacr + peak.replicate.enabled combination is
+# rejected by validate_config (the replicate/IDR machinery is MACS2-based).
+PEAK_CALLER_DEFAULTS = {"caller": "macs2",
+                        "seacr": {"mode": "stringent", "normalize": "norm",
+                                  "fdr_threshold": 0.01}}
+_peak_caller_cfg = config.get("peak") or {}
+_seacr_user_cfg = _peak_caller_cfg.get("seacr") or {}
+_unknown_seacr_keys = [k for k in _seacr_user_cfg if k not in PEAK_CALLER_DEFAULTS["seacr"]]
+if _unknown_seacr_keys:
+    print(f"[config warning] unknown peak.seacr keys are ignored: {_unknown_seacr_keys}")
+_seacr_cfg = dict(PEAK_CALLER_DEFAULTS["seacr"])
+_seacr_cfg.update({k: v for k, v in _seacr_user_cfg.items()
+                   if k in PEAK_CALLER_DEFAULTS["seacr"]})
+PEAK_CALLER = {"caller": _peak_caller_cfg.get("caller", "macs2"), "seacr": _seacr_cfg}
+
 # samtools flagstat count-line patterns (keep in sync with the compiled
 # copies in workflow/scripts/gates_summary.py and
 # workflow/scripts/spikein_summary.py — the standalone scripts duplicate
@@ -690,6 +743,12 @@ IDR_BIN = os.environ.get("CHIP_IDR", "idr")
 # configured via software.yaml paths: -> CHIP_HOMER_FINDMOTIFS; only needed
 # when motif.enabled is true).
 HOMER_BIN = os.environ.get("CHIP_HOMER_FINDMOTIFS", "findMotifsGenome.pl")
+
+# SEACR (the alternative pooled peak caller, peak.caller=seacr only) resolves
+# the same way: an external bash script outside the conda template, configured
+# via software.yaml paths: -> CHIP_SEACR. The rules invoke it as
+# `bash {SEACR_BIN} ...` (SEACR is distributed as a shell script, not a binary).
+SEACR_BIN = os.environ.get("CHIP_SEACR", "SEACR_1.3.sh")
 
 # Python interpreter for the workflow's own scripts (run.sh exports CHIP_PYTHON
 # from the runtime resolution; python3 is the sane fallback).
@@ -900,6 +959,10 @@ RESOURCE_DEFAULTS = {
     "callpeak_narrow": {"threads": 1, "mem_mb": 8192, "runtime_min": 180},
     "callpeak_broad": {"threads": 1, "mem_mb": 8192, "runtime_min": 180},
     "callpeak_atac": {"threads": 1, "mem_mb": 8192, "runtime_min": 180},
+    "seacr_bedgraph_treat": {"threads": 2, "mem_mb": 8192, "runtime_min": 120},
+    "seacr_bedgraph_control": {"threads": 2, "mem_mb": 8192, "runtime_min": 120},
+    "seacr_callpeak": {"threads": 1, "mem_mb": 8192, "runtime_min": 180},
+    "seacr_bigwig": {"threads": 1, "mem_mb": 4096, "runtime_min": 60},
     "bigwig": {"threads": 1, "mem_mb": 4096, "runtime_min": 60},
     "peak_annotation": {"threads": 1, "mem_mb": 8192, "runtime_min": 120},
     "frip": {"threads": 1, "mem_mb": 4096, "runtime_min": 60},
@@ -978,9 +1041,18 @@ BAM_TARGETS += [f"{RD}3.align/bowtie2/{s}_rmdup.bam"
                 for s in SAMPLES if assay_needs_dedup(SEQTYPE_OF[s])]
 
 PEAK_TARGETS = [group_peak_file(g) for g in GROUPS]
+# Per-sample coverage tracks are produced by bigwig_sample, which lives in the
+# MACS2 callpeak module (callpeak.smk); under peak.caller=seacr that module is
+# not included, so the per-sample targets drop out of the DAG (the group track
+# keeps coming from the seacr module's raw-depth route).
 BW_TARGETS = [f"{RD}4.peak/{g}_FE.bw" for g in GROUPS]
 if BIGWIG["per_sample"]:
-    BW_TARGETS += [f"{RD}4.peak/samples/{s}.bw" for s in SAMPLES]
+    if PEAK_CALLER["caller"] == "macs2":
+        BW_TARGETS += [f"{RD}4.peak/samples/{s}.bw" for s in SAMPLES]
+    else:
+        print("[config warning] bigwig.per_sample rides the MACS2 callpeak module "
+              "and has no rule under peak.caller=seacr; the per-sample tracks are "
+              "skipped (the group tracks still come from the seacr module)")
 
 MOTIF_TARGETS = []
 if MOTIF["enabled"]:

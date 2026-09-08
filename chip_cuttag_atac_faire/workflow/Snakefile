@@ -70,7 +70,13 @@ rule all:
 # ---------------------------------------------------------------------
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "dedup.smk")
-include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
+# Pooled peak caller routing (v0.6): MACS2 (default) or SEACR. Both modules
+# claim the same pooled peak outputs ({group}_peaks.*), so exactly one of them
+# may be included per parse.
+if PEAK_CALLER["caller"] == "seacr":
+    include: os.path.join(WORKFLOW_DIR, "rules", "seacr.smk")
+else:
+    include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
 if REPLICATE["enabled"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "callpeak_replicate.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "annotation.smk")

@@ -418,6 +418,41 @@ check("spike_in placeholder fasta warns but does not abort",
       "[config warning]" in _out and "spike-in FASTA does not exist" in _out
       and "/path/to/spike.fa" in _out, _out[:200])
 
+# --- v0.6 keys: peak.caller / peak.seacr (alternative pooled caller) ---
+vc_case("peak.caller/seacr blocks are optional (legacy configs stay valid)",
+        lambda c: (c["peak"].pop("caller", None), c["peak"].pop("seacr", None)),
+        [], expect_error=False)
+vc_case("peak.caller=macs2 accepted",
+        lambda c: c["peak"].__setitem__("caller", "macs2"), [], expect_error=False)
+vc_case("peak.caller=seacr accepted",
+        lambda c: c["peak"].__setitem__("caller", "seacr"), [], expect_error=False)
+vc_case("bad peak.caller reported",
+        lambda c: c["peak"].__setitem__("caller", "macs3"),
+        ["peak.caller must be macs2 or seacr"])
+vc_case("peak.seacr of wrong type reported",
+        lambda c: c["peak"].__setitem__("seacr", "on"),
+        ["peak.seacr must be a mapping"])
+vc_case("bad seacr.mode reported",
+        lambda c: c["peak"].__setitem__("seacr", {"mode": "strict"}),
+        ["peak.seacr.mode must be stringent or relaxed"])
+vc_case("bad seacr.normalize reported",
+        lambda c: c["peak"].__setitem__("seacr", {"normalize": "RPKM"}),
+        ["peak.seacr.normalize must be norm or non"])
+vc_case("seacr.fdr_threshold at the exclusive upper bound reported",
+        lambda c: c["peak"].__setitem__("seacr", {"fdr_threshold": 1}),
+        ["peak.seacr.fdr_threshold must be in (0, 1)"])
+vc_case("seacr.fdr_threshold non-numeric reported",
+        lambda c: c["peak"].__setitem__("seacr", {"fdr_threshold": "x"}),
+        ["peak.seacr.fdr_threshold must be numeric"])
+vc_case("caller=seacr with replicate enabled reported",
+        lambda c: (c["peak"].__setitem__("caller", "seacr"),
+                   c["peak"]["replicate"].__setitem__("enabled", True)),
+        ["peak.caller=seacr", "peak.replicate.enabled"])
+vc_case("caller=seacr guard tolerates a non-mapping replicate block (type error reported instead)",
+        lambda c: (c["peak"].__setitem__("caller", "seacr"),
+                   c["peak"].__setitem__("replicate", "on")),
+        ["peak.replicate must be a mapping"], expect_error=True)
+
 print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
 check("regex: exact match (with escaping)",
@@ -597,6 +632,11 @@ if HAS_YAML:
           and cfg.get("spike_in", {}).get("scale_bigwigs") is False
           and isinstance(cfg.get("spike_in", {}).get("fasta"), str)
           and isinstance(cfg.get("spike_in", {}).get("name"), str))
+    check("config: peak.caller defaults to macs2 with the full seacr block",
+          cfg["peak"].get("caller") == "macs2"
+          and cfg["peak"].get("seacr", {}).get("mode") == "stringent"
+          and cfg["peak"].get("seacr", {}).get("normalize") == "norm"
+          and cfg["peak"].get("seacr", {}).get("fdr_threshold") == 0.01)
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
@@ -609,6 +649,9 @@ if HAS_YAML:
     check("resources.yaml: spike_in rules declared",
           {"spike_bowtie2_index", "spike_align", "spike_summary"}
           <= set(res_cfg.get("resources") or {}))
+    check("resources.yaml: seacr rules declared",
+          {"seacr_bedgraph_treat", "seacr_bedgraph_control", "seacr_callpeak",
+           "seacr_bigwig"} <= set(res_cfg.get("resources") or {}))
 
 print("== 8. Per-rule resource declarations ==")
 # --- resource helpers: extract the real source from common.smk, inject config ---
@@ -756,6 +799,23 @@ try:
               f"rc={_gen3.returncode} hdrs={_spike_hdrs} stderr={_gen3.stderr[-200:]}")
     finally:
         shutil.rmtree(_gen_out3, ignore_errors=True)
+
+    # --seacr scenario: config splice only (no extra samples or reference files)
+    _gen_out4 = tempfile.mkdtemp(prefix="testdata_seacr_")
+    try:
+        _gen4 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out4,
+                                "--reads", "200", "--seacr"],
+                               capture_output=True, text=True, timeout=300)
+        _cfg_text4 = ""
+        if os.path.exists(os.path.join(_gen_out4, "config.yaml")):
+            with open(os.path.join(_gen_out4, "config.yaml"), encoding="utf-8") as fh:
+                _cfg_text4 = fh.read()
+        check("generator --seacr: peak.caller=seacr config block spliced under peak:",
+              _gen4.returncode == 0 and "caller: seacr" in _cfg_text4
+              and "seacr:" in _cfg_text4 and "fdr_threshold: 0.01" in _cfg_text4,
+              f"rc={_gen4.returncode} stderr={_gen4.stderr[-200:]}")
+    finally:
+        shutil.rmtree(_gen_out4, ignore_errors=True)
 except Exception as exc:  # generator-group exceptions must not abort the remaining summary
     check("generator assertion group aborted abnormally", False, repr(exc))
 finally:
@@ -1049,6 +1109,30 @@ check("spikein_summary: mqc wrapper carries the configured spike name",
       "# id: 'spikein_summary_table'" in _sp_mqc_text
       and "Spike-in normalization (lambda)" in _sp_mqc_text,
       f"mqc={_sp_mqc_text[:200]}")
+
+# --- seacr_to_narrowpeak.py: column contract, score cap, name prefix, errors ---
+_seacr_bed = os.path.join(_stmp, "g1.seacr.bed")
+with open(_seacr_bed, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("# SEACR_1.3.sh g1 ... (comment lines must be skipped)\n")
+    fh.write("chr1\t20000\t22000\t123456.78\t45.2\t20100\n")
+    fh.write("chr1\t50000\t52000\t3.6\t2.1\t50100\n")
+_seacr_np = os.path.join(_stmp, "g1_peaks.narrowPeak")
+_r = _run_py("seacr_to_narrowpeak.py", [_seacr_bed, _seacr_np, "g1"])
+_np_lines = open(_seacr_np, encoding="utf-8").read().splitlines() if os.path.exists(_seacr_np) else []
+check("seacr_to_narrowpeak: 10-column contract, AUC signalValue, capped/rounded score, name prefix",
+      _r.returncode == 0 and len(_np_lines) == 2
+      and _np_lines[0] == "chr1\t20000\t22000\tg1_1\t1000\t.\t123456.78\t0\t0\t0"
+      and _np_lines[1] == "chr1\t50000\t52000\tg1_2\t4\t.\t3.6\t0\t0\t0",
+      f"rc={_r.returncode} lines={_np_lines}")
+_bad = os.path.join(_stmp, "bad.seacr.bed")
+with open(_bad, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("chr1\t20000\t22000\n")
+_r = _run_py("seacr_to_narrowpeak.py", [_bad, os.path.join(_stmp, "x.narrowPeak"), "g1"])
+check("seacr_to_narrowpeak: malformed input rejected with a clear error",
+      _r.returncode != 0 and "expected >= 4 columns" in _r.stderr, f"rc={_r.returncode}")
+_r = _run_py("seacr_to_narrowpeak.py", [_seacr_bed, os.path.join(_stmp, "y.narrowPeak"), ""])
+check("seacr_to_narrowpeak: empty name prefix rejected",
+      _r.returncode != 0 and "invalid name prefix" in _r.stderr, f"rc={_r.returncode}")
 shutil.rmtree(_stmp, ignore_errors=True)
 
 print()

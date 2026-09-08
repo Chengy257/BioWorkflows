@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash tests/run_test.sh [--reads N] [--keep] [--real-run] \
-#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--help]
+#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--seacr] [--help]
 #     --reads     PE read pairs per sample, default 50000 (CI passes 2000)
 #     --keep      keep tests/data and tests/work (cleaned up by default)
 #     --real-run  run end-to-end and assert that outputs exist (default is
@@ -18,6 +18,9 @@
 #                 replicate-aware peak stage (IDR + consensus)
 #     --qc-full   scenario: enable tss/organelle QC and the synthetic
 #                 blacklist (extended QC)
+#     --seacr     scenario: switch the pooled peak caller to SEACR
+#                 (peak.caller=seacr; a real run additionally needs the
+#                 external SEACR script)
 # Requires: dry-run only needs snakemake + python3(+pyyaml); --real-run
 # needs a full analysis environment.
 #########################################################################
@@ -51,13 +54,17 @@ Usage:
                 per-sample flagstat + PASS/WARN/FAIL gate table)
     --spike-in  scenario: enable the spike-in normalization stage (spike_in;
                 synthetic spike-in reference + second-pass alignment)
+    --seacr     scenario: pooled peak caller = SEACR (peak.caller=seacr;
+                the pooled MACS2 caller rules are replaced and must be
+                absent from the DAG; FRiP still consumes the peaks)
     -h, --help  show this help
 
 Requires:
   dry-run only needs snakemake + python3(+pyyaml); --real-run needs a full
   analysis environment (bowtie2/fastqc/trim_galore/macs2/deeptools/R etc.,
   see workflow/environment.yaml; --replicate additionally needs the external
-  idr tool, --motif an external HOMER, --diffbind the DiffBind R package).
+  idr tool, --motif an external HOMER, --diffbind the DiffBind R package,
+  --seacr the external SEACR script).
 EOF
 }
 
@@ -74,6 +81,7 @@ MOTIF=0
 DIFFBIND=0
 GATES=0
 SPIKE=0
+SEACR=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
@@ -88,6 +96,7 @@ while [[ $# -gt 0 ]]; do
         --diffbind)  DIFFBIND=1; shift ;;
         --gates)     GATES=1; shift ;;
         --spike-in)  SPIKE=1; shift ;;
+        --seacr)     SEACR=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
     esac
@@ -101,6 +110,12 @@ SCENARIO_ARGS=()
 [[ "$DIFFBIND" == 1 ]] && SCENARIO_ARGS+=(--diffbind)
 [[ "$GATES" == 1 ]] && SCENARIO_ARGS+=(--gates)
 [[ "$SPIKE" == 1 ]] && SCENARIO_ARGS+=(--spike-in)
+[[ "$SEACR" == 1 ]] && SCENARIO_ARGS+=(--seacr)
+if [[ "$REPLICATE" == 1 && "$SEACR" == 1 ]]; then
+    echo "[ERROR] --replicate and --seacr are mutually exclusive (peak.caller=seacr" \
+         "rejects peak.replicate.enabled at parse time)" >&2
+    exit 1
+fi
 
 echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS, scenario_args=${SCENARIO_ARGS[*]:-none})"
 command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exit 1; }
@@ -203,6 +218,13 @@ if [[ "$REAL_RUN" == 1 ]]; then
             "results/5.QC/spike_in/Spikein_summary_mqc.tsv"
         )
     fi
+    if [[ "$SEACR" == 1 ]]; then
+        EXPECTED+=(
+            "results/4.peak/seacr/g1_treat.bg"
+            "results/4.peak/seacr/g1_control.bg"
+            "results/4.peak/seacr/g2_treat.bg"
+        )
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -213,7 +235,13 @@ if [[ "$REAL_RUN" == 1 ]]; then
 else
     # ---------- dry-run DAG assertions: exit code 0 (checked above) and key rule names present ----------
     SNAKE_LOG="$WORK_DIR/snakemake.logs.txt"   # run.sh default log (stdout is tee'd to disk)
-    DAG_RULES=(bowtie2_mapping callpeak_narrow callpeak_atac)
+    # the pooled caller rules differ per scenario: MACS2 (default) or SEACR
+    DAG_RULES=(bowtie2_mapping)
+    if [[ "$SEACR" == 1 ]]; then
+        DAG_RULES+=(seacr_bedgraph_treat seacr_bedgraph_control seacr_callpeak seacr_bigwig)
+    else
+        DAG_RULES+=(callpeak_narrow callpeak_atac)
+    fi
     if [[ "$REPLICATE" == 1 ]]; then
         DAG_RULES+=(callpeak_narrow_replicate callpeak_broad_replicate idr_pair idr_final broad_consensus replicate_summary)
     fi
@@ -237,6 +265,42 @@ else
             echo "  PASS  DAG contains rule $rule"
         else
             echo "  FAIL  DAG does not contain rule $rule"; FAIL=1
+        fi
+    done
+    # Exact job-header patterns: the bare "frip" token would also match FRiP
+    # file paths in other rules' input listings, and "bigwig" is a substring of
+    # seacr_bigwig — match the "rule X:"/"localrule X:" headers instead.
+    PRESENT_HEADER_PATTERNS=()
+    ABSENT_HEADER_PATTERNS=()
+    if [[ "$SEACR" == 1 ]]; then
+        PRESENT_HEADER_PATTERNS=("rule frip:")
+        # the pooled MACS2 caller rules (and the MACS2 bigwig rule, replaced by
+        # seacr_bigwig) must be absent from the SEACR-mode DAG
+        ABSENT_HEADER_PATTERNS=("rule bigwig:")
+    fi
+    for pattern in "${PRESENT_HEADER_PATTERNS[@]}"; do
+        if grep -q "$pattern" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  PASS  DAG contains a $pattern job"
+        else
+            echo "  FAIL  DAG does not contain a $pattern job"; FAIL=1
+        fi
+    done
+    ABSENT_RULES=()
+    if [[ "$SEACR" == 1 ]]; then
+        ABSENT_RULES+=(callpeak_narrow callpeak_broad callpeak_atac)
+    fi
+    for rule in "${ABSENT_RULES[@]}"; do
+        if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  FAIL  DAG must not contain rule $rule under the SEACR caller"; FAIL=1
+        else
+            echo "  PASS  DAG does not contain rule $rule"
+        fi
+    done
+    for pattern in "${ABSENT_HEADER_PATTERNS[@]}"; do
+        if grep -q "$pattern" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  FAIL  DAG must not contain a $pattern job under the SEACR caller"; FAIL=1
+        else
+            echo "  PASS  DAG does not contain a $pattern job"
         fi
     done
     # Job count (informational baseline; printed for the CHANGELOG/AGENTS

@@ -59,14 +59,18 @@ def _extra_exports(rt):
     (install separately, e.g. `conda create -n idr -c bioconda idr=2.0.4`,
     reaching the rules as CHIP_IDR). `homer_findmotifs` is HOMER's
     findMotifsGenome.pl, needed only when motif.enabled is true (external
-    HOMER distribution via configureHomer -> CHIP_HOMER_FINDMOTIFS). Both
-    fall back to the bare command name on PATH."""
+    HOMER distribution via configureHomer -> CHIP_HOMER_FINDMOTIFS). `seacr`
+    is the SEACR bash script, needed only when peak.caller is seacr
+    (https://github.com/yeolab/SEACR -> CHIP_SEACR). All fall back to the
+    bare command name on PATH."""
     values = {}
     paths = rt["paths"] or {}
     if paths.get("idr"):
         values["CHIP_IDR"] = paths["idr"]
     if paths.get("homer_findmotifs"):
         values["CHIP_HOMER_FINDMOTIFS"] = paths["homer_findmotifs"]
+    if paths.get("seacr"):
+        values["CHIP_SEACR"] = paths["seacr"]
     return values
 
 

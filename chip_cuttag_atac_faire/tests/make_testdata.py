@@ -27,7 +27,7 @@ Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
 
 Usage:
     python tests/make_testdata.py --outdir <dir> [--reads 50000] [--seed 42]
-        [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in]
+        [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--seacr]
 """
 import argparse
 import gzip
@@ -154,6 +154,17 @@ spike_in:
   fasta: "ref/spike.fa"
   name: "lambda"
   scale_bigwigs: true
+"""
+
+# Spliced under peak: for the --seacr scenario (no extra samples; the base
+# g1 chip-narrow group with a control exercises the control-bedGraph norm
+# route, the control-less g2 atac group the FDR-threshold route).
+SEACR_TAIL = """\
+  caller: seacr        # --seacr scenario: SEACR replaces the pooled MACS2 calls
+  seacr:
+    mode: stringent
+    normalize: norm
+    fdr_threshold: 0.01
 """
 
 # Synthetic blacklist for --qc-full: overlaps the first pre-seeded peak
@@ -399,7 +410,7 @@ def write_spike_reference(outdir, seed):
 
 
 def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False,
-                 gates=False, spike=False):
+                 gates=False, spike=False, seacr=False):
     """Write the test config.yaml (relative paths, consumed via run.sh -c).
 
     Scenario flags splice the matching sub-blocks into the base config."""
@@ -408,6 +419,10 @@ def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=F
         anchor = "    extsize: 200\n"
         assert anchor in text, "base config anchor for the replicate block moved"
         text = text.replace(anchor, anchor + PEAK_REPLICATE_TAIL, 1)
+    if seacr:
+        anchor = "    extsize: 200\n"
+        assert anchor in text, "base config anchor for the seacr block moved"
+        text = text.replace(anchor, anchor + SEACR_TAIL, 1)
     if qc_full:
         anchor = "  deeptools: true\n"
         assert anchor in text, "base config anchor for the qc-full block moved"
@@ -456,6 +471,10 @@ def main():
     ap.add_argument("--spike-in", action="store_true", dest="spike_in",
                     help="write a synthetic spike-in reference (ref/spike.fa) and "
                          "enable the spike_in stage with scaled bigWigs")
+    ap.add_argument("--seacr", action="store_true",
+                    help="switch the pooled peak caller to SEACR (peak.caller=seacr; "
+                         "no extra samples: g1 exercises the control-norm route, "
+                         "control-less g2 the FDR-threshold route)")
     args = ap.parse_args()
     if args.reads < 1:
         ap.error("--reads must be a positive integer")
@@ -472,7 +491,7 @@ def main():
     write_samples(args.outdir, samples, extended=args.diffbind)
     write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full,
                  motif=args.motif, diffbind=args.diffbind, gates=args.gates,
-                 spike=args.spike_in)
+                 spike=args.spike_in, seacr=args.seacr)
     if args.qc_full:
         write_blacklist(args.outdir)
     if args.spike_in:
@@ -483,7 +502,8 @@ def main():
                             ("+motif", args.motif),
                             ("+diffbind", args.diffbind),
                             ("+gates", args.gates),
-                            ("+spike-in", args.spike_in)) if on]
+                            ("+spike-in", args.spike_in),
+                            ("+seacr", args.seacr)) if on]
     print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
           f"{len(samples)} samples x {args.reads} PE read pairs (seed={args.seed}"
           + (", " + ", ".join(tags) if tags else "") + ")")

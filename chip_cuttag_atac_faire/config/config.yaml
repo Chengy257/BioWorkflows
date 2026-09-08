@@ -51,6 +51,13 @@ peak:
   keepdup: all           # duplicate handling is decided upstream; MACS2 keeps all
   qvalue: 0.05           # narrow peak q-value cutoff
   broad_cutoff: 0.05     # broad peak cutoff
+  caller: macs2          # pooled peak caller: macs2 (default) | seacr (CUT&RUN/CUT&Tag
+                         # alternative; external bash script via software.yaml paths:;
+                         # mutually exclusive with peak.replicate.enabled)
+  seacr:                 # SEACR knobs, effective when peak.caller is seacr
+    mode: stringent      # stringent | relaxed (SEACR peak mode)
+    normalize: norm      # norm | non (control normalization when the group has a control)
+    fdr_threshold: 0.01  # FDR threshold (0 < x < 1) used for groups without a control
   bigwig_measure: "FE"   # group signal-track measure: FE (fold enrichment) | logFE
                          # (the track filename stays {group}_FE.bw either way)
   atac:

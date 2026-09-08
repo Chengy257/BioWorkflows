@@ -231,6 +231,10 @@ Scheduler resources are layered separately: see §4.3 for `config/resources.yaml
 | `peak.keepdup` | `all` | MACS2 keeps all duplicates (deduplication is decided upstream) |
 | `peak.qvalue` | `0.05` | narrow peak q-value cutoff |
 | `peak.broad_cutoff` | `0.05` | broad peak cutoff |
+| `peak.caller` | `macs2` | pooled peak caller: `macs2` (default) or `seacr` (the CUT&RUN/CUT&Tag alternative, §5.1.1); `seacr` is mutually exclusive with `peak.replicate.enabled` |
+| `peak.seacr.mode` | `"stringent"` | SEACR peak mode: `stringent` or `relaxed` |
+| `peak.seacr.normalize` | `"norm"` | SEACR control normalization (`norm` scales the control to the target library depth; `non` skips it), used for groups that have a control |
+| `peak.seacr.fdr_threshold` | `0.01` | numeric FDR threshold in (0, 1) SEACR falls back to for groups **without** a control |
 | `peak.replicate.enabled` | `false` | replicate-aware peak stage: per-replicate calling + IDR (narrow) / overlap consensus (broad); see §5.3 |
 | `peak.replicate.qvalue` | `0.01` | relaxed per-replicate narrow cutoff feeding IDR (ENCODE style) |
 | `peak.replicate.idr_threshold` | `0.05` | global IDR cutoff |
@@ -327,7 +331,30 @@ The four assays are driven by the sample table's `seqtype` column; one project c
 | `atac` | picard deduplication (on by default) | `callpeak_atac` (`peak.atac.mode` = bampe/shifted) | narrowPeak |
 | `faire` | picard deduplication (on by default) | `callpeak_atac` (same rule as atac) | narrowPeak |
 
-Peak calling runs in parallel per `group`; a group without a control automatically omits MACS2 `-c` (falling back to local lambda estimation). Each group's signal track `{group}_FE.bw` is produced by bdgcmp → bedClip → bedtools sort -g → bedGraphToBigWig (chromosome order consistent with chrom.sizes).
+Peak calling runs in parallel per `group`; a group without a control automatically omits MACS2 `-c` (falling back to local lambda estimation). Each group's signal track `{group}_FE.bw` is produced by bdgcmp → bedClip → bedtools sort -g → bedGraphToBigWig (chromosome order consistent with chrom.sizes). The pooled caller itself is switchable: see §5.1.1 for the SEACR alternative.
+
+### 5.1.1 Alternative pooled peak caller (v0.6, `peak.caller`)
+
+By default every group's pooled peaks come from MACS2 (`callpeak_narrow` / `callpeak_broad` / `callpeak_atac`). Setting:
+
+```yaml
+peak:
+  caller: seacr
+```
+
+replaces those group calls with **SEACR** (Sparse Enrichment Analysis for CUT&RUN, Yo et al. 2021) — the common CUT&RUN/CUT&Tag alternative caller — per group:
+
+1. the group's pooled treat BAMs (the same analysis BAMs MACS2 uses) are `samtools merge`d and converted to a **raw-depth bedGraph** (`bamCoverage --normalizeUsing None --binSize 1`, zero-coverage bins omitted as SEACR requires) at `results/4.peak/seacr/{group}_treat.bg`;
+2. when the group has controls, the pooled control BAMs get the same treatment (`{group}_control.bg`); SEACR then runs in control mode with `peak.seacr.normalize` (`norm`/`non`). Groups without a control skip step 2 and SEACR falls back to the numeric FDR threshold `peak.seacr.fdr_threshold`;
+3. SEACR writes one 6-column peak set per group (`chr, start, end, AUC, max_signal, max_signal_region`); the workflow converts it to the standard 10-column narrowPeak/broadPeak contract (score = AUC capped at 1000, p/q = 0 — SEACR emits no per-peak p/q values) at the **same** `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}` paths MACS2 would write — FRiP, annotation, blacklist, motif, and DiffBind all consume the peaks unchanged;
+4. the group coverage track `{group}_FE.bw` is produced from the treat bedGraph via bedClip → sort → bedGraphToBigWig. Because the MACS2 `bdgcmp` fold-enrichment route needs MACS2's pileup/lambda bedGraphs (not produced here), **the track carries the pooled raw-depth coverage in SEACR mode**, not FE.
+
+Requirements and limitations:
+
+- SEACR is an external bash script deliberately kept out of the conda template: download it from `https://github.com/yeolab/SEACR` (needs bash/awk/sort) and either put it on PATH or point the software.yaml `paths: seacr` entry at the script (exported to the rules as `CHIP_SEACR`; the rules invoke it as `bash $CHIP_SEACR ...`).
+- **The replicate/IDR stage stays MACS2-based**: `peak.caller: seacr` together with `peak.replicate.enabled: true` is a parse-time validation error — pick one route per project.
+- `bigwig.per_sample` rides the MACS2 callpeak module and has no rule under SEACR mode (a parse-time warning points this out); per-sample tracks require `peak.caller: macs2`.
+- peak.qvalue/peak.broad_cutoff/peak.keepdup are MACS2 knobs and have no effect on SEACR; tune `peak.seacr.*` instead.
 
 ### 5.2 The QC switches
 
@@ -539,6 +566,7 @@ workdir/
     │                        #   {sample}_unmapped.fq.{1,2}.gz (pairs that failed the primary alignment)
     ├── 3.align/spike_in/    # spike_in stage: {sample}_sorted.bam(.bai) (unmapped reads vs the spike-in genome)
     ├── 4.peak/              # {group}_peaks.{narrowPeak,broadPeak}, {group}_summits.bed, {group}_FE.bw
+    │   ├── seacr/           # peak.caller=seacr: {group}_treat.bg / _control.bg raw-depth bedGraphs
     │   ├── replicates/      # peak.replicate stage: {group}/{sample}_peaks.{narrowPeak,broadPeak}
     │   ├── idr/             # peak.replicate stage: {group}/{a}__vs__{b}.narrowPeak pairwise IDR
     │   ├── blacklist_filtered/   # blacklist stage: filtered copies of the pooled/final peak sets
@@ -569,6 +597,7 @@ workdir/
 | Trimmed fastq | `results/2.cleandata/{sample}_1_val_1.fq.gz`, `{sample}_2_val_2.fq.gz` |
 | Aligned BAM / deduplicated BAM / dedup metrics | `results/3.align/bowtie2/{sample}_sorted.bam`, `{sample}_rmdup.bam`, `{sample}_dup_metrics.txt` |
 | Peak files / summits | `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}`, `results/4.peak/{group}_summits.bed` |
+| SEACR coverage bedGraphs (`peak.caller: seacr`) | `results/4.peak/seacr/{group}_treat.bg`, `{group}_control.bg` (controls only); the `{group}_peaks.*` files keep their standard paths/format (§5.1.1) |
 | Per-replicate peaks / pairwise IDR / final reproducible set (`peak.replicate.enabled`) | `results/4.peak/replicates/{group}/{sample}_peaks.*`, `results/4.peak/idr/{group}/{a}__vs__{b}.narrowPeak`, `results/4.peak/{group}_IDR_peaks.narrowPeak` or `{group}_consensus_peaks.broadPeak` (+ `_support.bed`) |
 | Replicate summary table | `results/5.QC/replicate_peaks/Replicate_summary.tsv` |
 | TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/TSSE_summary.tsv` |
@@ -672,3 +701,6 @@ No. The `qc.gates` table (§5.2.1) is informational: it compares the existing QC
 
 **Q19: How do I add spike-in normalization for quantitative CUT&Tag comparisons?**
 Point `spike_in.fasta` at the spike-in genome FASTA (e.g. E. coli lambda spiked in before tagmentation) and set `spike_in.enabled: true` (§5.2.2). The workflow re-aligns each sample's unmapped read pairs against the spike-in genome and writes per-sample scale factors (`1e6 / spike-in mapped reads`) plus a QC summary into `results/5.QC/spike_in/` (injected into MultiQC). Add `spike_in.scale_bigwigs: true` to also multiply the bigWig tracks by the factors — per-sample tracks by their own factor, group FE tracks by the mean over the group's treat samples.
+
+**Q20: How do I switch the pooled peak caller to SEACR?**
+Set `peak.caller: seacr` (§5.1.1) — the CUT&RUN/CUT&Tag alternative caller (Yo et al. 2021). Install the external SEACR bash script (download from the SEACR GitHub; not in the conda template) and point software.yaml `paths: seacr` at it or put it on PATH. The peaks still land at the standard `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}` paths, so FRiP/annotation/blacklist/motif keep working untouched. Two limitations to know: the replicate/IDR stage is MACS2-based, so `peak.replicate.enabled` cannot be combined with SEACR (validation error); and the `{group}_FE.bw` track carries pooled raw depth in SEACR mode (the bdgcmp fold-enrichment route needs MACS2's pileup), while `bigwig.per_sample` needs MACS2 mode entirely.
