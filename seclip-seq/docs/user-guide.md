@@ -578,7 +578,7 @@ workdir/
 | dedup BAM | `results/4.rmdup/{sample}.rmDupSo.bam` (+ `.bai`) | UMI-collapsed, coordinate-sorted alignments |
 | dedup stats | `results/4.rmdup/{sample}_stats/{sample}_edit_distance.tsv` | umi_tools dedup statistics (aggregated into MultiQC) |
 | read count | `results/4.rmdup/{sample}_readnum.txt` | mapped reads after dedup (one integer) |
-| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` | crosslink sites, BED6 (chromosome, start, end, site name, crosslink-site score, strand) |
+| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` | crosslink sites, 7 columns: BED6 (chromosome, start, end, site name, crosslink-site score, strand) plus a trailing score-attributes field |
 | CLIPper peaks | `results/5.callpeak/{sample}.clipper.peakClusters.bed` | peak clusters (only with a configured CLIPper) |
 | Consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` | per-condition cross-sample consensus; BED4 with the replicate support count in column 4 (§5.5); with `input_control`, conditions with input samples carry the binary `in_input_background` flag in column 5 |
 | Input background (`reproducible_peaks.input_control`) | `results/6.reproducible_peaks/{condition}.input_background.bed` | union of the condition's input-control PureCLIP beds, BED4 (column 4 = number of inputs covering the feature) |

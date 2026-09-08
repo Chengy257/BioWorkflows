@@ -138,7 +138,7 @@ All derived artifacts live under `results/` in the working directory (rename via
 | Deduplicated BAM (+ index) | `results/4.rmdup/{sample}.rmDupSo.bam` (+ `.bam.bai`) |
 | umi_tools dedup statistics | `results/4.rmdup/{sample}_stats/{sample}_edit_distance.tsv` |
 | Mapped-read count | `results/4.rmdup/{sample}_readnum.txt` |
-| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` — BED6: chromosome, start (0-based), end, site name, crosslink-site score, strand |
+| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` — 7 columns: BED6 (chromosome, start (0-based), end, site name, crosslink-site score, strand) plus a trailing score-attributes field (`[score_CL=...;score_E=...]`) |
 | CLIPper peaks (when configured) | `results/5.callpeak/{sample}.clipper.peakClusters.bed` |
 | Per-condition consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` (with `input_control`, conditions with inputs carry the `in_input_background` flag in column 5) |
 | Input background (`reproducible_peaks.input_control`) | `results/6.reproducible_peaks/{condition}.input_background.bed` |

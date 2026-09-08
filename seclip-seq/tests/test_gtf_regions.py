@@ -263,6 +263,32 @@ def test_annotate_signed_distance_and_ungene_contig(tmp_path):
     assert rows[3]["gene_biotype"] == "."
 
 
+def test_annotate_pureclip_seven_column_contract(tmp_path):
+    # PureCLIP 1.3.1 appends a seventh score-attributes field to BED6
+    # (verified against a 40k-read real run, 2026-09-08); bedtools closest
+    # then carries 7 + 6 + 1 = 14 columns and the rule passes --peak-cols 7.
+    attrs = "[score_CL=42;score_E=9.5]"
+    peaks = _write(tmp_path, "p7.bed",
+                   "chr1\t100\t200\tsite1\t42\t+\t%s\n" % attrs)
+    exon_hits = _write(tmp_path, "e7.bed",
+                       "chr1\t100\t200\tsite1\t42\t+\t%s\n" % attrs)
+    gene_hits = _write(tmp_path, "g7.bed",
+                       "chr1\t100\t200\tsite1\t42\t+\t%s\n" % attrs)
+    closest = _write(tmp_path, "c7.tsv",
+                     "chr1\t100\t200\tsite1\t42\t+\t%s\t"
+                     "chr1\t90\t700\tg1\t0\t+\t0\n" % attrs)
+    rows = ann.annotate(
+        ann.read_peaks(peaks, 5),
+        ann.read_hits(exon_hits),
+        ann.read_hits(gene_hits),
+        ann.read_closest(closest, 7),
+        ann.read_gene_table(_annotation_inputs(tmp_path)["table"]))
+    assert len(rows) == 1
+    assert rows[0]["feature_class"] == "exon"
+    assert rows[0]["score"] == "42"
+    assert rows[0]["nearest_gene"] == "Alpha"
+
+
 def test_annotate_gene_without_table_entry_falls_back_to_id(tmp_path):
     paths = _annotation_inputs(tmp_path)
     paths["table"] = _write(tmp_path, "bare_table.tsv",

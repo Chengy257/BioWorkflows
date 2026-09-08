@@ -3,9 +3,11 @@
 
 Inputs (produced by the annotate_*_peaks rules in rules/consensus.smk):
 
-  --peaks       the peak BED: PureCLIP output is BED6 (chrom, start, end,
-                site name, crosslink-site score, strand); consensus BEDs are
-                4-column (chrom, start, end, support)
+  --peaks       the peak BED: PureCLIP output is 7 columns (BED6 chrom,
+                start, end, site name, crosslink-site score, strand — plus a
+                trailing score-attributes field, verified against a 40k-read
+                real run 2026-09-08); consensus BEDs are 4-column (chrom,
+                start, end, support)
   --exon-hits   bedtools intersect -a peaks -b exons.bed -u
   --gene-hits   bedtools intersect -a peaks -b genes.bed -u
   --closest     bedtools closest -a peaks -b genes.bed -d -t first:
@@ -26,9 +28,9 @@ all (bedtools closest reports -1 fields) get "." identifiers and an "NA"
 distance.
 
 --peak-cols is the number of leading BED columns the peak occupies in the
-bedtools outputs (6 for PureCLIP BED6, 4 for consensus BEDs); --score-col is
-the 1-based peak column reported as the annotation score (5 = PureCLIP
-crosslink-site score, 4 = consensus support).
+bedtools outputs (7 for PureCLIP's BED6 + attributes, 4 for consensus
+BEDs); --score-col is the 1-based peak column reported as the annotation
+score (5 = PureCLIP crosslink-site score, 4 = consensus support).
 
 Pure standard library; exits non-zero on IO/parse errors.
 """

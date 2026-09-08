@@ -50,6 +50,19 @@ ADAPTER = "AGATCGGAAGAGCAC"   # first of the 20 shifted 3' adapter variants
 ERROR_RATE = 0.01       # substitution errors in genomic/repeat-derived bodies
 GENOME_FRAC = 0.60      # genome-derived reads
 REPEAT_FRAC = 0.25      # repeats-derived reads (random noise takes the rest)
+# Deterministic crosslink hotspots: 55% of the genome-derived reads
+# concentrate around fixed (chrom, start) windows so PureCLIP calls
+# crosslink sites at shared coordinates and the reproducible-peaks
+# consensus (support >= min_replicates) has sites to keep -- uniformly
+# random 30 bp reads essentially never coincide across replicates (empty
+# consensus observed on the 2026-09-08 40k-read real run).
+# SHARED_HOTSPOTS fire in every sample (ip and input): those consensus
+# sites carry the in_input_background flag and the filtered BED drops
+# them. IP_HOTSPOTS fire only in ip samples, so their consensus sites
+# survive the input filter and the filtered BED stays non-empty.
+HOTSPOT_FRAC = 0.55
+SHARED_HOTSPOTS = [(1, 3000), (2, 8000)]
+IP_HOTSPOTS = [(1, 6500), (1, 12000), (2, 2200), (2, 15000)]
 SEED = 42
 SAMPLES = ["FC_rep1", "FC_rep2"]
 INPUT_SAMPLES = ["FC_in1", "FC_in2"]   # opt-in via --with-inputs (condition FC)
@@ -144,17 +157,25 @@ def build_reference(rng):
     return chroms, genes, repeats
 
 
-def make_read(chroms, repeats, rng):
+def make_read(chroms, repeats, rng, ip_sample=False):
     """One simulated SE read: UMI + body(+errors) + shifted adapter prefix.
 
     Body source mix: 60% genome substring, 25% repeats substring, 15% random
-    noise. Every read keeps the same 10 N UMI + 30 bp body + adapter tail
-    structure so umi_tools extract and cutadapt both see realistic input."""
+    noise. ip samples draw their hotspot reads from SHARED + IP hotspots,
+    input samples from SHARED only. Every read keeps the same 10 N UMI +
+    30 bp body + adapter tail structure so umi_tools extract and cutadapt
+    both see realistic input."""
     umi = "".join(rng.choice(BASES) for _ in range(UMI_LEN))
     u = rng.random()
     if u < GENOME_FRAC:
-        source = chroms["chr%d" % (rng.randrange(N_CHROM) + 1)]
-        start = rng.randrange(len(source) - READ_BODY)
+        hotspots = SHARED_HOTSPOTS + (IP_HOTSPOTS if ip_sample else [])
+        if rng.random() < HOTSPOT_FRAC:
+            h_chrom, h_start = hotspots[rng.randrange(len(hotspots))]
+            source = chroms["chr%d" % h_chrom]
+            start = h_start + rng.randrange(-8, 9)   # +/- 8 nt jitter
+        else:
+            source = chroms["chr%d" % (rng.randrange(N_CHROM) + 1)]
+            start = rng.randrange(len(source) - READ_BODY)
         body = mutate(source[start:start + READ_BODY], rng)
     elif u < GENOME_FRAC + REPEAT_FRAC:
         source = repeats[rng.randrange(N_REPEATS)][1]
@@ -214,7 +235,8 @@ def write_fastqs(outdir, samples, chroms, repeats, reads_per_sample, rng):
         fq = _gzip_text(os.path.join(raw_dir, "%s_R1.fq.gz" % sample))
         try:
             for n in range(reads_per_sample):
-                read = make_read(chroms, repeats, rng)
+                read = make_read(chroms, repeats, rng,
+                                 ip_sample=sample not in INPUT_SAMPLES)
                 fq.write("@r%07d 1:N:0:1\n%s\n+\n%s\n"
                          % (n, read, "I" * len(read)))
         finally:

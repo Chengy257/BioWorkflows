@@ -66,9 +66,11 @@ if ANNOTATE_PEAKS_ENABLED:
         params:
             script=os.path.join(_SCRIPTS_DIR, "annotate_peaks.py"),
             python=os.environ.get("SECLIP_PYTHON", "python3"),
-            # PureCLIP writes BED6 (chrom start end name score strand): the
-            # peak occupies 6 columns and the crosslink-site score is column 5.
-            peak_cols=6,
+            # PureCLIP writes 7 columns: BED6 (chrom start end name score
+            # strand) plus a trailing score-attributes field (e.g.
+            # "[score_CL=...;score_E=...]") — verified against a 40k-read
+            # real run (2026-09-08); the score stays column 5.
+            peak_cols=7,
             score_col=5,
         log:
             R("logs/annotate_sample_peaks/{sample}.log"),
