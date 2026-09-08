@@ -44,6 +44,7 @@ peak:
   keepdup: all        # MACS2 keeps all duplicates (dedup is decided upstream)
   qvalue: 0.05        # narrow peak q-value
   broad_cutoff: 0.05  # broad peak cutoff
+  bigwig_measure: "FE"   # group track measure: FE | logFE (filename stays {group}_FE.bw)
   atac:               # ATAC/FAIRE peak-calling mode
     mode: bampe       # bampe (ENCODE ATAC v2 default) | shifted (classic Tn5 offset recipe)
     shift: -100       # shifted mode only
@@ -60,6 +61,31 @@ peak:
 # ---------- Artifact-region blacklist (optional) ----------
 # blacklist: "/path/to/blacklist.bed"   # empty/unset = disabled; filtered peak copies
 #                                       # land in results/4.peak/blacklist_filtered/
+
+# ---------- Signal tracks (optional) ----------
+# bigwig:
+#   per_sample: false   # per-sample normalized coverage tracks (results/4.peak/samples/)
+#   normalize: "RPGC"   # RPGC | CPM
+#   bin: 25
+
+# ---------- HOMER motif enrichment (optional) ----------
+# motif:
+#   enabled: false
+#   homer_genome: "hg38"   # required when enabled (HOMER tag or custom:/path/to/genome)
+#   size: "given"          # findMotifsGenome.pl -size
+#   background: ""         # optional -bg BED
+#   extra: ""              # extra findMotifsGenome.pl arguments
+
+# ---------- Differential binding (optional; DiffBind) ----------
+# diffbind:
+#   enabled: false
+#   contrasts: [["H3K27ac_WT_vs_IgG", "H3K27ac_mut_vs_IgG"]]   # pairs of groups, >= 2 treats each
+#   analysis: "DESeq2"     # DESeq2 | edgeR
+#   summit_flank: 250      # 0 = full peak regions
+#   use_controls: false
+#   fdr: 0.05
+#   foldchange: 1.0
+#   batch_correction: true # uses the optional sample-table batch column
 
 # ---------- Annotation and signal windows ----------
 region_flank: 3000   # peak-annotation flank and deeptools window length (bp)

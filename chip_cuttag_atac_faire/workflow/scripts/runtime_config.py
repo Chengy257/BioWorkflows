@@ -55,14 +55,18 @@ R_PACKAGES = {"default": ["GenomicFeatures", "ChIPseeker"]}
 def _extra_exports(rt):
     """Optional external tools resolved from software.yaml paths: (not part
     of DEFAULT_TOOLS, so the preflight never demands them). `idr` is the
-    classic python2 IDR tool needed only when peak.replicate.enabled is true;
-    it installs separately, e.g. `conda create -n idr -c bioconda idr=2.0.4`,
-    and reaches the rules as CHIP_IDR (common.smk falls back to a bare
-    `idr` on PATH)."""
+    classic python2 IDR tool needed only when peak.replicate.enabled is true
+    (install separately, e.g. `conda create -n idr -c bioconda idr=2.0.4`,
+    reaching the rules as CHIP_IDR). `homer_findmotifs` is HOMER's
+    findMotifsGenome.pl, needed only when motif.enabled is true (external
+    HOMER distribution via configureHomer -> CHIP_HOMER_FINDMOTIFS). Both
+    fall back to the bare command name on PATH."""
     values = {}
-    idr = (rt["paths"] or {}).get("idr")
-    if idr:
-        values["CHIP_IDR"] = idr
+    paths = rt["paths"] or {}
+    if paths.get("idr"):
+        values["CHIP_IDR"] = paths["idr"]
+    if paths.get("homer_findmotifs"):
+        values["CHIP_HOMER_FINDMOTIFS"] = paths["homer_findmotifs"]
     return values
 
 

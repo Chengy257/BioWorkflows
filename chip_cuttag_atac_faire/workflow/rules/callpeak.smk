@@ -134,6 +134,7 @@ rule bigwig:
     wildcard_constraints:
         group=_group_regex(list(GROUPS)),
     params:
+        measure=PEAK_MEASURE,   # FE (fold enrichment, default) | logFE
         outdir=lambda wc, output: os.path.dirname(str(output)),
     log:
         R("logs/bigwig/{group}.log"),
@@ -146,7 +147,7 @@ rule bigwig:
         """
         macs2 bdgcmp \
             -t {input.pileup} -c {input.lambda_} \
-            -o {params.outdir}/{wildcards.group}_FE.bdg -m FE -p 0.00001 > {log} 2>&1
+            -o {params.outdir}/{wildcards.group}_FE.bdg -m {params.measure} -p 0.00001 > {log} 2>&1
         bedtools slop -i {params.outdir}/{wildcards.group}_FE.bdg -g {input.chromsize} -b 0 \
             | bedClip stdin {input.chromsize} {params.outdir}/{wildcards.group}_FE.clip >> {log} 2>&1
         # bedGraphToBigWig validates C-collation order (Chr1 < Chr10 < Chr11 <
@@ -158,4 +159,37 @@ rule bigwig:
         bedGraphToBigWig {params.outdir}/{wildcards.group}_FE.clip.sorted {input.chromsize} {output} >> {log} 2>&1
         rm -f {params.outdir}/{wildcards.group}_FE.bdg \
               {params.outdir}/{wildcards.group}_FE.clip {params.outdir}/{wildcards.group}_FE.clip.sorted
+        """
+
+
+rule bigwig_sample:
+    # Per-sample normalized coverage track (v0.5; requested only when
+    # bigwig.per_sample is true): browser-comparable replicate tracks built
+    # from the same analysis BAM every other signal consumer uses. The group
+    # FE track filename stays {group}_FE.bw in logFE mode (the measure config
+    # changes the track values, not the layout).
+    input:
+        lambda wc: sample_bam(wc.sample),
+    output:
+        R("4.peak/samples/{sample}.bw"),
+    wildcard_constraints:
+        sample=_group_regex(SAMPLES),
+    params:
+        normalize=BIGWIG["normalize"],
+        binsize=BIGWIG["bin"],
+        # RPGC needs an integer effective genome size; MACS2-style strings
+        # ("3.7e8") convert through float
+        gsize=int(float(str(config["genome_size"]))),
+    log:
+        R("logs/bigwig/{sample}_sample.log"),
+    threads: rthreads("bigwig_sample")
+    resources:
+        mem_mb=rmem("bigwig_sample"),
+        runtime_min=rruntime("bigwig_sample"),
+        runtime_sec=rruntime_sec("bigwig_sample"),
+    shell:
+        """
+        bamCoverage -b {input} --normalizeUsing {params.normalize} \
+            --effectiveGenomeSize {params.gsize} --binSize {params.binsize} \
+            -p {threads} -o {output} > {log} 2>&1
         """

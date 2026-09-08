@@ -35,13 +35,18 @@ def _resolve_sample_table(path):
 
 
 def load_sample_table(path):
-    """Parse the sample table; returns (sample ids, group dict, sample->seqtype map).
+    """Parse the sample table; returns (sample ids, group dict, sample->seqtype
+    map, treat sample->condition, treat sample->batch).
 
-    Group dict layout: group -> {seqtype, peak_type, layout, treat: [], control: []}
+    Group dict layout: group -> {seqtype, peak_type, layout, condition, treat: [], control: []}
+    condition/batch are OPTIONAL columns (differential binding, v0.5 Phase 3):
+    absent columns leave the maps empty and nothing changes for legacy tables.
     """
     samples = []          # deduplicated sample ids (controls are aligned too)
     seqtype_of = {}
     groups = {}
+    treat_condition_of = {}
+    treat_batch_of = {}
 
     with open(path, newline="") as fh:
         reader = csv.DictReader(fh)
@@ -58,11 +63,14 @@ def load_sample_table(path):
             seqtype = (row["seqtype"] or "").strip().lower()
             layout = (row["layout"] or "").strip().upper()
             peak_type = (row["peak_type"] or "").strip().lower()
+            condition = (row.get("condition") or "").strip()
+            batch = (row.get("batch") or "").strip()
 
             if not sid or not grp:
                 raise WorkflowError(f"Sample table line {lineno}: sample_id/group must not be empty")
-            for label, value in (("sample_id", sid), ("group", grp)):
-                if not _NAME_RE.match(value) or "__" in value:
+            for label, value in (("sample_id", sid), ("group", grp),
+                                 ("condition", condition), ("batch", batch)):
+                if value and (not _NAME_RE.match(value) or "__" in value):
                     raise WorkflowError(
                         f"Sample table line {lineno}: {label}={value!r} contains illegal "
                         "characters; only alphanumerics and . _ - are allowed (must not "
@@ -98,13 +106,25 @@ def load_sample_table(path):
             g = groups.setdefault(
                 grp,
                 {"seqtype": seqtype, "peak_type": peak_type, "layout": layout,
-                 "treat": [], "control": []},
+                 "condition": None, "treat": [], "control": []},
             )
             if (g["seqtype"], g["peak_type"], g["layout"]) != (seqtype, peak_type, layout):
                 raise WorkflowError(
                     f"Sample table line {lineno}: all rows of group {grp} must share the same seqtype/peak_type/layout"
                 )
             g[role].append(sid)
+            if role == "treat":
+                if condition:
+                    if g["condition"] is None:
+                        g["condition"] = condition
+                    elif g["condition"] != condition:
+                        raise WorkflowError(
+                            f"Sample table line {lineno}: treat samples of group {grp} declare "
+                            f"different condition values ({g['condition']!r} vs {condition!r}); "
+                            "a group's treats must share one condition"
+                        )
+                treat_condition_of[sid] = condition
+                treat_batch_of[sid] = batch
 
     bad_groups = [g for g, v in groups.items() if not v["treat"]]
     if bad_groups:
@@ -112,10 +132,11 @@ def load_sample_table(path):
     if not samples:
         raise WorkflowError(f"Sample table {path} has no data rows")
 
-    return samples, groups, seqtype_of
+    return samples, groups, seqtype_of, treat_condition_of, treat_batch_of
 
 
-SAMPLES, GROUPS, SEQTYPE_OF = load_sample_table(_resolve_sample_table(config["grouplist"]))
+SAMPLES, GROUPS, SEQTYPE_OF, TREAT_CONDITION_OF, TREAT_BATCH_OF = \
+    load_sample_table(_resolve_sample_table(config["grouplist"]))
 
 try:
     config["threads"] = int(config["threads"])
@@ -204,6 +225,65 @@ def validate_config(cfg):
     bl = cfg.get("blacklist", "")
     if not isinstance(bl, str):
         errors.append(f"blacklist must be a string path (or empty to disable), got {bl!r}")
+    # Signal tracks (v0.5 Phase 4)
+    bw = cfg.get("bigwig")
+    if bw is not None:
+        if not isinstance(bw, dict):
+            errors.append(f"bigwig must be a mapping, got {bw!r}")
+        else:
+            if not isinstance(bw.get("per_sample", False), bool):
+                errors.append(f"bigwig.per_sample must be true/false, got {bw.get('per_sample')!r}")
+            if bw.get("normalize", "RPGC") not in ("RPGC", "CPM"):
+                errors.append(
+                    f"bigwig.normalize must be RPGC or CPM, got {bw.get('normalize')!r}")
+            bsz = bw.get("bin", 25)
+            if isinstance(bsz, bool) or not isinstance(bsz, int) or bsz < 1:
+                errors.append(f"bigwig.bin must be an integer >= 1, got {bsz!r}")
+    if isinstance(cfg.get("peak"), dict) and cfg["peak"].get("bigwig_measure", "FE") not in ("FE", "logFE"):
+        errors.append(
+            "peak.bigwig_measure must be FE or logFE, got "
+            f"{cfg['peak'].get('bigwig_measure')!r}")
+    # HOMER motif enrichment (v0.5 Phase 5)
+    mo = cfg.get("motif")
+    if mo is not None:
+        if not isinstance(mo, dict):
+            errors.append(f"motif must be a mapping, got {mo!r}")
+        else:
+            for key in ("homer_genome", "size", "background", "extra"):
+                if key in mo and not isinstance(mo[key], str):
+                    errors.append(f"motif.{key} must be a string, got {mo[key]!r}")
+            if not isinstance(mo.get("enabled", False), bool):
+                errors.append(f"motif.enabled must be true/false, got {mo.get('enabled')!r}")
+            if mo.get("enabled", False) and not str(mo.get("homer_genome", "")).strip():
+                errors.append("motif.homer_genome is required when motif.enabled is true "
+                              "(a HOMER genome tag such as hg38, or custom:/path/to/genome)")
+    # DiffBind differential binding (v0.5 Phase 3)
+    db = cfg.get("diffbind")
+    if db is not None:
+        if not isinstance(db, dict):
+            errors.append(f"diffbind must be a mapping, got {db!r}")
+        else:
+            if not isinstance(db.get("enabled", False), bool):
+                errors.append(f"diffbind.enabled must be true/false, got {db.get('enabled')!r}")
+            if db.get("analysis", "DESeq2") not in ("DESeq2", "edgeR"):
+                errors.append(
+                    f"diffbind.analysis must be DESeq2 or edgeR, got {db.get('analysis')!r}")
+            sf = db.get("summit_flank", 250)
+            if isinstance(sf, bool) or not isinstance(sf, int) or sf < 0:
+                errors.append(f"diffbind.summit_flank must be an integer >= 0, got {sf!r}")
+            for key in ("use_controls", "batch_correction"):
+                if key in db and not isinstance(db[key], bool):
+                    errors.append(f"diffbind.{key} must be true/false, got {db[key]!r}")
+            try:
+                if not 0 < float(db.get("fdr", 0.05)) <= 1:
+                    errors.append(f"diffbind.fdr must be in (0, 1], got {db.get('fdr')!r}")
+            except (TypeError, ValueError):
+                errors.append(f"diffbind.fdr must be numeric, got {db.get('fdr')!r}")
+            try:
+                if float(db.get("foldchange", 1.0)) < 1:
+                    errors.append(f"diffbind.foldchange must be >= 1, got {db.get('foldchange')!r}")
+            except (TypeError, ValueError):
+                errors.append(f"diffbind.foldchange must be numeric, got {db.get('foldchange')!r}")
     if isinstance(cfg.get("qc"), dict):
         for key in ("tss", "organelle"):
             if key in cfg["qc"] and not isinstance(cfg["qc"][key], bool):
@@ -315,6 +395,27 @@ ORGANELLE_PATTERNS = list((config.get("qc") or {}).get("organelle_patterns")
                           or ["chrc", "chrm", "pt", "mt", "pltd",
                               "chloroplast", "mitochondr", "plastid"])
 
+# Signal tracks (v0.5 Phase 4): per-sample normalized coverage bigWigs and the
+# group-track measure; both optional, defaults keep today's FE-only behavior.
+BIGWIG_DEFAULTS = {"per_sample": False, "normalize": "RPGC", "bin": 25}
+BIGWIG = dict(BIGWIG_DEFAULTS)
+BIGWIG.update((config.get("bigwig") or {}))
+PEAK_MEASURE = str((config.get("peak") or {}).get("bigwig_measure", "FE"))
+
+# HOMER motif enrichment (v0.5 Phase 5), default off.
+MOTIF_DEFAULTS = {"enabled": False, "homer_genome": "", "size": "given",
+                  "background": "", "extra": ""}
+MOTIF = dict(MOTIF_DEFAULTS)
+MOTIF.update((config.get("motif") or {}))
+
+# DiffBind differential binding (v0.5 Phase 3), default off. Contrasts are
+# pairs of sample-table groups; each arm needs >= 2 treat replicates.
+DIFFBIND_DEFAULTS = {"enabled": False, "contrasts": [], "analysis": "DESeq2",
+                     "summit_flank": 250, "use_controls": False,
+                     "fdr": 0.05, "foldchange": 1.0, "batch_correction": True}
+DIFFBIND = dict(DIFFBIND_DEFAULTS)
+DIFFBIND.update((config.get("diffbind") or {}))
+
 # Replicate-stage group enumeration. Every group calls peaks, so every treat
 # sample gets a per-replicate peak file; IDR (narrow) / overlap consensus
 # (broad) are only built for groups with >= 2 treats.
@@ -349,6 +450,42 @@ if QC_TSS and not TSS_SAMPLES:
     print("[config warning] qc.tss is enabled but the table has no atac/faire "
           "treat sample; the TSS stage is skipped")
 
+# DiffBind contrast enumeration (slugs reuse the '__vs__' convention; group
+# names cannot contain '__' so the split is unambiguous).
+_contrast_errors = []
+for _pair in (DIFFBIND.get("contrasts") if isinstance(DIFFBIND.get("contrasts"), list) else None) or []:
+    if not (isinstance(_pair, (list, tuple)) and len(_pair) == 2
+            and all(isinstance(_x, str) and _x for _x in _pair)):
+        _contrast_errors.append(f"every diffbind.contrasts entry must be a pair of group names, got {_pair!r}")
+        continue
+    for _g in _pair:
+        if _g not in GROUPS:
+            _contrast_errors.append(f"diffbind.contrasts references unknown group {_g!r}")
+        elif len(GROUPS[_g]["treat"]) < 2:
+            _contrast_errors.append(
+                f"diffbind.contrast arm {_g!r} needs >= 2 treat replicates "
+                f"(has {len(GROUPS[_g]['treat'])})")
+if _contrast_errors:
+    raise WorkflowError("diffbind.contrasts validation failed:\n  " + "\n  ".join(_contrast_errors))
+DIFFBIND_CONTRASTS = [(str(a), str(b), idr_pair_slug(str(a), str(b)))
+                      for a, b in (DIFFBIND["contrasts"] or [])]
+DIFFBIND_GROUPS = []
+for _a, _b, _ in DIFFBIND_CONTRASTS:
+    for _g in (_a, _b):
+        if _g not in DIFFBIND_GROUPS:
+            DIFFBIND_GROUPS.append(_g)
+if DIFFBIND["enabled"] and not DIFFBIND_CONTRASTS:
+    print("[config warning] diffbind.enabled is true but diffbind.contrasts "
+          "is empty; the differential stage is skipped")
+if DIFFBIND["enabled"] and DIFFBIND["use_controls"]:
+    _multi_ctl = [g for g in DIFFBIND_GROUPS if len(GROUPS[g]["control"]) != 1]
+    if _multi_ctl:
+        print(f"[config warning] diffbind.use_controls: groups without exactly "
+              f"one control lose their control background: {_multi_ctl}")
+if MOTIF["enabled"] and MOTIF["background"] and not os.path.exists(MOTIF["background"]):
+    print(f"[config warning] motif.background does not exist (verify before "
+          f"running): {MOTIF['background']}")
+
 # ---------------------------------------------------------------------
 # Output redirection (aligned with rna-seq): raw inputs (1.rawdata/) stay
 # at the project working-directory root; every derived artifact lives
@@ -374,6 +511,11 @@ RSCRIPT = os.environ.get("CHIP_RSCRIPT", "Rscript")
 # deliberately stays OUT of the main conda environment; only needed when
 # peak.replicate.enabled is true).
 IDR_BIN = os.environ.get("CHIP_IDR", "idr")
+
+# HOMER findMotifsGenome.pl resolves the same way (external distribution,
+# configured via software.yaml paths: -> CHIP_HOMER_FINDMOTIFS; only needed
+# when motif.enabled is true).
+HOMER_BIN = os.environ.get("CHIP_HOMER_FINDMOTIFS", "findMotifsGenome.pl")
 
 # Python interpreter for the workflow's own scripts (run.sh exports CHIP_PYTHON
 # from the runtime resolution; python3 is the sane fallback).
@@ -530,6 +672,30 @@ def blacklist_sources():
     return {os.path.basename(f): f for f in files}
 
 
+def motif_peak_file(group):
+    """Peak set the motif enrichment reads for one group: the same final
+    deliverable annotation uses (blacklist-filtered when configured)."""
+    return dict(zip(GROUPS, annot_peak_files()))[group]
+
+
+def diffbind_sample_peaks(group, sample):
+    """Per-sample peak file for the differential count matrix: the replicate
+    call when the replicate stage is enabled, otherwise the pooled group set
+    (degraded — DiffBind then sees identical peak sets; enabling
+    peak.replicate is recommended)."""
+    if REPLICATE["enabled"]:
+        return replicate_peak_file(group, sample)
+    return group_peak_file(group)
+
+
+def _contrast_groups(slug):
+    """The [groupA, groupB] pair behind one diffbind contrast slug."""
+    for a, b, s in DIFFBIND_CONTRASTS:
+        if s == slug:
+            return [a, b]
+    raise WorkflowError(f"unknown diffbind contrast slug: {slug!r}")
+
+
 def _groups_of(assay, peak_type=None):
     return [g for g, v in GROUPS.items()
             if v["seqtype"] == assay and (peak_type is None or v["peak_type"] == peak_type)]
@@ -585,6 +751,10 @@ RESOURCE_DEFAULTS = {
     "tss_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
     "organelle_idxstats": {"threads": 1, "mem_mb": 2048, "runtime_min": 30},
     "organelle_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "bigwig_sample": {"threads": 2, "mem_mb": 8192, "runtime_min": 60},
+    "motif_enrichment": {"threads": 2, "mem_mb": 8192, "runtime_min": 720},
+    "diffbind_sheet": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "diffbind_report": {"threads": 1, "mem_mb": 16384, "runtime_min": 240},
 }
 
 
@@ -630,6 +800,19 @@ BAM_TARGETS += [f"{RD}3.align/bowtie2/{s}_rmdup.bam"
 
 PEAK_TARGETS = [group_peak_file(g) for g in GROUPS]
 BW_TARGETS = [f"{RD}4.peak/{g}_FE.bw" for g in GROUPS]
+if BIGWIG["per_sample"]:
+    BW_TARGETS += [f"{RD}4.peak/samples/{s}.bw" for s in SAMPLES]
+
+MOTIF_TARGETS = []
+if MOTIF["enabled"]:
+    MOTIF_TARGETS += [R(f"6.motif/{g}") for g in GROUPS]
+
+DIFFBIND_TARGETS = []
+if DIFFBIND["enabled"]:
+    DIFFBIND_TARGETS += [R(f"6.diffbind/{slug}/samplesheet.tsv")
+                         for _a, _b, slug in DIFFBIND_CONTRASTS]
+    DIFFBIND_TARGETS += [R(f"6.diffbind/{slug}/DB_results.tsv")
+                         for _a, _b, slug in DIFFBIND_CONTRASTS]
 
 QC_TARGETS = [R("2.cleandata/fastqc/multiqc/multiqc_report.html")]
 if config["qc"]["nsc_rsc"]:

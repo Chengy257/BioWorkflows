@@ -30,8 +30,16 @@ dependencies:
   - r-base=4.3
   - bioconductor-chipseeker=1.38.0
   - bioconductor-genomicfeatures=1.54.0
+  # Differential binding (optional stage, diffbind.enabled; pulls DESeq2 and
+  # edgeR transitively — unpinned on purpose, solved against the R 4.3 line
+  # the same way srna-seq ships bioconductor-deseq2 for its DE stage)
+  - bioconductor-diffbind
 
 # R packages note: ChIPseeker/GenomicFeatures are included as conda builds.
 # When reusing the server's existing R libraries instead, point r.lib_paths at
 # them in config/software.yaml; installing the bioconductor-* entries here is
 # then unnecessary.
+#
+# Deliberately NOT in this template (external installs, see config/software.yaml
+# paths:): idr (python2; peak.replicate stage) and HOMER (motif stage; its
+# genome data installs via configureHomer).

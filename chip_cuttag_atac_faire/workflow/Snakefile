@@ -57,6 +57,8 @@ rule all:
         BLACKLIST_TARGETS,
         TSS_TARGETS,
         ORGANELLE_TARGETS,
+        MOTIF_TARGETS,
+        DIFFBIND_TARGETS,
         R("4.peak/anno_result/Peakanno_PeakDistributions.pdf"),
         VERSION_TARGETS,
 
@@ -82,6 +84,10 @@ if QC_TSS and TSS_SAMPLES:
     include: os.path.join(WORKFLOW_DIR, "rules", "tss_qc.smk")
 if QC_ORGANELLE:
     include: os.path.join(WORKFLOW_DIR, "rules", "organelle_qc.smk")
+if MOTIF["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "motif.smk")
+if DIFFBIND["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "diffbind.smk")
 
 # Run metadata (software-version record), placed after all modules
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

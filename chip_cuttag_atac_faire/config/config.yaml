@@ -51,6 +51,8 @@ peak:
   keepdup: all           # duplicate handling is decided upstream; MACS2 keeps all
   qvalue: 0.05           # narrow peak q-value cutoff
   broad_cutoff: 0.05     # broad peak cutoff
+  bigwig_measure: "FE"   # group signal-track measure: FE (fold enrichment) | logFE
+                         # (the track filename stays {group}_FE.bw either way)
   atac:
     mode: bampe          # bampe = ENCODE ATAC v2 recipe (pile up real fragment lengths, default);
                          # shifted = classic Tn5 offset recipe (-f BAM --nomodel --shift -100 --extsize 200)
@@ -69,6 +71,38 @@ peak:
 # written to results/4.peak/blacklist_filtered/ and feed FRiP/annotation.
 # No ENCODE blacklist exists for rice — supply your own if needed.
 blacklist: ""
+
+# ---------- Signal tracks (optional) ----------
+# bigwig.per_sample adds per-sample normalized coverage bigWigs
+# (results/4.peak/samples/{sample}.bw) for browser-level replicate comparison.
+bigwig:
+  per_sample: false
+  normalize: "RPGC"   # RPGC (reads per genomic content, needs genome_size) | CPM
+  bin: 25             # bamCoverage bin size (bp)
+
+# ---------- HOMER motif enrichment (optional; needs an external HOMER install) ----------
+motif:
+  enabled: false
+  homer_genome: ""     # required when enabled: HOMER genome tag (hg38, mm10, ...)
+                       # or custom:/path/to/genome (configureHomer data)
+  size: "given"        # region size handed to findMotifsGenome.pl ("given" = peak widths)
+  background: ""       # optional background BED (-bg); empty = HOMER's matched random background
+  extra: ""            # extra findMotifsGenome.pl arguments (e.g. "-len 8,10,12 -nmotifs 12")
+
+# ---------- Differential binding (optional; DiffBind) ----------
+# Contrasts are pairs of sample-table groups; each arm needs >= 2 treat
+# replicates. The optional sample-table columns condition/batch label the
+# contrast factor and a blocking factor (batch). Best used together with
+# peak.replicate.enabled so each sample carries its own peak set.
+diffbind:
+  enabled: false
+  contrasts: []        # e.g. [["H3K27ac_WT_vs_IgG", "H3K27ac_mut_vs_IgG"]]
+  analysis: "DESeq2"   # DESeq2 | edgeR
+  summit_flank: 250    # count regions: summit +/- this many bp (0 = full peak regions)
+  use_controls: false  # attach each group's exactly-one control as the DiffBind background
+  fdr: 0.05            # FDR cutoff for the significant-region table
+  foldchange: 1.0      # |Fold| cutoff (1.0 = no fold filter)
+  batch_correction: true   # use the optional batch column as a blocking factor
 
 # ---------- Annotation and signal windows ----------
 region_flank: 3000   # peak-annotation flank and deeptools signal window up/downstream (bp)

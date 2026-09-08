@@ -35,5 +35,10 @@ paths:
   #   conda create -n idr -c bioconda idr=2.0.4
   # then point this entry at the binary (absolute path) or put `idr` on PATH.
   idr: "idr"
+  # HOMER motif enrichment (needed only when motif.enabled is true): the
+  # findMotifsGenome.pl entry point of an external HOMER distribution
+  # (configureHomer); command name or absolute path. The HOMER genome data
+  # (motif.homer_genome) is installed separately via configureHomer.
+  homer_findmotifs: "findMotifsGenome.pl"
 
 databases: {}
