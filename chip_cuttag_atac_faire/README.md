@@ -11,6 +11,8 @@ A one-stop **Snakemake** workflow for plant epigenomics. The single entry point 
 
 Deduplication strategy, peak parameters, and QC switches are configured per assay in `config/config.yaml`. The default example reference genome is rice *Oryza sativa* (IRGSP-1.0); switching species only requires changing the reference file paths (species presets in `config/species.yaml`) and the genome size.
 
+> **Status (v0.5.0, unreleased)**: replicate-aware peak analysis — per-replicate peak calling, pairwise IDR (narrow groups), overlap consensus (broad groups), a reproducibility summary; plus TSS enrichment (`qc.tss`), organelle read fraction (`qc.organelle`), and peak-level blacklist filtering (`blacklist`). Every new stage is default-off; enabling them is a config flip (see [docs/user-guide.md](docs/user-guide.md) §5.3/§5.4). The `idr` tool installs separately (python2; via the software.yaml `paths:` mechanism).
+>
 > **Status (v0.4.0)**: engineering aligned with rna-seq v0.8.0 — unified `run.sh` ops CLI (four scheduler profiles + auto detection + preflight + resource overrides + unlock), unified environment system (`workflow/environment.yaml` all-in-one template + `config/software.yaml` to reuse existing environments/R libraries; per-rule conda removed), per-rule cluster resource model, synthetic-data dry-run regression + unit tests + CI, and four docs (README / docs/user-guide.md / CONTRIBUTING.md / CHANGELOG). All derived outputs are consolidated under the project's `results/` directory (configurable via `results_dir`). The DAG passes the CI dry-run and an independent review; for end-to-end runs see [Server validation steps](#server-validation-steps).
 
 ## Workflow overview
@@ -28,6 +30,9 @@ flowchart LR
     H --> J[ChIPseeker peak annotation<br>+ distribution plots]
     H & F & G --> K[QC: FRiP + deeptools<br>correlation/PCA/fingerprint/fragment size/gene-region signal]
     H -.optional.-> L[SPP NSC/RSC]
+    F & G -.peak.replicate.-> M[per-replicate calling → pairwise IDR<br>(narrow) / multiinter consensus (broad)<br>+ reproducibility summary]
+    M -.optional blacklist.-> N[blacklist_filtered/<br>peak copies → FRiP / annotation]
+    F & G -.qc.tss / qc.organelle.-> O[TSS enrichment plots + TSSE<br>organelle read fraction]
 ```
 
 ## Environment setup
@@ -82,8 +87,8 @@ chip_cuttag_atac_faire/
 ├── workflow/
 │   ├── Snakefile             # unified entry (seqtype-column routing + species presets + conditional QC includes)
 │   ├── environment.yaml      # all-in-one conda environment template (pinned; created explicitly by the user)
-│   ├── rules/                # common/upstream/dedup/callpeak/annotation/frip/qc_deeptools/spp_qc/meta
-│   ├── scripts/              # runtime_config.py (software.yaml resolver), annoPeak_batch.R, collect_versions.py
+│   ├── rules/                # common/upstream/dedup/callpeak/annotation/frip/qc_deeptools/spp_qc/meta + v0.5: callpeak_replicate/tss_qc/organelle_qc/blacklist
+│   ├── scripts/              # runtime_config.py (software.yaml resolver), annoPeak_batch.R, collect_versions.py + v0.5: replicate_summary/tss_from_bed/tss_score/organelle_summary (.py)
 │   ├── profile/              # default / pbs / sge / slurm profiles + README (cluster commands and pinned params)
 │   └── multiqc_config.yaml
 ├── config/
@@ -93,7 +98,7 @@ chip_cuttag_atac_faire/
 │   ├── resources.yaml        # per-rule scheduler resources (threads/mem_mb/runtime_min; copy as project resources.yaml to override)
 │   ├── software.yaml         # unified software/R runtime (conda_prefix / system + lib_paths)
 │   └── samples.csv           # sample table template (6-column mixed-assay schema)
-├── tests/                    # run_tests.py (62 checks) / lint.sh / run_test.sh / make_testdata.py
+├── tests/                    # run_tests.py / lint.sh / run_test.sh (--replicate / --qc-full scenarios) / make_testdata.py
 ├── example/                  # example project templates (real sample table + project config + one-command start guide)
 ├── docs/                     # user guide
 ├── Makefile                  # make check / lint / test
@@ -110,6 +115,11 @@ All derived artifacts live under `results/` in the working directory (rename via
 | QC summary (fastqc+bowtie2+picard+FRiP+NSC/RSC) | `results/2.cleandata/fastqc/multiqc/multiqc_report.html` |
 | Alignment BAMs / dedup metrics | `results/3.align/bowtie2/{sample}_{sorted,rmdup}.bam`, `{sample}_dup_metrics.txt` |
 | Peak files / summits | `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}`, `{group}_summits.bed` |
+| Per-replicate peaks / pairwise IDR / final reproducible set (`peak.replicate.enabled`) | `results/4.peak/replicates/{group}/{sample}_peaks.*`, `results/4.peak/idr/`, `results/4.peak/{group}_IDR_peaks.narrowPeak` / `{group}_consensus_peaks.broadPeak` |
+| Replicate reproducibility summary (`peak.replicate.enabled`) | `results/5.QC/replicate_peaks/Replicate_summary.tsv` |
+| TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/` |
+| Organelle read fraction (`qc.organelle: true`) | `results/5.QC/organelle/Organelle_summary.tsv` |
+| Blacklist-filtered peaks + counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
 | Signal-track bigWigs | `results/4.peak/{group}_FE.bw` |
 | Peak annotation tables and plots | `results/4.peak/anno_result/*.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
 | bowtie2 index (reusable across projects) | `results/0.index/bowtie2*.bt2` |
@@ -127,6 +137,8 @@ All derived artifacts live under `results/` in the working directory (rename via
 | NSC | ≥ 1.05, ideally ≥ 1.1 (with `qc.nsc_rsc` enabled) | ENCODE |
 | RSC | ≥ 0.8, ideally ≥ 1 (with `qc.nsc_rsc` enabled) | ENCODE |
 | Alignment rate | typically ≥ 70% | empirical |
+| TSS enrichment (`qc.tss`) | healthy ATAC libraries show a clear TSS spike (metazoan references often ≥ 6-10; plant values vary with the TSS set) | ENCODE-flavored |
+| Organelle fraction (`qc.organelle`) | informational; high chloroplast fractions are common in plant ATAC from green tissues | empirical |
 
 ## Documentation index
 
@@ -140,7 +152,7 @@ All derived artifacts live under `results/` in the working directory (rename via
 ## Development and testing
 
 ```bash
-make check    # 62 unit tests + bash -n syntax checks (no snakemake needed)
+make check    # unit tests + bash -n syntax checks (no snakemake needed)
 make lint     # static check suite (bash/shellcheck/py/R/yaml/snakemake --lint; missing optional tools are skipped)
 make test     # CI-equivalent full check (= check + lint)
 ```
@@ -148,11 +160,13 @@ make test     # CI-equivalent full check (= check + lint)
 Regression tests (need snakemake):
 
 ```bash
-bash tests/run_test.sh               # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
-bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs a full analysis environment)
+bash tests/run_test.sh                          # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
+bash tests/run_test.sh --replicate              # replicate/IDR scenario (adds a 2-treat broad group, enables the stage)
+bash tests/run_test.sh --qc-full                # extended QC scenario (tss + organelle + synthetic blacklist)
+bash tests/run_test.sh --real-run               # end-to-end run + output assertions (server validation; needs a full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples, sequences drawn from the reference genome) and is never committed. CI (repository-root `.github/workflows/ci.yml`) runs lint and a `--reads 2000` fast regression on push/PR.
+Dry-run job-count baselines (rule/localrule blocks): default 47, `--replicate` 79, `--qc-full` 60, combined 99. Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples — plus a 2-treat broad group in the replicate scenario; sequences drawn from the reference genome) and is never committed. CI (repository-root `.github/workflows/ci.yml`) runs lint, the default regression, and both scenario dry-runs on push/PR.
 
 ### Server validation steps
 
@@ -177,4 +191,4 @@ bash run.sh -P /path/to/real_project -n              # 3) real-project dry-run t
 
 ## Versions
 
-v0.1.0 (2024-03 original implementation, archived out of the repository) → v0.2.0 (2026-09-03 refactor) → v0.4.0 (2026-09 aligned with the rna-seq engineering system: unified environment / run.sh CLI / four profiles / per-rule resources / tests and docs). Semantic version tags are maintained; see [CHANGELOG.md](CHANGELOG.md) for changes.
+v0.1.0 (2024-03 original implementation, archived out of the repository) → v0.2.0 (2026-09-03 refactor) → v0.4.0 (2026-09 aligned with the rna-seq engineering system: unified environment / run.sh CLI / four profiles / per-rule resources / tests and docs) → v0.5.0 (unreleased: replicate-aware peak analysis with IDR/consensus + TSS enrichment + organelle fraction + blacklist filtering, all default-off). Semantic version tags are maintained; see [CHANGELOG.md](CHANGELOG.md) for changes.

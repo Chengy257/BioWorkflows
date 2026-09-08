@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - unreleased
+
+### Added
+
+- **Replicate-aware peak stage (`peak.replicate`, default off — the v0.5 headline)**: pooled-replicate calling is no longer the only route. When enabled, every treat sample additionally gets its own MACS2 peak call at a relaxed narrow cutoff (`peak.replicate.qvalue`, default 0.01, ENCODE style) against the group's pooled control (`results/4.peak/replicates/{group}/{sample}_peaks.{narrowPeak,broadPeak}`); narrow groups with ≥2 treats get pairwise IDR via the classic `idr` tool (`results/4.peak/idr/{group}/{a}__vs__{b}.narrowPeak`) and a final reproducible peak set (`results/4.peak/{group}_IDR_peaks.narrowPeak` + `{group}_IDR_support.bed`); broad groups with ≥2 treats get a bedtools multiinter overlap consensus with a replicate-support cutoff (`results/4.peak/{group}_consensus_peaks.broadPeak` + support bed). Exactly-2-replicate groups use the single IDR pair as the final set; >2-replicate groups keep the union of pairwise IDR peaks with pairwise support ≥ `consensus_min_replicates` (a documented simplification of the ENCODE rescue/self-consistency scheme). A project-wide `results/5.QC/replicate_peaks/Replicate_summary.tsv` (per-group replicate counts, final count, retained fraction) is injected into MultiQC. `peak.replicate.frip_on` switches FRiP between the pooled set (default) and the reproducible set; peak annotation covers the final reproducible set. The `idr` binary is a python2 tool that deliberately stays OUT of the conda template: configure it via the software.yaml `paths:` section (exported as `CHIP_IDR`) or leave `idr` on PATH; it is only required when the stage is enabled.
+- **TSS enrichment (`qc.tss`, default off)**: per atac/faire treat sample — strand-aware 1-bp TSS set derived from the gene-model BED (`scripts/tss_from_bed.py`), deeptools reference-point matrix over ±2kb (per-sample CPM coverage, 10bp bins), enrichment score = max of the baseline-normalized profile (`scripts/tss_score.py`); outputs under `results/5.QC/tss/` with a MultiQC table.
+- **Organelle read fraction (`qc.organelle`, default off)**: `samtools idxstats` per sample plus a summary of the chloroplast/mitochondrial mapped-read fraction (`results/5.QC/organelle/`, MultiQC table) — the plant analog of the ATAC mitochondrial check. Contig patterns configurable via `qc.organelle_patterns` (patterns of ≤3 chars match contig names exactly, longer ones as substrings).
+- **Artifact blacklist filtering (top-level `blacklist`, default empty = off)**: filtered copies of the pooled and final peak sets land in `results/4.peak/blacklist_filtered/` (bedtools intersect -v) with a before/after count table in `results/5.QC/blacklist/`; FRiP and peak annotation read the filtered copies. No ENCODE blacklist exists for rice — supply your own BED.
+- **Scenario regressions in `tests/run_test.sh`**: `--replicate` (adds a 2-treat broad group to the synthetic data and enables the replicate stage) and `--qc-full` (tss + organelle + synthetic blacklist); the two flags combine. The dry-run prints the planned job count (rule/localrule blocks): default 47 (unchanged), replicate 79, qc-full 60, combined 99. CI runs the two scenarios as separate steps.
+- `tests/run_tests.py`: extraction-backed checks for the new pure helpers (pair enumeration, IDR slug round-trip, narrow/broad group routing, organelle contig matcher), 12 new `validate_config` cases for the v0.5 keys, and subprocess tests for the four new stage scripts (tss_from_bed / tss_score / organelle_summary / replicate_summary).
+
+### Changed
+
+- FRiP and peak annotation resolve their peak inputs through `frip_peak_file()` / `annot_peak_files()` in common.smk; with every v0.5 switch off the resolved files are identical to the previous direct pooled paths, and the default dry-run baseline stays at 47 jobs.
+- `workflow/scripts/runtime_config.py` (WorkflowSpec wrapper) exports `CHIP_IDR` from the software.yaml `paths:` section via the framework's `extra_exports` hook; the preflight is unchanged (idr is never demanded because it is not a pipeline tool).
+- Sample-table/config validation aggregates the new keys (peak.replicate fields, blacklist string, qc.tss/qc.organelle booleans, organelle_patterns list) into the existing single error report; a missing `peak.replicate` block stays valid, so legacy project configs are unaffected.
+
 ## [Unreleased]
 
 ### Added

@@ -1,6 +1,6 @@
-## MultiQC customization (workflow-wide QC summary: FastQC / Trim Galore / Bowtie2 / Picard / MACS2 / deeptools / FRiP / NSC-RSC)
+## MultiQC customization (workflow-wide QC summary: FastQC / Trim Galore / Bowtie2 / Picard / MACS2 / deeptools / FRiP / NSC-RSC / replicate reproducibility / TSS enrichment / organelle fraction)
 title: "ChIP/CUT&Tag/ATAC/FAIRE QC Summary"
 subtitle: "FastQC / Trim Galore / Bowtie2 / Picard / MACS2 / deeptools"
-intro_text: "Workflow-wide QC summary. FRiP and NSC/RSC are workflow-injected custom content (_mqc.tsv)."
+intro_text: "Workflow-wide QC summary. FRiP, NSC/RSC, replicate reproducibility, TSS enrichment, and the organelle fraction are workflow-injected custom content (_mqc.tsv)."
 report_header_info:
   - Workflow: "chip_cuttag_atac_faire (Snakemake)"

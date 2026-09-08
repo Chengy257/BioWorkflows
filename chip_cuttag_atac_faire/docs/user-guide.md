@@ -1,6 +1,6 @@
 # ChIP/CUT&Tag/ATAC/FAIRE workflow user guide
 
-> Updated: 2026-09-04 (matches the current `results/` output consolidation; environment + run.sh ops CLI as of v0.4.0)
+> Updated: 2026-09-08 (v0.5: replicate-aware peak stage with IDR/consensus, TSS enrichment, organelle fraction, blacklist filtering — all default-off; environment + run.sh ops CLI as of v0.4.0)
 > Intended audience: analysts running this workflow on their cluster/server
 > Since v0.4.0 the workflow no longer creates per-rule Conda environments: the runtime environment is created from `workflow/environment.yaml`, or reuses the server's existing environment and R libraries via `config/software.yaml`; cluster scheduling resources are declared per rule in `config/resources.yaml` and support project-level overrides. All derived outputs are consolidated under the project's `results/` directory (`results_dir` in config).
 
@@ -229,9 +229,19 @@ Scheduler resources are layered separately: see §4.3 for `config/resources.yaml
 | `peak.keepdup` | `all` | MACS2 keeps all duplicates (deduplication is decided upstream) |
 | `peak.qvalue` | `0.05` | narrow peak q-value cutoff |
 | `peak.broad_cutoff` | `0.05` | broad peak cutoff |
+| `peak.replicate.enabled` | `false` | replicate-aware peak stage: per-replicate calling + IDR (narrow) / overlap consensus (broad); see §5.3 |
+| `peak.replicate.qvalue` | `0.01` | relaxed per-replicate narrow cutoff feeding IDR (ENCODE style) |
+| `peak.replicate.idr_threshold` | `0.05` | global IDR cutoff |
+| `peak.replicate.idr_rank` | `"p.value"` | narrowPeak rank column handed to idr: `p.value` or `signal.value` |
+| `peak.replicate.consensus_min_replicates` | `2` | support cutoff (broad consensus and >2-replicate IDR unions) |
+| `peak.replicate.frip_on` | `"pooled"` | peak set FRiP is computed against: `pooled` or `consensus` (requires the stage enabled) |
 | `peak.atac.mode` | `bampe` | `bampe` = ENCODE ATAC v2 recipe (pile up real fragment lengths); `shifted` = classic Tn5 offset recipe (`--nomodel --shift -100 --extsize 200`) |
 | `peak.atac.shift` / `peak.atac.extsize` | `-100` / `200` | effective in `shifted` mode only |
+| `blacklist` | `""` | optional BED of artifact regions; empty disables. Filtered peak copies feed FRiP/annotation (§5.4) |
 | `region_flank` | `3000` | peak-annotation flank distance and deeptools signal window up/downstream length (bp); one key controls both |
+| `qc.tss` | `false` | TSS enrichment for atac/faire treat samples (per-sample CPM coverage ±2kb around TSS; §5.2) |
+| `qc.organelle` | `false` | organelle (chloroplast/mitochondrion) mapped-read fraction from idxstats (§5.2) |
+| `qc.organelle_patterns` | `[chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]` | contig-name patterns; ≤3-char patterns match contig names exactly (case-insensitive), longer ones as substrings |
 
 Reference keys (`genome_fa`/`gtf`/`bed`/`chromsize`/`genome_size`) that the project config leaves unset fall back to the selected species preset; an explicit key in the project config wins over the preset.
 
@@ -300,19 +310,37 @@ The four assays are driven by the sample table's `seqtype` column; one project c
 
 Peak calling runs in parallel per `group`; a group without a control automatically omits MACS2 `-c` (falling back to local lambda estimation). Each group's signal track `{group}_FE.bw` is produced by bdgcmp → bedClip → bedtools sort -g → bedGraphToBigWig (chromosome order consistent with chrom.sizes).
 
-### 5.2 The three QC switches
+### 5.2 The QC switches
 
-The `qc:` section of config.yaml controls three optional modules (their rule sets are conditionally included by the Snakefile; when off they stay out of the DAG):
+The `qc:` section of config.yaml controls the optional QC modules (their rule sets are conditionally included by the Snakefile; when off they stay out of the DAG):
 
 | Switch | Default | Outputs |
 |---|---|---|
 | `qc.frip` | `true` | `results/5.QC/frip/FRiP_summary.tsv` (also injected into the MultiQC report) |
 | `qc.deeptools` | `true` | `results/5.QC/deeptools/`: correlation heatmaps, PCA, fingerprint plots, fragment-size distribution, gene-region signal profiles |
 | `qc.nsc_rsc` | `false` | `results/5.QC/spp/NSC_RSC_mqc.tsv` (SPP cross-correlation, slow; also injected into MultiQC) |
+| `qc.tss` | `false` | `results/5.QC/tss/`: per atac/faire treat sample a TSS profile plot + enrichment score (`{sample}_TSSE.txt`), plus `TSSE_summary.tsv` (injected into MultiQC). The score is the max of the ±2kb profile normalized by the outer-flank baseline (ENCODE-flavored definition on CPM coverage) — healthy ATAC libraries show a clear TSS spike |
+| `qc.organelle` | `false` | `results/5.QC/organelle/Organelle_summary.tsv` (injected into MultiQC): per-sample chloroplast/mitochondrial mapped-read fraction from `samtools idxstats`. Plant ATAC libraries frequently lose a large fraction of reads to the chloroplast; the number is diagnostic for library quality and for whether the reference should be nuclear-only |
 
 Regardless of the switches, `results/5.QC/software_versions.yaml` (record of the tool versions actually used, including the Snakemake version) and the MultiQC summary report are always generated; FastQC, bowtie2 alignment stats, and picard dedup metrics are pulled into MultiQC automatically.
 
-### 5.3 Checks and dry-run
+### 5.3 Replicate-aware peak stage (v0.5, `peak.replicate`)
+
+By default the workflow calls peaks once per group on the pooled replicates (`-t treat1,treat2`). With `peak.replicate.enabled: true` the replicate structure is additionally analyzed:
+
+- **Per-replicate calling**: every treat sample gets its own MACS2 call (`results/4.peak/replicates/{group}/{sample}_peaks.*`) at the relaxed narrow cutoff `peak.replicate.qvalue` (default 0.01), always against the group's pooled control. Broad groups use the same `broad_cutoff` as the pooled call.
+- **IDR (narrow groups, ≥2 treats)**: all replicate pairs run through the classic `idr` tool (`--rank p.value --idr-threshold 0.05` by default; both configurable). A group with exactly 2 treats uses the single pair result as its final reproducible peak set (`results/4.peak/{group}_IDR_peaks.narrowPeak`). With >2 treats the union of all pairwise IDR results is kept where the pairwise support ≥ `consensus_min_replicates` — a deliberate simplification of ENCODE's rescue/self-consistency scheme, chosen for interpretability; the per-peak support is in `{group}_IDR_support.bed`.
+- **Overlap consensus (broad groups, ≥2 treats)**: IDR is not applicable to broad peaks; the per-replicate broadPeak files go through `bedtools multiinter` and intervals carried by ≥ `consensus_min_replicates` replicates form `results/4.peak/{group}_consensus_peaks.broadPeak` (+ support bed).
+- **Summary**: `results/5.QC/replicate_peaks/Replicate_summary.tsv` lists per group the replicate peak counts, the final (IDR/consensus) count, and the retained fraction; it is injected into MultiQC.
+- **Downstream wiring**: `peak.replicate.frip_on: consensus` computes FRiP against the reproducible set (default `pooled` keeps today's semantics; single-treat groups always fall back to pooled), and the ChIPseeker annotation covers the final reproducible set. The pooled peak files keep their names and remain in `results/4.peak/`.
+
+**Environment note**: the `idr` tool (Liu et al., 2.0.4.x) is python2-based and deliberately not part of the conda template. Install it separately (e.g. `conda create -n idr -c bioconda idr=2.0.4`) and either put `idr` on PATH or point the software.yaml `paths:` entry at the binary (exported to the rules as `CHIP_IDR`). It is only required when the stage is enabled and narrow groups with ≥2 treats exist; dry-runs never execute it.
+
+### 5.4 Blacklist filtering (v0.5, `blacklist`)
+
+Set the top-level `blacklist` key to a BED file of known artifact regions and the workflow writes filtered copies (bedtools `intersect -v`) of the pooled and final peak sets into `results/4.peak/blacklist_filtered/`, with a before/after count table in `results/5.QC/blacklist/blacklist_summary.tsv`. FRiP and peak annotation read the filtered copies automatically. Filtering happens at the peak level only (BAMs are untouched). No ENCODE blacklist exists for rice — build or borrow one appropriate for your genome, or leave the key empty (default).
+
+### 5.5 Checks and dry-run
 
 ```bash
 bash run.sh -P . -n                    # dry-run: builds the DAG and prints the jobs it would run, without executing
@@ -323,7 +351,7 @@ bash run.sh -P . --check-r             # R-side preflight only
 
 The dry-run automatically skips the software preflight (no tools executed; needs only snakemake + python3/PyYAML, not the full analysis environment). Sample-table and config validation happen at parse time, so the dry-run and `--validate-only` catch the same errors listed in §3.2 / §4.4.
 
-### 5.4 Resuming and Snakemake passthrough
+### 5.6 Resuming and Snakemake passthrough
 
 - Resuming: Snakemake skips completed steps based on output timestamps; after an interruption, **simply rerun the same command**;
 - profiles pin `keep-going: true` and `rerun-incomplete: true`; `latency-wait` defaults to 90 (default/pbs) or 60 (sge/slurm), overridable via `--latency-wait SEC`;
@@ -426,9 +454,16 @@ workdir/
     │   └── fastqc/          # per-sample FastQC + multiqc/multiqc_report.html
     ├── 3.align/bowtie2/     # {sample}_sorted.bam(.bai), {sample}_rmdup.bam(.bai), {sample}_dup_metrics.txt
     ├── 4.peak/              # {group}_peaks.{narrowPeak,broadPeak}, {group}_summits.bed, {group}_FE.bw
+    │   ├── replicates/      # peak.replicate stage: {group}/{sample}_peaks.{narrowPeak,broadPeak}
+    │   ├── idr/             # peak.replicate stage: {group}/{a}__vs__{b}.narrowPeak pairwise IDR
+    │   ├── blacklist_filtered/   # blacklist stage: filtered copies of the pooled/final peak sets
     │   └── anno_result/     # {group}.Anno.xls, Peakanno_PeakDistributions.pdf
     ├── 5.QC/
     │   ├── frip/            # {group}__{sample}.frip.tsv, FRiP_summary.tsv
+    │   ├── replicate_peaks/ # peak.replicate stage: Replicate_summary.tsv (+ MultiQC table)
+    │   ├── tss/             # qc.tss stage: {sample}_TSSE.txt, profile plots, TSSE_summary.tsv
+    │   ├── organelle/       # qc.organelle stage: {sample}_idxstats.tsv, Organelle_summary.tsv
+    │   ├── blacklist/       # blacklist stage: blacklist_summary.tsv (before/after counts)
     │   ├── spp/             # optional: {sample}_NSC.txt / _RSC.txt / _fragment_len.txt, NSC_RSC_mqc.tsv
     │   ├── deeptools/       # correlation heatmap / PCA / fingerprint / fragment size / gene-region signal profile
     │   ├── software_versions.yaml   # tool versions actually resolved for this run (incl. Snakemake)
@@ -444,6 +479,11 @@ workdir/
 | Trimmed fastq | `results/2.cleandata/{sample}_1_val_1.fq.gz`, `{sample}_2_val_2.fq.gz` |
 | Aligned BAM / deduplicated BAM / dedup metrics | `results/3.align/bowtie2/{sample}_sorted.bam`, `{sample}_rmdup.bam`, `{sample}_dup_metrics.txt` |
 | Peak files / summits | `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}`, `results/4.peak/{group}_summits.bed` |
+| Per-replicate peaks / pairwise IDR / final reproducible set (`peak.replicate.enabled`) | `results/4.peak/replicates/{group}/{sample}_peaks.*`, `results/4.peak/idr/{group}/{a}__vs__{b}.narrowPeak`, `results/4.peak/{group}_IDR_peaks.narrowPeak` or `{group}_consensus_peaks.broadPeak` (+ `_support.bed`) |
+| Replicate summary table | `results/5.QC/replicate_peaks/Replicate_summary.tsv` |
+| TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/TSSE_summary.tsv` |
+| Organelle fraction (`qc.organelle: true`) | `results/5.QC/organelle/Organelle_summary.tsv` |
+| Blacklist-filtered peaks / counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
 | Signal-track bigWig (fold enrichment) | `results/4.peak/{group}_FE.bw` |
 | Peak annotation tables and plots | `results/4.peak/anno_result/{group}.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
 | bowtie2 index | `results/0.index/bowtie2*.bt2` |
@@ -503,9 +543,20 @@ Either set `species: "hsa"` (or another preset in `config/species.yaml`), or ove
 
 **Q12: How do I validate a new deployment or a workflow change?**
 ```bash
-make check                       # 62 unit tests + bash -n syntax checks (no snakemake needed)
+make check                       # unit tests + bash -n syntax checks (no snakemake needed)
 make lint                        # static suite (bash/shellcheck/py/R/yaml/snakemake --lint; missing tools skipped)
 bash tests/run_test.sh           # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
-bash tests/run_test.sh --real-run   # end-to-end run + output assertions (server validation; needs the full analysis environment)
+bash tests/run_test.sh --replicate   # replicate/IDR scenario dry-run (adds a 2-treat broad group)
+bash tests/run_test.sh --qc-full     # extended QC scenario dry-run (tss + organelle + blacklist)
+bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples); the dry-run defaults to 50000 read pairs per sample (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+
+**Q13: How do I add IDR / replicate-aware peak analysis?**
+Set `peak.replicate.enabled: true` (§5.3). Everything else is automatic per the sample table's replicate structure (a group's treat rows are its replicates). You need the external `idr` tool installed (python2; e.g. `conda create -n idr -c bioconda idr=2.0.4`, see the environment note in §5.3). Single-replicate groups keep using their pooled peaks.
+
+**Q14: Where does the blacklist come from?**
+ENCODE maintains blacklists for human/mouse; for rice there is none, so the workflow leaves `blacklist` empty by default. If you have one (self-built from repeated-artifact evidence, or from a closely related assembly), point the key at the BED file and FRiP/annotation switch to the filtered peak copies (§5.4).
+
+**Q15: My ATAC library shows a huge organelle fraction — what do I do?**
+Enable `qc.organelle` and check `results/5.QC/organelle/Organelle_summary.tsv`. High chloroplast fractions (common in plant ATAC from green tissues) waste sequencing depth; aligning against a nuclear-only reference, or in silico removing organelle-mapped reads upstream, are the standard remedies. The metric is informational — the workflow never filters BAMs on it.

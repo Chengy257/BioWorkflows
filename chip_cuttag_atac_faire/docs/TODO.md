@@ -7,6 +7,36 @@
 > 2026-09-08 (runtime_config.py migrated onto the shared WorkflowSpec framework);
 > all five items are now resolved at the repository level.
 
+## 0. v0.5 implemented stages and deferred extensions — OPEN (2026-09-08)
+
+- **Implemented (v0.5, branch feature/chip-replicate-idr; every switch default-off)**:
+  per-replicate peak calling + pairwise IDR + broad overlap consensus
+  (`peak.replicate`), TSS enrichment (`qc.tss`), organelle read fraction
+  (`qc.organelle`), peak-level blacklist filtering (`blacklist`). The review
+  and phased design live outside the repository
+  (`D:\BioWorkflows_archive\plans\2026-09-08-chip-replicate-idr-plan.md`);
+  dry-run baselines: default 47 (unchanged), replicate 79, qc-full 60,
+  combined 99.
+- **Deferred (priority order, see the plan's Phase 3-5 + registry)**:
+  1. DiffBind differential binding — needs an optional `condition` sample-table
+     column and explicit contrast config (kept aligned with the Unreleased
+     TODO entry below); R dep: bioconductor-diffbind.
+  2. Per-sample normalized bigWigs (RPGC/CPM) + log2(FE) option for the group
+     track (cheap; would also let the TSS matrix consume a shared per-sample
+     bigwig instead of its temp one).
+  3. HOMER motif enrichment on the consensus/IDR peaks (external install via
+     the software.yaml `paths:` mechanism, like idr).
+  4. Spike-in normalization for CUT&Tag quantitative comparisons — note
+     `bowtie2_mapping` already emits `{sample}_unmapped.fq.gz` as an
+     undeclared side artifact that a second-pass spike alignment could
+     consume; declaring it as an output is part of that work.
+  5. SEACR alternative peak caller (`peak.caller`), TOBIAS footprinting,
+     QC PASS/WARN gate table, SE input support.
+- **Validation debt**: the replicate stage has dry-run + unit coverage only;
+  a real-run round on the server (with idr installed) should confirm the idr
+  output-column contract (the rules trim idr's extra columns back to the
+  10-column narrowPeak) and empty-consensus behavior on sparse broad marks.
+
 ## 1. FASTQ naming-variant support — DONE
 
 - **Original issue**: the `workflow/rules/upstream.smk` fastq inputs only matched
