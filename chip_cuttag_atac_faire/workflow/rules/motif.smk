@@ -30,6 +30,13 @@ rule motif_enrichment:
     shell:
         """
         mkdir -p {output}
+        # findMotifsGenome.pl calls its helper tools (homer2, findKnownMotifs.pl,
+        # compareMotifs.pl, ...) by bare name, and HOMER continues "successfully"
+        # with partial output when they are not on PATH — prepend the HOMER bin
+        # directory (dirname of the resolved entry point) so the full pipeline
+        # actually runs (WSL real-run finding 2026-09-09)
+        homer_bindir="$(dirname "{params.homer}")"
+        if [ "$homer_bindir" != "." ]; then export PATH="$homer_bindir:$PATH"; fi
         {params.homer} {input.peaks} {params.genome} {output} \
             -size {params.size} {params.background} -cpu {threads} \
             {params.extra} > {log} 2>&1
