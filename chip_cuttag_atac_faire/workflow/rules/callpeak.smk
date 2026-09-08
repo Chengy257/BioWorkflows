@@ -129,6 +129,11 @@ rule bigwig:
         pileup=R("4.peak/{group}_treat_pileup.bdg"),
         lambda_=R("4.peak/{group}_control_lambda.bdg"),
         chromsize=config["chromsize"],
+        # spike_in.scale_bigwigs: the treat samples' flagstats feed the mean
+        # scale factor applied to the bedGraph values (empty when off)
+        spike=lambda wc: ([R(f"5.QC/spike_in/{s}_flagstat.txt")
+                           for s in GROUPS[wc.group]["treat"]]
+                          if SPIKE_IN["scale_bigwigs"] else []),
     output:
         R("4.peak/{group}_FE.bw"),
     wildcard_constraints:
@@ -136,6 +141,10 @@ rule bigwig:
     params:
         measure=PEAK_MEASURE,   # FE (fold enrichment, default) | logFE
         outdir=lambda wc, output: os.path.dirname(str(output)),
+        scale_stage=lambda wc, input: (_spike_scaled_bedgraph_stage(
+            [spike_scale_factor(p) for p in input.spike],
+            f"{RD}4.peak/{wc.group}_FE.clip.sorted")
+            if SPIKE_IN["scale_bigwigs"] else ""),
     log:
         R("logs/bigwig/{group}.log"),
     threads: rthreads("bigwig")
@@ -156,7 +165,7 @@ rule bigwig:
         # and fails the check whenever that order differs from C collation.
         LC_COLLATE=C sort -k1,1 -k2,2n {params.outdir}/{wildcards.group}_FE.clip \
             > {params.outdir}/{wildcards.group}_FE.clip.sorted
-        bedGraphToBigWig {params.outdir}/{wildcards.group}_FE.clip.sorted {input.chromsize} {output} >> {log} 2>&1
+        {params.scale_stage}bedGraphToBigWig {params.outdir}/{wildcards.group}_FE.clip.sorted {input.chromsize} {output} >> {log} 2>&1
         rm -f {params.outdir}/{wildcards.group}_FE.bdg \
               {params.outdir}/{wildcards.group}_FE.clip {params.outdir}/{wildcards.group}_FE.clip.sorted
         """
@@ -169,7 +178,10 @@ rule bigwig_sample:
     # FE track filename stays {group}_FE.bw in logFE mode (the measure config
     # changes the track values, not the layout).
     input:
-        lambda wc: sample_bam(wc.sample),
+        bam=lambda wc: sample_bam(wc.sample),
+        # spike_in.scale_bigwigs: the sample's flagstat feeds its --scaleFactor
+        spike=lambda wc: ([R(f"5.QC/spike_in/{wc.sample}_flagstat.txt")]
+                          if SPIKE_IN["scale_bigwigs"] else []),
     output:
         R("4.peak/samples/{sample}.bw"),
     wildcard_constraints:
@@ -180,6 +192,9 @@ rule bigwig_sample:
         # RPGC needs an integer effective genome size; MACS2-style strings
         # ("3.7e8") convert through float
         gsize=int(float(str(config["genome_size"]))),
+        # empty when spike_in.scale_bigwigs is off (command unchanged)
+        scale=lambda wc, input: (_spike_scale_flag_arg(input.spike[0])
+                                 if SPIKE_IN["scale_bigwigs"] else ""),
     log:
         R("logs/bigwig/{sample}_sample.log"),
     threads: rthreads("bigwig_sample")
@@ -189,7 +204,7 @@ rule bigwig_sample:
         runtime_sec=rruntime_sec("bigwig_sample"),
     shell:
         """
-        bamCoverage -b {input} --normalizeUsing {params.normalize} \
-            --effectiveGenomeSize {params.gsize} --binSize {params.binsize} \
+        bamCoverage -b {input.bam} --normalizeUsing {params.normalize} \
+            --effectiveGenomeSize {params.gsize} --binSize {params.binsize}{params.scale} \
             -p {threads} -o {output} > {log} 2>&1
         """

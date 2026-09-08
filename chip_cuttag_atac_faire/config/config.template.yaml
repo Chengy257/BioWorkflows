@@ -68,6 +68,15 @@ peak:
 #   normalize: "RPGC"   # RPGC | CPM
 #   bin: 25
 
+# ---------- Spike-in normalization (optional; CUT&Tag quantitative comparison) ----------
+# spike_in:
+#   enabled: false      # re-aligns the unmapped reads against the spike-in genome;
+#                       # per-sample scale factors + QC table in results/5.QC/spike_in/
+#   fasta: "/path/to/spikein.fasta"   # required when enabled (e.g. E. coli lambda)
+#   name: "spike"       # label used in the summary tables / MultiQC section
+#   scale_bigwigs: false  # also multiply the bigWig tracks by the scale factors
+#                         # (group FE tracks: mean over the group's treat samples)
+
 # ---------- HOMER motif enrichment (optional) ----------
 # motif:
 #   enabled: false

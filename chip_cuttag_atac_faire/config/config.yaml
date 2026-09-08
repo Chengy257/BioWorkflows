@@ -80,6 +80,19 @@ bigwig:
   normalize: "RPGC"   # RPGC (reads per genomic content, needs genome_size) | CPM
   bin: 25             # bamCoverage bin size (bp)
 
+# ---------- Spike-in normalization (optional; CUT&Tag quantitative comparison) ----------
+# Second-pass alignment of the unmapped reads against a spike-in genome
+# (e.g. E. coli lambda spiked in before shearing/tagmentation), per-sample
+# scale factors (1e6 / spike-in mapped reads) and a QC summary table
+# (results/5.QC/spike_in/). spike_in.scale_bigwigs additionally multiplies
+# the bigWig signal tracks by the per-sample factor (group FE tracks use the
+# mean over the group's treat samples).
+spike_in:
+  enabled: false
+  fasta: ""           # required when enabled: spike-in genome FASTA path
+  name: "spike"       # label used in the summary tables / MultiQC section
+  scale_bigwigs: false
+
 # ---------- HOMER motif enrichment (optional; needs an external HOMER install) ----------
 motif:
   enabled: false

@@ -27,7 +27,7 @@ Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
 
 Usage:
     python tests/make_testdata.py --outdir <dir> [--reads 50000] [--seed 42]
-        [--replicate] [--qc-full] [--motif] [--diffbind] [--gates]
+        [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in]
 """
 import argparse
 import gzip
@@ -41,6 +41,8 @@ import random
 # ---------------------------------------------------------------------
 CHROM_LEN = 100000        # per-chromosome length (bp)
 N_CHROM = 2               # number of chromosomes (chr1/chr2)
+SPIKE_CONTIGS = 2         # spike-in contigs (--spike-in scenario)
+SPIKE_CONTIG_LEN = 3000   # spike-in per-contig length (bp)
 GENES_PER_CHROM = 30      # genes per chromosome
 READ_LEN = 50             # read length
 FRAG_MIN, FRAG_MAX = 150, 300   # fragment length range (bp)
@@ -143,6 +145,15 @@ diffbind:
   fdr: 0.05
   foldchange: 1.0
   batch_correction: true
+"""
+
+SPIKE_CONFIG_BLOCK = """
+# ---------- Spike-in normalization (--spike-in scenario) ----------
+spike_in:
+  enabled: true
+  fasta: "ref/spike.fa"
+  name: "lambda"
+  scale_bigwigs: true
 """
 
 # Synthetic blacklist for --qc-full: overlaps the first pre-seeded peak
@@ -373,8 +384,22 @@ def write_blacklist(outdir):
         fh.write(BLACKLIST_BED)
 
 
+def write_spike_reference(outdir, seed):
+    """Write the --spike-in synthetic spike-in genome ref/spike.fa (2 x 3kb
+    contigs, generated from its own seeded rng so the sequences are distinct
+    from the main reference)."""
+    rng = random.Random(seed + 101)
+    path = os.path.join(outdir, "ref", "spike.fa")
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        for i in range(SPIKE_CONTIGS):
+            fh.write(f">spike_ctg{i + 1}\n")
+            s = "".join(rng.choices(BASES, k=SPIKE_CONTIG_LEN))
+            for j in range(0, len(s), 60):
+                fh.write(s[j:j + 60] + "\n")
+
+
 def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False,
-                 gates=False):
+                 gates=False, spike=False):
     """Write the test config.yaml (relative paths, consumed via run.sh -c).
 
     Scenario flags splice the matching sub-blocks into the base config."""
@@ -396,6 +421,8 @@ def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=F
         text += MOTIF_CONFIG_BLOCK
     if diffbind:
         text += DIFFBIND_CONFIG_BLOCK
+    if spike:
+        text += SPIKE_CONFIG_BLOCK
     path = os.path.join(outdir, "config.yaml")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -426,6 +453,9 @@ def main():
     ap.add_argument("--gates", action="store_true",
                     help="enable the QC gate summary stage (qc.gates) with the "
                          "default thresholds")
+    ap.add_argument("--spike-in", action="store_true", dest="spike_in",
+                    help="write a synthetic spike-in reference (ref/spike.fa) and "
+                         "enable the spike_in stage with scaled bigWigs")
     args = ap.parse_args()
     if args.reads < 1:
         ap.error("--reads must be a positive integer")
@@ -441,15 +471,19 @@ def main():
     write_fastqs(args.outdir, chroms, genes, args.reads, args.seed, samples)
     write_samples(args.outdir, samples, extended=args.diffbind)
     write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full,
-                 motif=args.motif, diffbind=args.diffbind, gates=args.gates)
+                 motif=args.motif, diffbind=args.diffbind, gates=args.gates,
+                 spike=args.spike_in)
     if args.qc_full:
         write_blacklist(args.outdir)
+    if args.spike_in:
+        write_spike_reference(args.outdir, args.seed)
 
     tags = [t for t, on in (("+replicate", args.replicate),
                             ("+qc-full", args.qc_full),
                             ("+motif", args.motif),
                             ("+diffbind", args.diffbind),
-                            ("+gates", args.gates)) if on]
+                            ("+gates", args.gates),
+                            ("+spike-in", args.spike_in)) if on]
     print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
           f"{len(samples)} samples x {args.reads} PE read pairs (seed={args.seed}"
           + (", " + ", ".join(tags) if tags else "") + ")")

@@ -242,6 +242,10 @@ Scheduler resources are layered separately: see §4.3 for `config/resources.yaml
 | `peak.bigwig_measure` | `"FE"` | group signal-track measure: `FE` (fold enrichment) or `logFE`; the filename stays `{group}_FE.bw` |
 | `bigwig.per_sample` | `false` | per-sample normalized coverage bigWigs under `results/4.peak/samples/` (browser-level replicate comparison) |
 | `bigwig.normalize` / `bigwig.bin` | `"RPGC"` / `25` | bamCoverage normalization (RPGC uses `genome_size`) and bin size |
+| `spike_in.enabled` | `false` | spike-in normalization stage: second-pass alignment of the unmapped reads against `spike_in.fasta` + per-sample scale factors + QC table (§5.2.2) |
+| `spike_in.fasta` | `""` | required when enabled: spike-in genome FASTA path (a missing file warns only, like the other references) |
+| `spike_in.name` | `"spike"` | spike-in label used in the summary tables and the MultiQC section title |
+| `spike_in.scale_bigwigs` | `false` | multiply the bigWig signal tracks by the per-sample spike-in scale factors (§5.2.2) |
 | `motif.enabled` | `false` | HOMER motif enrichment on the final peak sets (§5.5); needs an external HOMER install |
 | `motif.homer_genome` | `""` | required when the stage is on: HOMER genome tag (`hg38`, `mm10`, …) or `custom:/path/to/genome` |
 | `motif.size` / `motif.background` / `motif.extra` | `"given"` / `""` / `""` | `-size`, optional `-bg` BED, extra findMotifsGenome.pl arguments |
@@ -354,6 +358,29 @@ With `qc.gates.enabled: true` the workflow writes one PASS/WARN/FAIL row per sam
 | `organelle_fraction` | `qc.organelle: true` (organelle read fraction) | value ≤ `organelle_max` | 0.20 |
 
 Semantics: a metric whose source stage is off (or whose file is missing) renders `NA` and does not gate; every other metric PASSes or FAILs against its threshold. The per-sample `gate` column is **FAIL** when any metric fails, **WARN** when nothing fails but at least one metric is NA, and **PASS** otherwise; the `failed`/`na` columns name the offending metrics. Thresholds are user-tunable numbers under `qc.gates.thresholds` (each is validated as a number in [0, 1], except `nsc_min`/`rsc_min`/`tss_min`, which accept any positive value) and are strictly informational — **the pipeline never hard-fails on a gate**.
+
+### 5.2.2 Spike-in normalization (v0.6, `spike_in`)
+
+Quantitative CUT&Tag comparisons need an exogenous standard: a spike-in genome (e.g. E. coli DNA added to the sample before shearing/tagmentation) lets read depths be normalized between samples. With:
+
+```yaml
+spike_in:
+  enabled: true
+  fasta: "/path/to/spikein_genome.fasta"   # required when enabled
+  name: "lambda"                           # label for the summary tables
+  scale_bigwigs: false                     # also scale the bigWig tracks
+```
+
+the workflow re-aligns the read pairs that failed the primary alignment (the `--un-conc-gz` pairs of the main bowtie2 step, kept at `results/3.align/bowtie2/{sample}_unmapped.fq.1.gz` / `.2.gz`) against the spike-in genome (index under `results/0.index/spike_bt2.*`): `results/3.align/spike_in/{sample}_sorted.bam(.bai)`, per-sample `samtools idxstats`/`flagstat` reports under `results/5.QC/spike_in/`, and a project-wide `results/5.QC/spike_in/Spikein_summary.tsv` (injected into the MultiQC report under the `spike_in.name` label) with columns:
+
+| Column | Meaning |
+|---|---|
+| `spike_total` | reads in total in the spike-in alignment (`flagstat`) |
+| `spike_mapped` | reads mapped to the spike-in genome (`flagstat`) |
+| `spike_rate` | `spike_mapped / spike_total` (how much of the non-aligning fraction is spike-in) |
+| `scale_factor` | `1e6 / max(spike_mapped, 1)` — the per-sample normalization factor |
+
+With `spike_in.scale_bigwigs: true` the bigWig signal tracks are additionally multiplied by the scale factors: per-sample tracks (`bigwig.per_sample`) use their own factor, and the group FE tracks (`results/4.peak/{group}_FE.bw`) use the **mean over the group's treat samples** — `mean(1e6 / spike_mapped_i)` across the group's treats. The spike-in alignment itself runs with plain bowtie2 defaults (the primary recipe's `bowtie2_extra`/`min_mapq` tuning stays untouched), and a sample with a missing flagstat renders an all-NA summary row.
 
 ### 5.3 Replicate-aware peak stage (v0.5, `peak.replicate`)
 
@@ -508,7 +535,9 @@ workdir/
     ├── 0.index/             # bowtie2 index (bowtie2*.bt2; reusable across projects)
     ├── 2.cleandata/         # trimmed fastq: {sample}_1_val_1.fq.gz / {sample}_2_val_2.fq.gz
     │   └── fastqc/          # per-sample FastQC + multiqc/multiqc_report.html
-    ├── 3.align/bowtie2/     # {sample}_sorted.bam(.bai), {sample}_rmdup.bam(.bai), {sample}_dup_metrics.txt
+    ├── 3.align/bowtie2/     # {sample}_sorted.bam(.bai), {sample}_rmdup.bam(.bai), {sample}_dup_metrics.txt,
+    │                        #   {sample}_unmapped.fq.{1,2}.gz (pairs that failed the primary alignment)
+    ├── 3.align/spike_in/    # spike_in stage: {sample}_sorted.bam(.bai) (unmapped reads vs the spike-in genome)
     ├── 4.peak/              # {group}_peaks.{narrowPeak,broadPeak}, {group}_summits.bed, {group}_FE.bw
     │   ├── replicates/      # peak.replicate stage: {group}/{sample}_peaks.{narrowPeak,broadPeak}
     │   ├── idr/             # peak.replicate stage: {group}/{a}__vs__{b}.narrowPeak pairwise IDR
@@ -519,6 +548,7 @@ workdir/
     │   ├── frip/            # {group}__{sample}.frip.tsv, FRiP_summary.tsv
     │   ├── replicate_peaks/ # peak.replicate stage: Replicate_summary.tsv (+ MultiQC table)
     │   ├── gates/           # qc.gates stage: {sample}_flagstat.txt, gate_summary.tsv
+    │   ├── spike_in/        # spike_in stage: {sample}_idxstats.txt / _flagstat.txt, Spikein_summary.tsv
     │   ├── tss/             # qc.tss stage: {sample}_TSSE.txt, profile plots, TSSE_summary.tsv
     │   ├── organelle/       # qc.organelle stage: {sample}_idxstats.tsv, Organelle_summary.tsv
     │   ├── blacklist/       # blacklist stage: blacklist_summary.tsv (before/after counts)
@@ -544,6 +574,8 @@ workdir/
 | TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/TSSE_summary.tsv` |
 | Organelle fraction (`qc.organelle: true`) | `results/5.QC/organelle/Organelle_summary.tsv` |
 | QC gate summary (`qc.gates: true`) | `results/5.QC/gates/gate_summary.tsv` (+ per-sample `{sample}_flagstat.txt`) |
+| Spike-in alignment BAMs (`spike_in.enabled`) | `results/3.align/spike_in/{sample}_sorted.bam(.bai)` |
+| Spike-in summary + scale factors (`spike_in.enabled`) | `results/5.QC/spike_in/Spikein_summary.tsv`; `scale_factor` = `1e6 / spike-in mapped reads` (bigWigs scaled by it when `spike_in.scale_bigwigs: true`; group FE tracks use the mean over the group's treat samples) |
 | Blacklist-filtered peaks / counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
 | Per-sample normalized bigWigs (`bigwig.per_sample`) | `results/4.peak/samples/{sample}.bw` |
 | HOMER motif results (`motif.enabled`) | `results/6.motif/{group}/` |
@@ -615,6 +647,7 @@ bash tests/run_test.sh --qc-full     # extended QC scenario dry-run (tss + organ
 bash tests/run_test.sh --motif       # motif stage scenario dry-run (dummy genome tag)
 bash tests/run_test.sh --diffbind    # differential binding scenario dry-run (adds a contrast group)
 bash tests/run_test.sh --gates       # QC gate summary scenario dry-run (qc.gates)
+bash tests/run_test.sh --spike-in    # spike-in normalization scenario dry-run (spike_in)
 bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples); the dry-run defaults to 50000 read pairs per sample (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
@@ -636,3 +669,6 @@ Yes — HOMER (findMotifsGenome.pl + a configured genome) is an external distrib
 
 **Q18: A QC gate shows FAIL — did my run fail?**
 No. The `qc.gates` table (§5.2.1) is informational: it compares the existing QC metrics against configurable reference thresholds (`qc.gates.thresholds`) but never aborts the pipeline. A `FAIL` names the metrics worth a look (`failed` column); `NA` marks metrics whose source stage is off (e.g. `dup_rate` for CUT&Tag, where duplicates are kept, or `tss_enrichment` for chip-only projects) — NAs alone produce a `WARN`, not a failure.
+
+**Q19: How do I add spike-in normalization for quantitative CUT&Tag comparisons?**
+Point `spike_in.fasta` at the spike-in genome FASTA (e.g. E. coli lambda spiked in before tagmentation) and set `spike_in.enabled: true` (§5.2.2). The workflow re-aligns each sample's unmapped read pairs against the spike-in genome and writes per-sample scale factors (`1e6 / spike-in mapped reads`) plus a QC summary into `results/5.QC/spike_in/` (injected into MultiQC). Add `spike_in.scale_bigwigs: true` to also multiply the bigWig tracks by the factors — per-sample tracks by their own factor, group FE tracks by the mean over the group's treat samples.

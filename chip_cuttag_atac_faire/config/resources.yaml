@@ -54,6 +54,9 @@ resources:
   organelle_summary:           {threads: 1,  mem_mb: 1024,  runtime_min: 10}
   gates_flagstat:              {threads: 1,  mem_mb: 2048,  runtime_min: 15}
   qc_gates:                    {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  spike_bowtie2_index:         {threads: 4,  mem_mb: 2048,  runtime_min: 30}
+  spike_align:                 {threads: 8,  mem_mb: 16384, runtime_min: 240}
+  spike_summary:               {threads: 1,  mem_mb: 1024,  runtime_min: 10}
   bigwig_sample:               {threads: 2,  mem_mb: 8192,  runtime_min: 60}
   motif_enrichment:            {threads: 2,  mem_mb: 8192,  runtime_min: 720}
   diffbind_sheet:              {threads: 1,  mem_mb: 1024,  runtime_min: 10}

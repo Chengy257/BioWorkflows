@@ -331,6 +331,29 @@ def validate_config(cfg):
                                     errors.append(
                                         f"qc.gates.thresholds.{key} must be numeric, "
                                         f"got {thr[key]!r}")
+    # Spike-in normalization (v0.6): spike_in block, default off. The FASTA
+    # is a required non-empty string when enabled; a missing file (or a
+    # "/path/to/"-style placeholder, which simply does not exist) only warns
+    # like every other reference.
+    sp = cfg.get("spike_in")
+    if sp is not None:
+        if not isinstance(sp, dict):
+            errors.append(f"spike_in must be a mapping, got {sp!r}")
+        else:
+            if not isinstance(sp.get("enabled", False), bool):
+                errors.append(
+                    f"spike_in.enabled must be true/false, got {sp.get('enabled')!r}")
+            if not isinstance(sp.get("scale_bigwigs", False), bool):
+                errors.append(
+                    f"spike_in.scale_bigwigs must be true/false, got {sp.get('scale_bigwigs')!r}")
+            fasta = sp.get("fasta", "")
+            if not isinstance(fasta, str):
+                errors.append(f"spike_in.fasta must be a string path, got {fasta!r}")
+            elif sp.get("enabled", False) and not fasta.strip():
+                errors.append("spike_in.fasta is required when spike_in.enabled is true")
+            name = sp.get("name", "spike")
+            if not isinstance(name, str) or not name.strip():
+                errors.append(f"spike_in.name must be a non-empty string, got {name!r}")
     if isinstance(cfg.get("trim"), dict):
         t = cfg["trim"]
         for key, lo in (("quality", 0), ("stringency", 1)):
@@ -358,6 +381,15 @@ def validate_config(cfg):
     bl = str(cfg.get("blacklist") or "").strip()
     if bl and not os.path.exists(bl):
         warnings.append(f"blacklist file does not exist (verify before running): {bl}")
+    _sp_cfg = cfg.get("spike_in") if isinstance(cfg.get("spike_in"), dict) else {}
+    if _sp_cfg.get("enabled", False):
+        _sp_fa = str(_sp_cfg.get("fasta") or "").strip()
+        _sp_path = _sp_fa
+        if _sp_path and not os.path.isabs(_sp_path) and not os.path.exists(_sp_path):
+            _sp_path = os.path.join(BASE_DIR, _sp_path)
+        if _sp_path and not os.path.exists(_sp_path):
+            warnings.append(
+                f"spike-in FASTA does not exist (verify before running): spike_in.fasta = {_sp_fa}")
     for w in warnings:
         print(f"[config warning] {w}")
 
@@ -460,6 +492,75 @@ _gates_thr = dict(GATES_DEFAULTS["thresholds"])
 _gates_thr.update({k: v for k, v in _gates_user_thr.items()
                    if k in GATES_DEFAULTS["thresholds"]})
 GATES = {"enabled": bool(_gates_cfg.get("enabled", False)), "thresholds": _gates_thr}
+
+# Spike-in normalization (v0.6, default off): second-pass alignment of the
+# unmapped read pairs against a spike-in genome, per-sample scale factors
+# (1e6 / spike-in mapped reads) and a QC summary; scale_bigwigs optionally
+# multiplies the bigWig signal tracks by the per-sample factors (group tracks
+# use the mean over their treat samples).
+SPIKE_IN_DEFAULTS = {"enabled": False, "fasta": "", "name": "spike",
+                     "scale_bigwigs": False}
+SPIKE_IN = dict(SPIKE_IN_DEFAULTS)
+SPIKE_IN.update((config.get("spike_in") or {}))
+
+# samtools flagstat count-line patterns (keep in sync with the compiled
+# copies in workflow/scripts/gates_summary.py and
+# workflow/scripts/spikein_summary.py — the standalone scripts duplicate
+# them on purpose). The "primary mapped" and "with itself and mate mapped"
+# lines must not match.
+_FLAGSTAT_TOTAL_RE = re.compile(r"^\s*(\d+)\s+\+\s+\d+\s+in total\b")
+_FLAGSTAT_MAPPED_RE = re.compile(r"^\s*(\d+)\s+\+\s+\d+\s+mapped(?:\s|\(|$)")
+
+
+def flagstat_counts(path):
+    """(total, mapped) from a samtools flagstat report; (0, 0) when the file
+    is unreadable. Run-time helper — call it from params lambdas only, the
+    flagstat files do not exist at parse time."""
+    total = mapped = 0
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                m = _FLAGSTAT_TOTAL_RE.match(line)
+                if m:
+                    total = int(m.group(1))
+                    continue
+                m = _FLAGSTAT_MAPPED_RE.match(line)
+                if m:
+                    mapped = int(m.group(1))
+    except OSError:
+        return 0, 0
+    return total, mapped
+
+
+def spike_scale_factor(path):
+    """Per-sample spike-in scale factor from one flagstat report:
+    1e6 / max(spike-in mapped reads, 1)."""
+    _, mapped = flagstat_counts(path)
+    return 1e6 / max(mapped, 1)
+
+
+def _spike_scaled_bedgraph_stage(factors, sorted_path):
+    """Shell snippet multiplying a sorted bedGraph value column by a spike-in
+    scale factor, in place (`factors` is averaged first: a group FE track
+    uses the mean over its treat samples). Returns a leading command plus a
+    newline/indent tail, so prepending it to the next command keeps the
+    rendered script byte-identical when the stage is off (empty string).
+    Built by concatenation: the pre-3.12 f-string parser rejects a doubled
+    brace directly after a format field, and the awk program needs literal
+    braces (params values are never re-formatted by snakemake)."""
+    factor = sum(factors) / len(factors)
+    scaled = sorted_path + ".scaled"
+    awk = ("awk 'BEGIN{OFS=\"\\t\"} NF>=4{print $1, $2, $3, $4*"
+           + format(factor, ".6f")
+           + "; next}{print}' "
+           + sorted_path + " > " + scaled
+           + " && mv " + scaled + " " + sorted_path + "\n        ")
+    return awk
+
+
+def _spike_scale_flag_arg(path):
+    """' --scaleFactor F' bamCoverage argument built from one sample flagstat."""
+    return f" --scaleFactor {spike_scale_factor(path):.6f}"
 
 # Signal tracks (v0.5 Phase 4): per-sample normalized coverage bigWigs and the
 # group-track measure; both optional, defaults keep today's FE-only behavior.
@@ -826,6 +927,9 @@ RESOURCE_DEFAULTS = {
     "organelle_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
     "gates_flagstat": {"threads": 1, "mem_mb": 2048, "runtime_min": 15},
     "qc_gates": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "spike_bowtie2_index": {"threads": 4, "mem_mb": 2048, "runtime_min": 30},
+    "spike_align": {"threads": 8, "mem_mb": 16384, "runtime_min": 240},
+    "spike_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
     "bigwig_sample": {"threads": 2, "mem_mb": 8192, "runtime_min": 60},
     "motif_enrichment": {"threads": 2, "mem_mb": 8192, "runtime_min": 720},
     "diffbind_sheet": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
@@ -948,6 +1052,15 @@ if GATES["enabled"]:
     GATES_TARGETS += [R(f"5.QC/gates/{s}_flagstat.txt") for s in SAMPLES]
     GATES_TARGETS += [R("5.QC/gates/gate_summary.tsv"),
                       R("5.QC/gates/gate_summary_mqc.tsv")]
+
+# Spike-in normalization targets (only aggregated when the stage is enabled;
+# the spike-in BAMs are produced transitively by the summary's flagstat
+# inputs, so only the QC deliverables are aggregated here).
+SPIKEIN_TARGETS = []
+if SPIKE_IN["enabled"]:
+    SPIKEIN_TARGETS += [R(f"5.QC/spike_in/{s}_idxstats.txt") for s in SAMPLES]
+    SPIKEIN_TARGETS += [R("5.QC/spike_in/Spikein_summary.tsv"),
+                        R("5.QC/spike_in/Spikein_summary_mqc.tsv")]
 
 # Software-version record: generated by the software_versions rule in
 # meta.smk (no input dependency, scheduled freely within the DAG); always

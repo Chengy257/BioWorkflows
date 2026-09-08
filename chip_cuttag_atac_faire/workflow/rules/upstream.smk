@@ -76,6 +76,8 @@ rule multiqc:
                                   if QC_ORGANELLE else []),
         gates_mqc=lambda wc: ([R("5.QC/gates/gate_summary_mqc.tsv")]
                               if GATES["enabled"] else []),
+        spikein_mqc=lambda wc: ([R("5.QC/spike_in/Spikein_summary_mqc.tsv")]
+                                if SPIKE_IN["enabled"] else []),
     output:
         R("2.cleandata/fastqc/multiqc/multiqc_report.html"),
     params:
@@ -124,10 +126,19 @@ rule bowtie2_mapping:
     output:
         bam=R("3.align/bowtie2/{sample}_sorted.bam"),
         bai=R("3.align/bowtie2/{sample}_sorted.bam.bai"),
+        # The --un-conc-gz pair is declared ALWAYS (not gated by spike_in) so
+        # the files carry a DAG edge: the spike_in stage re-aligns them
+        # against the spike-in genome. bowtie2 appends .1/.2 to the pattern
+        # with the trailing .gz replaced (verified on bowtie2 2.5.1), and it
+        # creates both files even when nothing failed to align.
+        unmapped1=R("3.align/bowtie2/{sample}_unmapped.fq.1.gz"),
+        unmapped2=R("3.align/bowtie2/{sample}_unmapped.fq.2.gz"),
     params:
         extra=config["bowtie2_extra"],
         min_mapq=config["min_mapq"],
         idx_prefix=lambda wc, input: str(input.index)[:-len(".1.bt2")],
+        # --un-conc-gz PATTERN (the produced files are the unmapped1/unmapped2
+        # outputs declared above)
         unmapped=lambda wc, output: os.path.join(os.path.dirname(str(output.bam)),
                                                  f"{wc.sample}_unmapped.fq.gz"),
     log:

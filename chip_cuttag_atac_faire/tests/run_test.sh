@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash tests/run_test.sh [--reads N] [--keep] [--real-run] \
-#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--help]
+#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--help]
 #     --reads     PE read pairs per sample, default 50000 (CI passes 2000)
 #     --keep      keep tests/data and tests/work (cleaned up by default)
 #     --real-run  run end-to-end and assert that outputs exist (default is
@@ -49,6 +49,8 @@ Usage:
                 one DiffBind contrast (dry-run; a real run needs DiffBind)
     --gates     scenario: enable the QC gate summary stage (qc.gates;
                 per-sample flagstat + PASS/WARN/FAIL gate table)
+    --spike-in  scenario: enable the spike-in normalization stage (spike_in;
+                synthetic spike-in reference + second-pass alignment)
     -h, --help  show this help
 
 Requires:
@@ -71,6 +73,7 @@ QC_FULL=0
 MOTIF=0
 DIFFBIND=0
 GATES=0
+SPIKE=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
@@ -84,6 +87,7 @@ while [[ $# -gt 0 ]]; do
         --motif)     MOTIF=1; shift ;;
         --diffbind)  DIFFBIND=1; shift ;;
         --gates)     GATES=1; shift ;;
+        --spike-in)  SPIKE=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
     esac
@@ -96,6 +100,7 @@ SCENARIO_ARGS=()
 [[ "$MOTIF" == 1 ]] && SCENARIO_ARGS+=(--motif)
 [[ "$DIFFBIND" == 1 ]] && SCENARIO_ARGS+=(--diffbind)
 [[ "$GATES" == 1 ]] && SCENARIO_ARGS+=(--gates)
+[[ "$SPIKE" == 1 ]] && SCENARIO_ARGS+=(--spike-in)
 
 echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS, scenario_args=${SCENARIO_ARGS[*]:-none})"
 command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exit 1; }
@@ -191,6 +196,13 @@ if [[ "$REAL_RUN" == 1 ]]; then
             "results/5.QC/gates/gate_summary_mqc.tsv"
         )
     fi
+    if [[ "$SPIKE" == 1 ]]; then
+        EXPECTED+=(
+            "results/3.align/spike_in/chip_treat_rep1_sorted.bam"
+            "results/5.QC/spike_in/Spikein_summary.tsv"
+            "results/5.QC/spike_in/Spikein_summary_mqc.tsv"
+        )
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -216,6 +228,9 @@ else
     fi
     if [[ "$GATES" == 1 ]]; then
         DAG_RULES+=(gates_flagstat qc_gates)
+    fi
+    if [[ "$SPIKE" == 1 ]]; then
+        DAG_RULES+=(spike_bowtie2_index spike_align spike_summary)
     fi
     for rule in "${DAG_RULES[@]}"; do
         if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then

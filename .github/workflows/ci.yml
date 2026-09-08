@@ -78,6 +78,8 @@ jobs:
         run: bash tests/run_test.sh --reads 2000 --diffbind
       - name: QC gates scenario dry-run
         run: bash tests/run_test.sh --reads 2000 --gates
+      - name: Spike-in scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --spike-in
 
   seclip-seq:
     name: seclip-seq (unit tests + lint + dry-run regression)

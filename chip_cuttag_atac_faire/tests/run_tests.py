@@ -372,6 +372,52 @@ vc_case("gates non-numeric rsc_min reported",
         lambda c: c["qc"].__setitem__("gates", {"thresholds": {"rsc_min": "high"}}),
         ["qc.gates.thresholds.rsc_min"])
 
+# --- v0.6 keys: spike_in ---
+vc_case("valid spike_in block accepted (missing fasta file warns only)",
+        lambda c: c.update({"spike_in": {"enabled": True, "fasta": "/nonexistent/spike.fa",
+                                         "name": "lambda", "scale_bigwigs": True}}),
+        [], expect_error=False)
+vc_case("spike_in block is optional (legacy configs stay valid)",
+        lambda c: c.pop("spike_in", None), [], expect_error=False)
+vc_case("spike_in of wrong type reported",
+        lambda c: c.__setitem__("spike_in", "on"), ["spike_in must be a mapping"])
+vc_case("non-boolean spike_in.enabled reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": "yes"}), ["spike_in.enabled"])
+vc_case("non-boolean spike_in.scale_bigwigs reported",
+        lambda c: c.__setitem__("spike_in", {"scale_bigwigs": "yes"}),
+        ["spike_in.scale_bigwigs"])
+vc_case("spike_in enabled without fasta reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": ""}),
+        ["spike_in.fasta is required"])
+vc_case("spike_in empty name reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": "spike.fa",
+                                             "name": "  "}),
+        ["spike_in.name"])
+vc_case("spike_in non-string fasta reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": 3}),
+        ["spike_in.fasta must be a string"])
+
+# Placeholder warning: a "/path/to/"-style fasta warns but never aborts.
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+
+def _vc_stdout(mutate):
+    cfg = copy.deepcopy(GOOD_CFG)
+    mutate(cfg)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        validate_config(cfg)
+    return buf.getvalue()
+
+
+_out = _vc_stdout(lambda c: c.update(
+    {"spike_in": {"enabled": True, "fasta": "/path/to/spike.fa", "name": "lambda",
+                  "scale_bigwigs": False}}))
+check("spike_in placeholder fasta warns but does not abort",
+      "[config warning]" in _out and "spike-in FASTA does not exist" in _out
+      and "/path/to/spike.fa" in _out, _out[:200])
+
 print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
 check("regex: exact match (with escaping)",
@@ -546,6 +592,11 @@ if HAS_YAML:
           and {"mapping_rate_min", "dup_rate_max", "frip_min", "nsc_min",
                "rsc_min", "tss_min", "organelle_max"}
           <= set(cfg["qc"].get("gates", {}).get("thresholds", {})))
+    check("config: spike_in block present and default-off",
+          cfg.get("spike_in", {}).get("enabled") is False
+          and cfg.get("spike_in", {}).get("scale_bigwigs") is False
+          and isinstance(cfg.get("spike_in", {}).get("fasta"), str)
+          and isinstance(cfg.get("spike_in", {}).get("name"), str))
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
@@ -555,6 +606,9 @@ if HAS_YAML:
     check("resources.yaml: every rule entry has threads/mem_mb/runtime_min", not _bad_res, str(_bad_res))
     check("resources.yaml: gates rules declared",
           {"gates_flagstat", "qc_gates"} <= set(res_cfg.get("resources") or {}))
+    check("resources.yaml: spike_in rules declared",
+          {"spike_bowtie2_index", "spike_align", "spike_summary"}
+          <= set(res_cfg.get("resources") or {}))
 
 print("== 8. Per-rule resource declarations ==")
 # --- resource helpers: extract the real source from common.smk, inject config ---
@@ -682,6 +736,26 @@ try:
               f"rc2={_gen2.returncode} stderr2={_gen2.stderr[-200:]}")
     else:
         check("determinism: genome.fa md5 identical across two runs with the same args", False, "first generation failed; skipped")
+
+    # --spike-in scenario: synthetic spike-in reference + config splice
+    _gen_out3 = tempfile.mkdtemp(prefix="testdata_spike_")
+    try:
+        _gen3 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out3,
+                                "--reads", "200", "--spike-in"],
+                               capture_output=True, text=True, timeout=300)
+        _spike_fa = os.path.join(_gen_out3, "ref", "spike.fa")
+        _cfg_path3 = os.path.join(_gen_out3, "config.yaml")
+        _cfg_text = open(_cfg_path3, encoding="utf-8").read() if os.path.exists(_cfg_path3) else ""
+        _spike_hdrs = []
+        if os.path.exists(_spike_fa):
+            with open(_spike_fa, encoding="ascii") as fh:
+                _spike_hdrs = [line[1:].strip() for line in fh if line.startswith(">")]
+        check("generator --spike-in: ref/spike.fa written with 2 contigs and the config block spliced",
+              _gen3.returncode == 0 and _spike_hdrs == ["spike_ctg1", "spike_ctg2"]
+              and "spike_in:" in _cfg_text and '"ref/spike.fa"' in _cfg_text,
+              f"rc={_gen3.returncode} hdrs={_spike_hdrs} stderr={_gen3.stderr[-200:]}")
+    finally:
+        shutil.rmtree(_gen_out3, ignore_errors=True)
 except Exception as exc:  # generator-group exceptions must not abort the remaining summary
     check("generator assertion group aborted abnormally", False, repr(exc))
 finally:
@@ -951,6 +1025,30 @@ check("gates_summary: --thresholds overrides flip a FAIL into a WARN",
       and _gs2[2] == "c\tg2\t0.5000\tNA\tNA\tNA\tNA\tNA\tNA\t-\t"
                      "dup_rate,frip,nsc,rsc,tss_enrichment,organelle_fraction\tWARN",
       f"rc={_r2.returncode} rows={_gs2}")
+
+# --- spikein_summary.py: flagstat math, NA rows for missing files, mqc header ---
+_spd = os.path.join(_stmp, "spike_in")
+os.makedirs(_spd, exist_ok=True)
+_wtext(os.path.join(_spd, "s1_flagstat.txt"), _flagstat(1000, 400))
+_wtext(os.path.join(_spd, "s2_flagstat.txt"), _flagstat(800, 0))
+_sp_out = os.path.join(_stmp, "spike.tsv")
+_sp_mqc = os.path.join(_stmp, "spike_mqc.tsv")
+_r = _run_py("spikein_summary.py",
+             ["--samples", "s1", "s2", "s3", "--spike-dir", _spd,
+              "--name", "lambda", "--out", _sp_out, "--mqc", _sp_mqc])
+_sp = open(_sp_out, encoding="utf-8").read().splitlines() if os.path.exists(_sp_out) else []
+check("spikein_summary: rate/scale-factor math and NA rows for missing flagstats",
+      _r.returncode == 0 and len(_sp) == 4
+      and _sp[0] == "sample\tspike_total\tspike_mapped\tspike_rate\tscale_factor"
+      and _sp[1] == "s1\t1000\t400\t0.4000\t2500.0000"
+      and _sp[2] == "s2\t800\t0\t0.0000\t1000000.0000"
+      and _sp[3] == "s3\tNA\tNA\tNA\tNA",
+      f"rc={_r.returncode} rows={_sp}")
+_sp_mqc_text = open(_sp_mqc, encoding="utf-8").read() if os.path.exists(_sp_mqc) else ""
+check("spikein_summary: mqc wrapper carries the configured spike name",
+      "# id: 'spikein_summary_table'" in _sp_mqc_text
+      and "Spike-in normalization (lambda)" in _sp_mqc_text,
+      f"mqc={_sp_mqc_text[:200]}")
 shutil.rmtree(_stmp, ignore_errors=True)
 
 print()
