@@ -52,10 +52,13 @@ def extract_workflow_functions():
     m = re.search(r"\n(?=def |# -|BAM_TARGETS)", block_b[len("def _group_regex("):])
     if m:
         block_b = block_b[: len("def _group_regex(") + m.start() + 1]
+    # Replicate/QC pure helpers (v0.5): from _unordered_pairs to the next divider
+    block_c = segment("def _unordered_pairs(", ["\n# -----"])
 
     ns = {"csv": csv, "os": os, "re": re, "WorkflowError": WorkflowError,
           "BASE_DIR": REPO}
-    exec(compile(block_a + "\n\n" + block_b, "common.smk(extracted)", "exec"), ns)
+    exec(compile(block_a + "\n\n" + block_b + "\n\n" + block_c,
+                 "common.smk(extracted)", "exec"), ns)
     return ns
 
 
@@ -63,6 +66,11 @@ WF = extract_workflow_functions()
 load_sample_table = WF["load_sample_table"]
 _resolve_sample_table = WF["_resolve_sample_table"]
 _group_regex = WF["_group_regex"]
+_unordered_pairs = WF["_unordered_pairs"]
+idr_pair_slug = WF["idr_pair_slug"]
+parse_idr_pair_slug = WF["parse_idr_pair_slug"]
+_group_calls_narrow = WF["_group_calls_narrow"]
+_is_organelle_contig = WF["_is_organelle_contig"]
 
 
 def write_csv(rows):
@@ -170,8 +178,14 @@ GOOD_CFG = {
     "region_flank": 3000,
     "dedup": {"chip": True, "cuttag": False, "atac": True, "faire": True},
     "peak": {"keepdup": "all", "qvalue": 0.05, "broad_cutoff": 0.05,
-             "atac": {"mode": "bampe", "shift": -100, "extsize": 200}},
-    "qc": {"nsc_rsc": False, "frip": True, "deeptools": True},
+             "atac": {"mode": "bampe", "shift": -100, "extsize": 200},
+             "replicate": {"enabled": False, "qvalue": 0.01,
+                           "idr_threshold": 0.05, "idr_rank": "p.value",
+                           "consensus_min_replicates": 2, "frip_on": "pooled"}},
+    "blacklist": "",
+    "qc": {"nsc_rsc": False, "frip": True, "deeptools": True,
+           "tss": False, "organelle": False,
+           "organelle_patterns": ["chrc", "chrm"]},
     "trim": {"quality": 25, "stringency": 3, "error_rate": 0.1, "extra": ""},
 }
 
@@ -219,6 +233,42 @@ def _two_errors(c):
 vc_case("multiple errors aggregated in one report",
         _two_errors, ["2 issues", "gtf", "dedup.atac"])
 
+# --- v0.5 keys: peak.replicate / blacklist / qc.tss / qc.organelle ---
+vc_case("replicate block is optional (legacy configs stay valid)",
+        lambda c: c["peak"].pop("replicate"), [], expect_error=False)
+vc_case("bad idr_rank reported",
+        lambda c: c["peak"]["replicate"].__setitem__("idr_rank", "pvalue"),
+        ["idr_rank"])
+vc_case("idr_threshold out of range reported",
+        lambda c: c["peak"]["replicate"].__setitem__("idr_threshold", 5),
+        ["peak.replicate.idr_threshold"])
+vc_case("replicate qvalue non-numeric reported",
+        lambda c: c["peak"]["replicate"].__setitem__("qvalue", "x"),
+        ["peak.replicate.qvalue"])
+vc_case("consensus_min_replicates below 2 reported",
+        lambda c: c["peak"]["replicate"].__setitem__("consensus_min_replicates", 1),
+        ["consensus_min_replicates"])
+vc_case("bad frip_on reported",
+        lambda c: c["peak"]["replicate"].__setitem__("frip_on", "idr"),
+        ["frip_on"])
+vc_case("frip_on=consensus without enabled reported",
+        lambda c: c["peak"]["replicate"].__setitem__("frip_on", "consensus"),
+        ["frip_on=consensus requires peak.replicate.enabled"])
+vc_case("frip_on=consensus with enabled accepted",
+        lambda c: (c["peak"]["replicate"].__setitem__("enabled", True),
+                   c["peak"]["replicate"].__setitem__("frip_on", "consensus")),
+        [], expect_error=False)
+vc_case("replicate block of wrong type reported",
+        lambda c: c["peak"].__setitem__("replicate", "on"),
+        ["peak.replicate must be a mapping"])
+vc_case("non-boolean qc.tss reported",
+        lambda c: c["qc"].__setitem__("tss", "yes"), ["qc.tss"])
+vc_case("organelle_patterns of wrong shape reported",
+        lambda c: c["qc"].__setitem__("organelle_patterns", "chrc"),
+        ["organelle_patterns"])
+vc_case("non-string blacklist reported",
+        lambda c: c.__setitem__("blacklist", 3), ["blacklist must be a string"])
+
 print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
 check("regex: exact match (with escaping)",
@@ -226,6 +276,30 @@ check("regex: exact match (with escaping)",
 check("regex: unlisted groups and variants do not match",
       not re.fullmatch(rx, "other") and not re.fullmatch(rx, "atacXleaf"))
 check("regex: empty list never matches", re.fullmatch(_group_regex([]), "anything") is None)
+
+print("== 5b. Replicate/QC helper functions (real source) ==")
+check("pairs: unordered pair enumeration order and count",
+      _unordered_pairs(["a", "b", "c"]) == [("a", "b"), ("a", "c"), ("b", "c")])
+check("pairs: empty and singleton lists yield no pair",
+      _unordered_pairs([]) == [] and _unordered_pairs(["a"]) == [])
+slug = idr_pair_slug("rep1", "rep2")
+check("idr slug: round-trips through the parser",
+      slug == "rep1__vs__rep2" and parse_idr_pair_slug(slug) == ("rep1", "rep2"))
+check("group routing: atac/faire always narrow",
+      _group_calls_narrow({"seqtype": "atac", "peak_type": "none"})
+      and _group_calls_narrow({"seqtype": "faire", "peak_type": "none"}))
+check("group routing: chip by peak_type",
+      _group_calls_narrow({"seqtype": "chip", "peak_type": "narrow"})
+      and not _group_calls_narrow({"seqtype": "chip", "peak_type": "broad"}))
+check("organelle: short patterns match exactly, not as substrings",
+      _is_organelle_contig("ChrC", ["chrc", "chrm"])
+      and _is_organelle_contig("chrM", ["chrc", "chrm"])
+      and not _is_organelle_contig("chrUn_ptg0001l", ["pt", "mt"]))
+check("organelle: long patterns match as substrings",
+      _is_organelle_contig("mitochondrion_genome", ["mitochondr"])
+      and _is_organelle_contig("Oschloroplast_fake", ["chloroplast"]))
+check("organelle: no match on plain chromosomes",
+      not _is_organelle_contig("chr1", ["chrc", "chrm", "pt", "mt"]))
 
 print("== 6. mqc shell rule bodies executed for real (snakemake-style format rendering + bash) ==")
 import subprocess  # noqa: E402
@@ -348,9 +422,17 @@ if HAS_YAML:
     check("config: dedup covers all four assays",
           set(cfg["dedup"]) == {"chip", "cuttag", "atac", "faire"})
     check("config: peak sub-keys present",
-          {"keepdup", "qvalue", "broad_cutoff", "atac"} <= set(cfg["peak"]))
+          {"keepdup", "qvalue", "broad_cutoff", "atac", "replicate"} <= set(cfg["peak"]))
+    check("config: replicate sub-keys present",
+          {"enabled", "qvalue", "idr_threshold", "idr_rank",
+           "consensus_min_replicates", "frip_on"} <= set(cfg["peak"]["replicate"]))
+    check("config: blacklist key present and defaults to disabled",
+          cfg.get("blacklist", None) == "")
     check("config: qc switches present",
-          {"nsc_rsc", "frip", "deeptools"} <= set(cfg["qc"]))
+          {"nsc_rsc", "frip", "deeptools", "tss", "organelle"} <= set(cfg["qc"]))
+    check("config: new QC switches default to off",
+          cfg["qc"]["tss"] is False and cfg["qc"]["organelle"] is False
+          and cfg["peak"]["replicate"]["enabled"] is False)
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
@@ -490,6 +572,123 @@ except Exception as exc:  # generator-group exceptions must not abort the remain
 finally:
     shutil.rmtree(_gen_out1, ignore_errors=True)
     shutil.rmtree(_gen_out2, ignore_errors=True)
+
+print("== 10. v0.5 stage scripts (tss_from_bed / tss_score / organelle_summary / replicate_summary) ==")
+_stmp = tempfile.mkdtemp(prefix="v05_scripts_")
+
+
+def _run_py(script, args, cwd=None):
+    return subprocess.run([sys.executable, os.path.join(REPO, "workflow", "scripts", script)] + args,
+                          capture_output=True, text=True, timeout=60, cwd=cwd)
+
+
+# --- tss_from_bed.py: strand-aware derivation, comment skipping, BED4 error ---
+_bed = os.path.join(_stmp, "genes.bed")
+with open(_bed, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("# comment line skipped\n")
+    fh.write('track name="also skipped"\n')
+    fh.write("chr1\t1000\t2000\tgene1\t0\t+\n")
+    fh.write("chr2\t3000\t4000\tgene2\t0\t-\n")
+_tss = os.path.join(_stmp, "tss.bed")
+_r = _run_py("tss_from_bed.py", [_bed, _tss])
+_tss_lines = open(_tss, encoding="utf-8").read().splitlines() if os.path.exists(_tss) else []
+check("tss_from_bed: exits 0, skips comments, 1-bp TSS per strand",
+      _r.returncode == 0
+      and _tss_lines == ["chr1\t1000\t1001", "chr2\t3999\t4000"],
+      f"rc={_r.returncode} lines={_tss_lines}")
+_bed4 = os.path.join(_stmp, "bed4.bed")
+with open(_bed4, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("chr1\t1000\t2000\tgene1\n")
+_r = _run_py("tss_from_bed.py", [_bed4, os.path.join(_stmp, "x.bed")])
+check("tss_from_bed: BED4 input rejected with a clear error",
+      _r.returncode != 0 and "BED6 required" in _r.stderr, f"rc={_r.returncode}")
+
+# --- tss_score.py: profile aggregation, baseline normalization, max = TSSE ---
+# 40 bins: outer 10 bins on each side are the baseline (all 1.0); the bin at
+# index 20 spikes to 5.0 (bin 19 stays 1.0) -> TSSE = 5.0, center = mean(1,5) = 3.0
+_vals = [1.0] * 40
+_vals[20] = 5.0
+_mat = os.path.join(_stmp, "matrix.txt")
+with open(_mat, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("@" + '{"upstream": [2000], "downstream": [2000]}\n')
+    for _ in range(2):  # two identical TSS rows aggregate to the same profile
+        fh.write("chr1\t100\t101\tg\t0\t+\t" + "\t".join(str(v) for v in _vals) + "\n")
+_sc = os.path.join(_stmp, "score.tsv")
+_r = _run_py("tss_score.py", [_mat, "sampleA", _sc])
+_sc_line = open(_sc, encoding="utf-8").read().strip() if os.path.exists(_sc) else ""
+check("tss_score: TSSE is the normalized profile max, center the TSS bins",
+      _r.returncode == 0 and _sc_line == "sampleA\t5.0000\t3.0000\t1.000000\t2",
+      f"rc={_r.returncode} line={_sc_line!r}")
+_zeromat = os.path.join(_stmp, "zero.txt")
+with open(_zeromat, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("@{}\n")
+    fh.write("chr1\t100\t101\tg\t0\t+\t" + "\t".join("0" for _ in range(40)) + "\n")
+_r = _run_py("tss_score.py", [_zeromat, "sampleB", _sc])
+check("tss_score: zero baseline yields NA instead of a division by zero",
+      _r.returncode == 0 and open(_sc, encoding="utf-8").read().startswith("sampleB\tNA\tNA\t"),
+      f"rc={_r.returncode}")
+
+# --- organelle_summary.py: fractions, '*' row ignored, pattern matching ---
+for _s, _rows in [("s1", [("chr1", 100000, 800, 5), ("ChrC", 120000, 150, 1),
+                          ("ChrM", 90000, 50, 0), ("*", 0, 0, 40)]),
+                  ("s2", [("chr1", 100000, 900, 4), ("chr2", 100000, 100, 2)])]:
+    with open(os.path.join(_stmp, f"{_s}_idxstats.tsv"), "w",
+              newline="\n", encoding="utf-8") as fh:
+        for row in _rows:
+            fh.write("\t".join(str(x) for x in row) + "\n")
+_os = os.path.join(_stmp, "org.tsv")
+_om = os.path.join(_stmp, "org_mqc.tsv")
+_r = _run_py("organelle_summary.py",
+             ["--patterns", "chrc,chrm", "--out", _os, "--mqc", _om,
+              os.path.join(_stmp, "s1_idxstats.tsv"),
+              os.path.join(_stmp, "s2_idxstats.tsv")])
+_org = open(_os, encoding="utf-8").read().splitlines() if os.path.exists(_os) else []
+check("organelle: fractions over mapped reads, '*' ignored, per-contig detail",
+      _r.returncode == 0 and len(_org) == 3
+      and _org[1].startswith("s1\t1000\t200\t0.2000\t")
+      and "ChrC:150" in _org[1] and "ChrM:50" in _org[1]
+      and _org[2].startswith("s2\t1000\t0\t0.0000\t-"),
+      f"rc={_r.returncode} rows={_org}")
+check("organelle: mqc wrapper carries the MultiQC header",
+      os.path.exists(_om) and "# id: 'organelle_table'" in open(_om, encoding="utf-8").read())
+
+# --- replicate_summary.py: modes, counts, retained fraction ---
+for _rel in ("4.peak/replicates/g1", "4.peak"):
+    os.makedirs(os.path.join(_stmp, "results", _rel), exist_ok=True)
+
+
+def _w(path, n):
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        fh.writelines(f"chr1\t{i}\t{i + 10}\n" for i in range(n))
+
+
+_w(os.path.join(_stmp, "results", "4.peak", "replicates", "g1", "a_peaks.narrowPeak"), 10)
+_w(os.path.join(_stmp, "results", "4.peak", "replicates", "g1", "b_peaks.narrowPeak"), 20)
+_w(os.path.join(_stmp, "results", "4.peak", "g1_IDR_peaks.narrowPeak"), 5)
+os.makedirs(os.path.join(_stmp, "results", "4.peak", "replicates", "g2"), exist_ok=True)
+_w(os.path.join(_stmp, "results", "4.peak", "replicates", "g2", "h_peaks.broadPeak"), 8)
+_w(os.path.join(_stmp, "results", "4.peak", "g2_peaks.broadPeak"), 8)
+_rep_samples = os.path.join(_stmp, "samples.csv")
+with open(_rep_samples, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("sample_id,role,group,seqtype,layout,peak_type\n")
+    fh.write("a,treat,g1,chip,PE,narrow\n")
+    fh.write("b,treat,g1,chip,PE,narrow\n")
+    fh.write("ctl,control,g1,chip,PE,narrow\n")
+    fh.write("h,treat,g2,chip,PE,broad\n")
+_rs = os.path.join(_stmp, "rep.tsv")
+_rm = os.path.join(_stmp, "rep_mqc.tsv")
+_r = _run_py("replicate_summary.py",
+             ["--samples", _rep_samples, "--results-dir", os.path.join(_stmp, "results"),
+              "--out", _rs, "--mqc", _rm])
+_rep = open(_rs, encoding="utf-8").read().splitlines() if os.path.exists(_rs) else []
+check("replicate_summary: idr mode rows with counts and retained fraction",
+      _r.returncode == 0 and len(_rep) == 3
+      and _rep[1] == "g1\tchip\tnarrow\t2\tidr\ta=10;b=20\t5\t0.3333"
+      and _rep[2] == "g2\tchip\tbroad\t1\tpooled\th=8\t8\t1.0000",
+      f"rc={_r.returncode} rows={_rep}")
+check("replicate_summary: mqc wrapper carries the MultiQC header",
+      os.path.exists(_rm) and "# id: 'replicate_summary_table'" in open(_rm, encoding="utf-8").read())
+shutil.rmtree(_stmp, ignore_errors=True)
 
 print()
 if FAILED:

@@ -68,6 +68,10 @@ jobs:
         run: bash tests/lint.sh
       - name: Dry-run regression (synthetic data)
         run: bash tests/run_test.sh --reads 2000
+      - name: Replicate/IDR scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --replicate
+      - name: Extended QC scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --qc-full
 
   seclip-seq:
     name: seclip-seq (unit tests + lint + dry-run regression)

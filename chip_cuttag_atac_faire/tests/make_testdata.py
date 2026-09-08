@@ -27,6 +27,7 @@ Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
 
 Usage:
     python tests/make_testdata.py --outdir <dir> [--reads 50000] [--seed 42]
+        [--replicate] [--qc-full]
 """
 import argparse
 import gzip
@@ -52,7 +53,7 @@ ERROR_RATE = 0.005        # substitution-type sequencing error rate (a few error
 SEED = 42                 # default random seed
 
 # Sample set: (sample_id, role, group, seqtype, peak_type)
-# Names and group names all satisfy the workflow's _NAME_RE (alphanumeric plus
+# Names and group names all satisfy the workflow's _NAME_RE (alphanumerics plus
 # . _ - , no consecutive underscores __)
 SAMPLES = [
     ("chip_treat_rep1", "treat",   "g1", "chip", "narrow"),
@@ -61,6 +62,41 @@ SAMPLES = [
     ("atac_treat_rep1", "treat",   "g2", "atac", "none"),
     ("atac_treat_rep2", "treat",   "g2", "atac", "none"),
 ]
+
+# Extra group for the --replicate scenario: a broad chip group with two
+# treats (exercises callpeak_broad_replicate + multiinter consensus on top
+# of the narrow IDR already covered by g1/g2 being two-treat groups).
+BROAD_SAMPLES = [
+    ("hist_treat_rep1", "treat",   "g3", "chip", "broad"),
+    ("hist_treat_rep2", "treat",   "g3", "chip", "broad"),
+    ("hist_control",    "control", "g3", "chip", "broad"),
+]
+
+# Config insertions for the scenario flags (see write_config): valid YAML
+# sub-blocks spliced into the base CONFIG_YAML (YAML forbids duplicate
+# top-level keys, so the blocks are inserted under peak:/qc: instead of
+# redefining them).
+PEAK_REPLICATE_TAIL = """\
+  replicate:
+    enabled: true
+    qvalue: 0.01
+    idr_threshold: 0.05
+    idr_rank: "p.value"
+    consensus_min_replicates: 2
+    frip_on: "pooled"
+"""
+
+QC_FULL_TAIL = """\
+  tss: true
+  organelle: true
+  organelle_patterns: [chrc, chrm]
+"""
+
+QC_FULL_BLACKLIST = '\n# ---------- Extended QC (--qc-full scenario) ----------\nblacklist: "ref/blacklist.bed"\n'
+
+# Synthetic blacklist for --qc-full: overlaps the first pre-seeded peak
+# region so a real run can observe peaks being removed.
+BLACKLIST_BED = "chr1\t19800\t20600\n"
 
 BASES = "ACGT"
 _COMP = str.maketrans("ACGT", "TGCA")
@@ -227,7 +263,7 @@ def sample_fragment(chroms, rng, role):
     return chroms[chrom][start:start + frag_len]
 
 
-def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
+def write_fastqs(outdir, chroms, genes, reads_per_sample, seed, samples):
     """Generate PE reads per sample (1.rawdata/{sample}_1.fq.gz and _2.fq.gz).
 
     Each sample uses its own rng (seed + sample index), decoupled from sample
@@ -237,7 +273,7 @@ def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
     raw_dir = os.path.join(outdir, "1.rawdata")
     os.makedirs(raw_dir, exist_ok=True)
 
-    for k, (sid, role, _grp, _seqtype, _pt) in enumerate(SAMPLES):
+    for k, (sid, role, _grp, _seqtype, _pt) in enumerate(samples):
         rng = random.Random(seed + k)
         fq1 = gzip_text(os.path.join(raw_dir, f"{sid}_1.fq.gz"))
         fq2 = gzip_text(os.path.join(raw_dir, f"{sid}_2.fq.gz"))
@@ -254,20 +290,39 @@ def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
             fq2.close()
 
 
-def write_samples(outdir):
+def write_samples(outdir, samples):
     """Write the 6-column sample table samples.csv (header matches the workflow's REQUIRED_COLUMNS)."""
     path = os.path.join(outdir, "samples.csv")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("sample_id,role,group,seqtype,layout,peak_type\n")
-        for sid, role, grp, seqtype, pt in SAMPLES:
+        for sid, role, grp, seqtype, pt in samples:
             fh.write(f"{sid},{role},{grp},{seqtype},PE,{pt}\n")
 
 
-def write_config(outdir):
-    """Write the test config.yaml (relative paths, consumed via run.sh -c)."""
+def write_blacklist(outdir):
+    """Write the --qc-full synthetic blacklist (overlaps the first peak region)."""
+    path = os.path.join(outdir, "ref", "blacklist.bed")
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        fh.write(BLACKLIST_BED)
+
+
+def write_config(outdir, replicate=False, qc_full=False):
+    """Write the test config.yaml (relative paths, consumed via run.sh -c).
+
+    Scenario flags splice the matching sub-blocks into the base config."""
+    text = CONFIG_YAML
+    if replicate:
+        anchor = "    extsize: 200\n"
+        assert anchor in text, "base config anchor for the replicate block moved"
+        text = text.replace(anchor, anchor + PEAK_REPLICATE_TAIL, 1)
+    if qc_full:
+        anchor = "  deeptools: true\n"
+        assert anchor in text, "base config anchor for the qc-full block moved"
+        text = text.replace(anchor, anchor + QC_FULL_TAIL, 1)
+        text += QC_FULL_BLACKLIST
     path = os.path.join(outdir, "config.yaml")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(CONFIG_YAML)
+        fh.write(text)
 
 
 def main():
@@ -280,19 +335,30 @@ def main():
                     help="PE read pairs per sample (default 50000; CI regression uses 2000)")
     ap.add_argument("--seed", type=int, default=SEED,
                     help=f"random seed (default {SEED}, for reproducibility)")
+    ap.add_argument("--replicate", action="store_true",
+                    help="add a 2-treat broad chip group (g3) and enable the "
+                         "replicate-aware peak stage (IDR + consensus scenario)")
+    ap.add_argument("--qc-full", action="store_true", dest="qc_full",
+                    help="enable tss/organelle QC and the synthetic blacklist "
+                         "(extended QC scenario)")
     args = ap.parse_args()
     if args.reads < 1:
         ap.error("--reads must be a positive integer")
 
+    samples = SAMPLES + (BROAD_SAMPLES if args.replicate else [])
     os.makedirs(args.outdir, exist_ok=True)
     chroms, genes = build_reference(args.seed)
     write_reference(args.outdir, chroms, genes)
-    write_fastqs(args.outdir, chroms, genes, args.reads, args.seed)
-    write_samples(args.outdir)
-    write_config(args.outdir)
+    write_fastqs(args.outdir, chroms, genes, args.reads, args.seed, samples)
+    write_samples(args.outdir, samples)
+    write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full)
+    if args.qc_full:
+        write_blacklist(args.outdir)
 
     print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
-          f"{len(SAMPLES)} samples x {args.reads} PE read pairs (seed={args.seed})")
+          f"{len(samples)} samples x {args.reads} PE read pairs (seed={args.seed}"
+          + (", +replicate" if args.replicate else "")
+          + (", +qc-full" if args.qc_full else "") + ")")
     print(f"[make_testdata] output root: {os.path.abspath(args.outdir)}")
 
 
