@@ -1145,7 +1145,8 @@ FOOTPRINT_TARGETS = []
 if FOOTPRINT["enabled"]:
     FOOTPRINT_TARGETS += [R(f"7.footprint/{g}/ataccorrect/{g}_corrected.bw")
                           for g in FOOTPRINT_GROUPS]
-    FOOTPRINT_TARGETS += [R(f"7.footprint/{g}/scorebigwig") for g in FOOTPRINT_GROUPS]
+    FOOTPRINT_TARGETS += [R(f"7.footprint/{g}/scorebigwig/{g}_footprint_scores.bw")
+                          for g in FOOTPRINT_GROUPS]
     if FOOTPRINT["bindetect"]:
         FOOTPRINT_TARGETS += [R(f"7.footprint/{g}/bindetect") for g in FOOTPRINT_GROUPS]
 

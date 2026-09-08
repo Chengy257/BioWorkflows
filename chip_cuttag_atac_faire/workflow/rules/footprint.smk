@@ -8,9 +8,9 @@
 #      reference genome over the group's final peak set
 #      (group_final_peak_file(): IDR/consensus when the replicate stage is on,
 #      pooled otherwise) -> {group}_corrected.bw plus QC plots,
-#   2. ScoreBigwig: footprint scores for every motif in footprint.motifs
-#      (JASPAR pfm / HOMER / MEME formats; TOBIAS reads multiple motifs from
-#      one file) -> one footprint-score bigWig per motif,
+#   2. ScoreBigwig: footprint scores over the same peak regions from the
+#      corrected cutsite track (TOBIAS 0.8 API: --signal/--regions/--output;
+#      motif scanning is NOT part of this step) -> one score bigWig,
 #   3. BINDetect (optional, footprint.bindetect): per-TF binding detection
 #      over the same corrected track and peak set (--skip-excel keeps the
 #      output dependency-free).
@@ -49,7 +49,7 @@ rule footprint_ataccorrect:
         """
         samtools merge -f -@ {threads} {params.tmp_bam} {input.bams} > {log} 2>&1
         samtools index -@ {threads} {params.tmp_bam}
-        {params.tobias} ATACorrect --bam {params.tmp_bam} --peakfile {input.peaks} \
+        {params.tobias} ATACorrect --bam {params.tmp_bam} --peaks {input.peaks} \
             --genome {input.genome} --outdir {params.outdir} --prefix {wildcards.group} \
             --cores {threads} >> {log} 2>&1
         rm -f {params.tmp_bam} {params.tmp_bam}.bai
@@ -57,15 +57,19 @@ rule footprint_ataccorrect:
 
 
 rule footprint_scorebigwig:
+    # TOBIAS 0.8 API: ScoreBigwig scores cutsite tracks over regions
+    # (--signal/--regions/--output); it takes no motif input — motif scanning
+    # lives in BINDetect (footprint.motifs feeds that rule)
     input:
         bw=R("7.footprint/{group}/ataccorrect/{group}_corrected.bw"),
-        motifs=FOOTPRINT["motifs"],
+        peaks=lambda wc: group_final_peak_file(wc.group),
     output:
-        directory(R("7.footprint/{group}/scorebigwig")),
+        R("7.footprint/{group}/scorebigwig/{group}_footprint_scores.bw"),
     wildcard_constraints:
         group=_group_regex(FOOTPRINT_GROUPS),
     params:
         tobias=TOBIAS_BIN,
+        outdir=lambda wc, output: os.path.dirname(str(output)),
     log:
         R("logs/footprint/{group}_scorebigwig.log"),
     threads: rthreads("footprint_scorebigwig")  # ScoreBigwig runs single-threaded
@@ -75,8 +79,9 @@ rule footprint_scorebigwig:
         runtime_sec=rruntime_sec("footprint_scorebigwig"),
     shell:
         """
-        {params.tobias} ScoreBigwig --bigwig {input.bw} --motifs {input.motifs} \
-            --outdir {output} > {log} 2>&1
+        mkdir -p {params.outdir}
+        {params.tobias} ScoreBigwig --signal {input.bw} --regions {input.peaks} \
+            --output {output} > {log} 2>&1
         """
 
 

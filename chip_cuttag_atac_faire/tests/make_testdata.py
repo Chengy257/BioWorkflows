@@ -428,17 +428,19 @@ def write_spike_reference(outdir, seed):
 
 def write_motif_pfms(outdir, seed):
     """Write the --footprint synthetic motif PFM file ref/motifs.pfm
-    (JASPAR-style: "> motif_i\\ttf_i" header + A/C/G/T count rows; deterministic
-    from its own seeded rng, widths per MOTIF_WIDTHS)."""
+    (JASPAR-style: "> motif_i\\ttf_i" header + A/C/G/T count rows with
+    SPACE-separated counts — TOBIAS's JASPAR parser rejects the
+    bracket+comma download form, WSL real-run finding 2026-09-09;
+    deterministic from its own seeded rng, widths per MOTIF_WIDTHS)."""
     rng = random.Random(seed + 202)
     path = os.path.join(outdir, "ref", "motifs.pfm")
     with open(path, "w", encoding="ascii", newline="\n") as fh:
         for i, width in enumerate(MOTIF_WIDTHS):
             fh.write(f">motif{i + 1}\ttf{i + 1}\n")
             for base in "ACGT":
-                counts = [rng.randint(0, MOTIF_COUNT_MAX) for _ in range(width)]
-                cells = ", ".join(str(c) for c in counts)
-                fh.write(f"{base}  [{cells}]\n")
+                counts = [rng.randint(1, MOTIF_COUNT_MAX) for _ in range(width)]
+                cells = " ".join(str(c) for c in counts)
+                fh.write(f"{base}  {cells}\n")
 
 
 def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False,

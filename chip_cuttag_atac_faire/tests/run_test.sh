@@ -234,7 +234,7 @@ if [[ "$REAL_RUN" == 1 ]]; then
     if [[ "$FOOTPRINT" == 1 ]]; then
         EXPECTED+=(
             "results/7.footprint/g2/ataccorrect/g2_corrected.bw"
-            "results/7.footprint/g2/scorebigwig"
+            "results/7.footprint/g2/scorebigwig/g2_footprint_scores.bw"
             "results/7.footprint/g2/bindetect"
         )
     fi

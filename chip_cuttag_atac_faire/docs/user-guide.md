@@ -443,7 +443,7 @@ With `motif.enabled: true`, every group's final peak set (the same deliverable a
 With `footprint.enabled: true` the ATAC/FAIRE groups (open-chromatin assays only — chip/cuttag enrichment data carries no footprint signal) go through TOBIAS footprinting into `results/7.footprint/{group}/`:
 
 1. **ATACorrect** (`results/7.footprint/{group}/ataccorrect/`): the group's treat analysis BAMs are pooled (the same `samtools merge` recipe the SEACR bedGraph rules use) and Tn5-bias-corrected against the reference genome over the group's final peak set (`group_final_peak_file()`: IDR/consensus when `peak.replicate.enabled`, pooled otherwise) — `{group}_corrected.bw` plus the bias/QC plots TOBIAS writes;
-2. **ScoreBigwig** (`results/7.footprint/{group}/scorebigwig/`): footprint scores for every motif in `footprint.motifs` — one footprint-score bigWig per motif;
+2. **ScoreBigwig** (`results/7.footprint/{group}/scorebigwig/`): footprint scores over the group's peak regions from the corrected cutsite track (TOBIAS 0.8 API, `--signal/--regions/--output`) — one `{group}_footprint_scores.bw`; motif scanning is not part of this step;
 3. **BINDetect** (optional, `footprint.bindetect`, default on; `results/7.footprint/{group}/bindetect/`): per-TF binding detection over the same corrected track and peak set (Excel output skipped).
 
 Requirements and knobs:
@@ -628,7 +628,7 @@ workdir/
 | Blacklist-filtered peaks / counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
 | Per-sample normalized bigWigs (`bigwig.per_sample`) | `results/4.peak/samples/{sample}.bw` |
 | HOMER motif results (`motif.enabled`) | `results/6.motif/{group}/` |
-| TOBIAS footprinting (`footprint.enabled`, ATAC/FAIRE groups only) | `results/7.footprint/{group}/` — `ataccorrect/` (`{group}_corrected.bw` + QC plots), `scorebigwig/` (one footprint-score bigWig per motif), `bindetect/` (when `footprint.bindetect`) |
+| TOBIAS footprinting (`footprint.enabled`, ATAC/FAIRE groups only) | `results/7.footprint/{group}/` — `ataccorrect/` (`{group}_corrected.bw` + QC plots), `scorebigwig/` (`{group}_footprint_scores.bw`), `bindetect/` (when `footprint.bindetect`) |
 | Differential binding tables/plots (`diffbind.enabled`) | `results/6.diffbind/{A}__vs__{B}/DB_results.tsv` (+ `DB_significant.tsv`, plots) |
 | Signal-track bigWig (fold enrichment) | `results/4.peak/{group}_FE.bw` |
 | Peak annotation tables and plots | `results/4.peak/anno_result/{group}.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
