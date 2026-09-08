@@ -72,6 +72,10 @@ jobs:
         run: bash tests/run_test.sh --reads 2000 --replicate
       - name: Extended QC scenario dry-run
         run: bash tests/run_test.sh --reads 2000 --qc-full
+      - name: Motif scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --motif
+      - name: DiffBind scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --diffbind
 
   seclip-seq:
     name: seclip-seq (unit tests + lint + dry-run regression)

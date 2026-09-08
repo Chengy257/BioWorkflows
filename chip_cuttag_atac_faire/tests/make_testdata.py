@@ -72,6 +72,21 @@ BROAD_SAMPLES = [
     ("hist_control",    "control", "g3", "chip", "broad"),
 ]
 
+# Extra group for the --diffbind scenario: a second two-treat narrow chip
+# group so one contrast ([g1, g4]) exists with replicate structure on both
+# arms; carries the optional condition/batch columns.
+DIFFBIND_SAMPLES = [
+    ("db_treat_rep1", "treat",   "g4", "chip", "narrow", "mutant", "b1"),
+    ("db_treat_rep2", "treat",   "g4", "chip", "narrow", "mutant", "b2"),
+    ("db_control",    "control", "g4", "chip", "narrow", "",       ""),
+]
+
+# Sample-table header variants: the base 6 columns, and the extended schema
+# with the optional condition/batch columns (written only when the
+# --diffbind group set is present).
+BASE_HEADER = "sample_id,role,group,seqtype,layout,peak_type"
+EXT_HEADER = BASE_HEADER + ",condition,batch"
+
 # Config insertions for the scenario flags (see write_config): valid YAML
 # sub-blocks spliced into the base CONFIG_YAML (YAML forbids duplicate
 # top-level keys, so the blocks are inserted under peak:/qc: instead of
@@ -93,6 +108,29 @@ QC_FULL_TAIL = """\
 """
 
 QC_FULL_BLACKLIST = '\n# ---------- Extended QC (--qc-full scenario) ----------\nblacklist: "ref/blacklist.bed"\n'
+
+MOTIF_CONFIG_BLOCK = """
+# ---------- Motif enrichment (--motif scenario) ----------
+motif:
+  enabled: true
+  homer_genome: "test_genome"
+  size: "given"
+  background: ""
+  extra: ""
+"""
+
+DIFFBIND_CONFIG_BLOCK = """
+# ---------- Differential binding (--diffbind scenario) ----------
+diffbind:
+  enabled: true
+  contrasts: [["g1", "g4"]]
+  analysis: "DESeq2"
+  summit_flank: 250
+  use_controls: false
+  fdr: 0.05
+  foldchange: 1.0
+  batch_correction: true
+"""
 
 # Synthetic blacklist for --qc-full: overlaps the first pre-seeded peak
 # region so a real run can observe peaks being removed.
@@ -273,7 +311,7 @@ def write_fastqs(outdir, chroms, genes, reads_per_sample, seed, samples):
     raw_dir = os.path.join(outdir, "1.rawdata")
     os.makedirs(raw_dir, exist_ok=True)
 
-    for k, (sid, role, _grp, _seqtype, _pt) in enumerate(samples):
+    for k, (sid, role, *_rest) in enumerate(samples):
         rng = random.Random(seed + k)
         fq1 = gzip_text(os.path.join(raw_dir, f"{sid}_1.fq.gz"))
         fq2 = gzip_text(os.path.join(raw_dir, f"{sid}_2.fq.gz"))
@@ -290,13 +328,29 @@ def write_fastqs(outdir, chroms, genes, reads_per_sample, seed, samples):
             fq2.close()
 
 
-def write_samples(outdir, samples):
-    """Write the 6-column sample table samples.csv (header matches the workflow's REQUIRED_COLUMNS)."""
+def _normalize(rows):
+    """Extend 5-tuples to the 7-field form (condition/batch default empty)."""
+    out = []
+    for row in rows:
+        sid, role, grp, seqtype, pt = row[:5]
+        cond = row[5] if len(row) > 5 else ""
+        bat = row[6] if len(row) > 6 else ""
+        out.append((sid, role, grp, seqtype, pt, cond, bat))
+    return out
+
+
+def write_samples(outdir, samples, extended):
+    """Write the sample table samples.csv: the base 6 columns, plus the
+    optional condition/batch columns when the diffbind group set is present
+    (header matches the workflow's REQUIRED_COLUMNS + optional columns)."""
     path = os.path.join(outdir, "samples.csv")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("sample_id,role,group,seqtype,layout,peak_type\n")
-        for sid, role, grp, seqtype, pt in samples:
-            fh.write(f"{sid},{role},{grp},{seqtype},PE,{pt}\n")
+        fh.write((EXT_HEADER if extended else BASE_HEADER) + "\n")
+        for sid, role, grp, seqtype, pt, cond, bat in samples:
+            if extended:
+                fh.write(f"{sid},{role},{grp},{seqtype},PE,{pt},{cond},{bat}\n")
+            else:
+                fh.write(f"{sid},{role},{grp},{seqtype},PE,{pt}\n")
 
 
 def write_blacklist(outdir):
@@ -306,7 +360,7 @@ def write_blacklist(outdir):
         fh.write(BLACKLIST_BED)
 
 
-def write_config(outdir, replicate=False, qc_full=False):
+def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False):
     """Write the test config.yaml (relative paths, consumed via run.sh -c).
 
     Scenario flags splice the matching sub-blocks into the base config."""
@@ -320,6 +374,10 @@ def write_config(outdir, replicate=False, qc_full=False):
         assert anchor in text, "base config anchor for the qc-full block moved"
         text = text.replace(anchor, anchor + QC_FULL_TAIL, 1)
         text += QC_FULL_BLACKLIST
+    if motif:
+        text += MOTIF_CONFIG_BLOCK
+    if diffbind:
+        text += DIFFBIND_CONFIG_BLOCK
     path = os.path.join(outdir, "config.yaml")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -341,24 +399,38 @@ def main():
     ap.add_argument("--qc-full", action="store_true", dest="qc_full",
                     help="enable tss/organelle QC and the synthetic blacklist "
                          "(extended QC scenario)")
+    ap.add_argument("--motif", action="store_true",
+                    help="enable the HOMER motif stage with a dummy genome tag "
+                         "(dry-run only executes the DAG)")
+    ap.add_argument("--diffbind", action="store_true",
+                    help="add a 2-treat narrow chip group (g4) with condition/"
+                         "batch columns and enable one DiffBind contrast")
     args = ap.parse_args()
     if args.reads < 1:
         ap.error("--reads must be a positive integer")
 
-    samples = SAMPLES + (BROAD_SAMPLES if args.replicate else [])
+    samples = _normalize(SAMPLES)
+    if args.replicate:
+        samples += _normalize(BROAD_SAMPLES)
+    if args.diffbind:
+        samples += _normalize(DIFFBIND_SAMPLES)
     os.makedirs(args.outdir, exist_ok=True)
     chroms, genes = build_reference(args.seed)
     write_reference(args.outdir, chroms, genes)
     write_fastqs(args.outdir, chroms, genes, args.reads, args.seed, samples)
-    write_samples(args.outdir, samples)
-    write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full)
+    write_samples(args.outdir, samples, extended=args.diffbind)
+    write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full,
+                 motif=args.motif, diffbind=args.diffbind)
     if args.qc_full:
         write_blacklist(args.outdir)
 
+    tags = [t for t, on in (("+replicate", args.replicate),
+                            ("+qc-full", args.qc_full),
+                            ("+motif", args.motif),
+                            ("+diffbind", args.diffbind)) if on]
     print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
           f"{len(samples)} samples x {args.reads} PE read pairs (seed={args.seed}"
-          + (", +replicate" if args.replicate else "")
-          + (", +qc-full" if args.qc_full else "") + ")")
+          + (", " + ", ".join(tags) if tags else "") + ")")
     print(f"[make_testdata] output root: {os.path.abspath(args.outdir)}")
 
 

@@ -96,7 +96,7 @@ HEADER = ["sample_id", "role", "group", "seqtype", "layout", "peak_type"]
 
 # ---------------------------------------------------------------------
 print("== 1. Sample-table parsing (real example file) ==")
-samples, groups, seqtype_of = load_sample_table(
+samples, groups, seqtype_of, cond_of, batch_of = load_sample_table(
     os.path.join(REPO, "config", "samples.csv"))
 check("example: 8 samples, deduplicated, order preserved",
       samples == ["myc", "IgG", "H3K27me3_rep1", "IgG_cuta",
@@ -111,7 +111,7 @@ check("example: atac_leaf without control is valid",
       groups["atac_leaf"]["control"] == [] and groups["atac_leaf"]["seqtype"] == "atac")
 check("example: faire group seqtype mapping", seqtype_of["faire_root"] == "faire")
 
-s2, g2, st2 = load_sample_table(os.path.join(REPO, "example", "samples.csv"))
+s2, g2, st2, _c2, _b2 = load_sample_table(os.path.join(REPO, "example", "samples.csv"))
 check("example/samples.csv: real 2-sample table parses",
       s2 == ["myc", "IgG"] and g2["myc_vs_IgG"]["peak_type"] == "narrow")
 
@@ -133,6 +133,36 @@ expect_error("empty table rejected", [HEADER], "no data rows")
 expect_error("comma in sample name rejected", [HEADER, ["a,b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
 expect_error("double underscore in sample name rejected", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
 expect_error("space in group name rejected", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "illegal characters")
+
+print("== 2b. Optional condition/batch columns (differential binding) ==")
+EXT = HEADER + ["condition", "batch"]
+_ext_path = write_csv([EXT,
+                       ["a", "treat", "g1", "chip", "PE", "narrow", "WT", "b1"],
+                       ["b", "treat", "g1", "chip", "PE", "narrow", "WT", "b2"],
+                       ["ctl", "control", "g1", "chip", "PE", "narrow", "", ""],
+                       ["c", "treat", "g2", "chip", "PE", "narrow", "mut", "b1"],
+                       ["d", "treat", "g2", "chip", "PE", "narrow", "mut", "b2"]])
+try:
+    _s, _g, _st, _cond, _batch = load_sample_table(_ext_path)
+    check("extended table parses; condition/batch captured for treats",
+          _cond == {"a": "WT", "b": "WT", "c": "mut", "d": "mut"}
+          and _batch["a"] == "b1" and _batch["d"] == "b2"
+          and _g["g1"]["condition"] == "WT")
+    check("extended table: legacy 6-column tables unaffected (empty maps)",
+          all(v == "" for v in load_sample_table(
+              os.path.join(REPO, "config", "samples.csv"))[3].values()))
+finally:
+    os.unlink(_ext_path)
+expect_error("inconsistent condition within group rejected",
+             [EXT, ["a", "treat", "g", "chip", "PE", "narrow", "WT", ""],
+              ["b", "treat", "g", "chip", "PE", "narrow", "mut", ""]],
+             "different condition values")
+expect_error("illegal condition value rejected",
+             [EXT, ["a", "treat", "g", "chip", "PE", "narrow", "W T", ""]],
+             "illegal characters")
+expect_error("illegal batch value rejected",
+             [EXT, ["a", "treat", "g", "chip", "PE", "narrow", "WT", "b;1"]],
+             "illegal characters")
 
 print("== 3. ATAC peak-calling mode whitelist ==")
 with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
@@ -178,11 +208,18 @@ GOOD_CFG = {
     "region_flank": 3000,
     "dedup": {"chip": True, "cuttag": False, "atac": True, "faire": True},
     "peak": {"keepdup": "all", "qvalue": 0.05, "broad_cutoff": 0.05,
+             "bigwig_measure": "FE",
              "atac": {"mode": "bampe", "shift": -100, "extsize": 200},
              "replicate": {"enabled": False, "qvalue": 0.01,
                            "idr_threshold": 0.05, "idr_rank": "p.value",
                            "consensus_min_replicates": 2, "frip_on": "pooled"}},
     "blacklist": "",
+    "bigwig": {"per_sample": False, "normalize": "RPGC", "bin": 25},
+    "motif": {"enabled": False, "homer_genome": "", "size": "given",
+              "background": "", "extra": ""},
+    "diffbind": {"enabled": False, "contrasts": [], "analysis": "DESeq2",
+                 "summit_flank": 250, "use_controls": False,
+                 "fdr": 0.05, "foldchange": 1.0, "batch_correction": True},
     "qc": {"nsc_rsc": False, "frip": True, "deeptools": True,
            "tss": False, "organelle": False,
            "organelle_patterns": ["chrc", "chrm"]},
@@ -268,6 +305,39 @@ vc_case("organelle_patterns of wrong shape reported",
         ["organelle_patterns"])
 vc_case("non-string blacklist reported",
         lambda c: c.__setitem__("blacklist", 3), ["blacklist must be a string"])
+# --- v0.5 phase 3/4/5 keys: bigwig / motif / diffbind ---
+vc_case("bigwig/motif/diffbind blocks are optional (legacy configs stay valid)",
+        lambda c: (c.pop("bigwig"), c.pop("motif"), c.pop("diffbind")),
+        [], expect_error=False)
+vc_case("bad bigwig.normalize reported",
+        lambda c: c["bigwig"].__setitem__("normalize", "RPKM"),
+        ["bigwig.normalize"])
+vc_case("non-positive bigwig.bin reported",
+        lambda c: c["bigwig"].__setitem__("bin", 0), ["bigwig.bin"])
+vc_case("non-boolean bigwig.per_sample reported",
+        lambda c: c["bigwig"].__setitem__("per_sample", "yes"), ["bigwig.per_sample"])
+vc_case("bad peak.bigwig_measure reported",
+        lambda c: c["peak"].__setitem__("bigwig_measure", "log2"),
+        ["peak.bigwig_measure"])
+vc_case("motif enabled without homer_genome reported",
+        lambda c: c["motif"].__setitem__("enabled", True),
+        ["motif.homer_genome is required"])
+vc_case("motif enabled with homer_genome accepted",
+        lambda c: (c["motif"].__setitem__("enabled", True),
+                   c["motif"].__setitem__("homer_genome", "hg38")),
+        [], expect_error=False)
+vc_case("bad diffbind.analysis reported",
+        lambda c: c["diffbind"].__setitem__("analysis", "deseq"),
+        ["diffbind.analysis"])
+vc_case("negative diffbind.summit_flank reported",
+        lambda c: c["diffbind"].__setitem__("summit_flank", -1),
+        ["diffbind.summit_flank"])
+vc_case("diffbind.fdr out of range reported",
+        lambda c: c["diffbind"].__setitem__("fdr", 2), ["diffbind.fdr"])
+vc_case("diffbind.foldchange below 1 reported",
+        lambda c: c["diffbind"].__setitem__("foldchange", 0.5), ["diffbind.foldchange"])
+vc_case("diffbind block of wrong type reported",
+        lambda c: c.__setitem__("diffbind", "on"), ["diffbind must be a mapping"])
 
 print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
@@ -433,6 +503,11 @@ if HAS_YAML:
     check("config: new QC switches default to off",
           cfg["qc"]["tss"] is False and cfg["qc"]["organelle"] is False
           and cfg["peak"]["replicate"]["enabled"] is False)
+    check("config: v0.5 phase 3/4/5 keys present and default to off",
+          cfg.get("bigwig", {}).get("per_sample") is False
+          and cfg.get("motif", {}).get("enabled") is False
+          and cfg.get("diffbind", {}).get("enabled") is False
+          and cfg["peak"].get("bigwig_measure", "FE") == "FE")
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
@@ -688,6 +763,50 @@ check("replicate_summary: idr mode rows with counts and retained fraction",
       f"rc={_r.returncode} rows={_rep}")
 check("replicate_summary: mqc wrapper carries the MultiQC header",
       os.path.exists(_rm) and "# id: 'replicate_summary_table'" in open(_rm, encoding="utf-8").read())
+
+# --- diffbind_sheet.py: sheet layout from the extended sample table ---
+_dbtmp = os.path.join(_stmp, "db")
+os.makedirs(os.path.join(_dbtmp, "results", "4.peak", "replicates", "g1"), exist_ok=True)
+os.makedirs(os.path.join(_dbtmp, "results", "4.peak", "replicates", "g4"), exist_ok=True)
+for _rel in ("results/3.align/bowtie2",):
+    os.makedirs(os.path.join(_dbtmp, _rel), exist_ok=True)
+
+
+def _touch(path, line="chr1\t1\t10\n"):
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        fh.write(line)
+
+
+for _s in ("a", "b", "c", "d"):
+    _touch(os.path.join(_dbtmp, "results", "3.align", "bowtie2", f"{_s}_sorted.bam"), "")
+    _touch(os.path.join(_dbtmp, "results", "4.peak", "replicates", "g1" if _s in ("a", "b") else "g4",
+                        f"{_s}_peaks.narrowPeak"))
+_db_samples = os.path.join(_dbtmp, "samples.csv")
+with open(_db_samples, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("sample_id,role,group,seqtype,layout,peak_type,condition,batch\n")
+    fh.write("a,treat,g1,chip,PE,narrow,WT,b1\n")
+    fh.write("b,treat,g1,chip,PE,narrow,WT,b2\n")
+    fh.write("ctl,control,g1,chip,PE,narrow,,\n")
+    fh.write("c,treat,g4,chip,PE,narrow,mut,b1\n")
+    fh.write("d,treat,g4,chip,PE,narrow,mut,b2\n")
+_db_sheet = os.path.join(_dbtmp, "sheet.tsv")
+_r = _run_py("diffbind_sheet.py",
+             ["--samples", _db_samples, "--results-dir",
+              os.path.join(_dbtmp, "results"), "--groups", "g1", "g4",
+              "--replicates", "--out", _db_sheet])
+_sheet = open(_db_sheet, encoding="utf-8").read().splitlines() if os.path.exists(_db_sheet) else []
+check("diffbind_sheet: conditions, replicates, per-replicate peaks, batches",
+      _r.returncode == 0 and len(_sheet) == 5
+      and _sheet[0] == "SampleID\tCondition\tReplicate\tbamReads\tbamControl\tPeakFile\tBatch"
+      and _sheet[1].startswith("a\tWT\t1\t") and "replicates/g1/a_peaks.narrowPeak" in _sheet[1]
+      and _sheet[1].endswith("\tb1") and _sheet[4].startswith("d\tmut\t2\t"),
+      f"rc={_r.returncode} rows={_sheet[:3]}")
+_r = _run_py("diffbind_sheet.py",
+             ["--samples", _db_samples, "--results-dir",
+              os.path.join(_dbtmp, "results"), "--groups", "nope", "g1",
+              "--out", _db_sheet])
+check("diffbind_sheet: unknown contrast group fails with a clear error",
+      _r.returncode != 0 and "not found" in _r.stderr, f"rc={_r.returncode}")
 shutil.rmtree(_stmp, ignore_errors=True)
 
 print()

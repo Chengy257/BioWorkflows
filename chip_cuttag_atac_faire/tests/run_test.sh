@@ -43,13 +43,17 @@ Usage:
     --replicate scenario: 2-treat broad group + replicate-aware peak stage
                 (per-replicate calling, IDR, consensus)
     --qc-full   scenario: tss/organelle QC + synthetic blacklist
+    --motif     scenario: enable the HOMER motif stage (dummy genome tag;
+                dry-run only — a real run needs an external HOMER install)
+    --diffbind  scenario: 2-treat narrow group (condition/batch columns) +
+                one DiffBind contrast (dry-run; a real run needs DiffBind)
     -h, --help  show this help
 
 Requires:
   dry-run only needs snakemake + python3(+pyyaml); --real-run needs a full
   analysis environment (bowtie2/fastqc/trim_galore/macs2/deeptools/R etc.,
   see workflow/environment.yaml; --replicate additionally needs the external
-  idr tool for a real run).
+  idr tool, --motif an external HOMER, --diffbind the DiffBind R package).
 EOF
 }
 
@@ -62,6 +66,8 @@ KEEP=0
 REAL_RUN=0
 REPLICATE=0
 QC_FULL=0
+MOTIF=0
+DIFFBIND=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
@@ -72,6 +78,8 @@ while [[ $# -gt 0 ]]; do
         --real-run) REAL_RUN=1; shift ;;
         --replicate) REPLICATE=1; shift ;;
         --qc-full)   QC_FULL=1; shift ;;
+        --motif)     MOTIF=1; shift ;;
+        --diffbind)  DIFFBIND=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
     esac
@@ -81,6 +89,8 @@ MODE="dry-run"
 SCENARIO_ARGS=()
 [[ "$REPLICATE" == 1 ]] && SCENARIO_ARGS+=(--replicate)
 [[ "$QC_FULL" == 1 ]] && SCENARIO_ARGS+=(--qc-full)
+[[ "$MOTIF" == 1 ]] && SCENARIO_ARGS+=(--motif)
+[[ "$DIFFBIND" == 1 ]] && SCENARIO_ARGS+=(--diffbind)
 
 echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS, scenario_args=${SCENARIO_ARGS[*]:-none})"
 command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exit 1; }
@@ -161,6 +171,15 @@ if [[ "$REAL_RUN" == 1 ]]; then
             "results/4.peak/blacklist_filtered/g1_peaks.narrowPeak"
         )
     fi
+    if [[ "$MOTIF" == 1 ]]; then
+        EXPECTED+=("results/6.motif/g1")
+    fi
+    if [[ "$DIFFBIND" == 1 ]]; then
+        EXPECTED+=(
+            "results/6.diffbind/g1__vs__g4/samplesheet.tsv"
+            "results/6.diffbind/g1__vs__g4/DB_results.tsv"
+        )
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -177,6 +196,12 @@ else
     fi
     if [[ "$QC_FULL" == 1 ]]; then
         DAG_RULES+=(tss_matrix tss_summary organelle_idxstats organelle_summary blacklist_filter blacklist_summary)
+    fi
+    if [[ "$MOTIF" == 1 ]]; then
+        DAG_RULES+=(motif_enrichment)
+    fi
+    if [[ "$DIFFBIND" == 1 ]]; then
+        DAG_RULES+=(diffbind_sheet diffbind_report)
     fi
     for rule in "${DAG_RULES[@]}"; do
         if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
