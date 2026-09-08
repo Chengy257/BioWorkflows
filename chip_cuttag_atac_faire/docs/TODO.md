@@ -12,30 +12,30 @@
 - **Implemented (v0.5, branch feature/chip-replicate-idr; every switch default-off)**:
   per-replicate peak calling + pairwise IDR + broad overlap consensus
   (`peak.replicate`), TSS enrichment (`qc.tss`), organelle read fraction
-  (`qc.organelle`), peak-level blacklist filtering (`blacklist`). The review
-  and phased design live outside the repository
+  (`qc.organelle`), peak-level blacklist filtering (`blacklist`), differential
+  binding via DiffBind (`diffbind` + optional condition/batch sample-table
+  columns), per-sample normalized bigWigs (`bigwig.per_sample`) + FE/logFE
+  group-track measure (`peak.bigwig_measure`), and HOMER motif enrichment
+  (`motif`, external install via the software.yaml `paths:` mechanism). The
+  review and phased design live outside the repository
   (`D:\BioWorkflows_archive\plans\2026-09-08-chip-replicate-idr-plan.md`);
-  dry-run baselines: default 47 (unchanged), replicate 79, qc-full 60,
-  combined 99.
-- **Deferred (priority order, see the plan's Phase 3-5 + registry)**:
-  1. DiffBind differential binding — needs an optional `condition` sample-table
-     column and explicit contrast config (kept aligned with the Unreleased
-     TODO entry below); R dep: bioconductor-diffbind.
-  2. Per-sample normalized bigWigs (RPGC/CPM) + log2(FE) option for the group
-     track (cheap; would also let the TSS matrix consume a shared per-sample
-     bigwig instead of its temp one).
-  3. HOMER motif enrichment on the consensus/IDR peaks (external install via
-     the software.yaml `paths:` mechanism, like idr).
-  4. Spike-in normalization for CUT&Tag quantitative comparisons — note
+  dry-run job-count baselines: default 47 (unchanged), replicate 79, qc-full
+  60, motif 49, diffbind 69, all-on 134.
+- **Deferred (see the plan's registry)**:
+  1. Spike-in normalization for CUT&Tag quantitative comparisons — note
      `bowtie2_mapping` already emits `{sample}_unmapped.fq.gz` as an
      undeclared side artifact that a second-pass spike alignment could
      consume; declaring it as an output is part of that work.
-  5. SEACR alternative peak caller (`peak.caller`), TOBIAS footprinting,
+  2. SEACR alternative peak caller (`peak.caller`), TOBIAS footprinting,
      QC PASS/WARN gate table, SE input support.
-- **Validation debt**: the replicate stage has dry-run + unit coverage only;
-  a real-run round on the server (with idr installed) should confirm the idr
-  output-column contract (the rules trim idr's extra columns back to the
-  10-column narrowPeak) and empty-consensus behavior on sparse broad marks.
+- **Validation debt**: the replicate / diffbind / motif stages have dry-run +
+  unit coverage only. A real-run round on the server should confirm (a) the
+  idr output-column contract (the rules trim idr's extra columns back to the
+  10-column narrowPeak) and empty-consensus behavior on sparse broad marks;
+  (b) run_diffbind.R against a live DiffBind (the dba.contrast blocking form
+  and the PeakFormat/ScoreCol sheet columns were written from the vignette,
+  not executed); (c) findMotifsGenome.pl invocation + a configured genome for
+  the production assembly.
 
 ## 1. FASTQ naming-variant support — DONE
 

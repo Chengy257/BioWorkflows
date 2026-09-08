@@ -11,7 +11,7 @@ A one-stop **Snakemake** workflow for plant epigenomics. The single entry point 
 
 Deduplication strategy, peak parameters, and QC switches are configured per assay in `config/config.yaml`. The default example reference genome is rice *Oryza sativa* (IRGSP-1.0); switching species only requires changing the reference file paths (species presets in `config/species.yaml`) and the genome size.
 
-> **Status (v0.5.0, unreleased)**: replicate-aware peak analysis — per-replicate peak calling, pairwise IDR (narrow groups), overlap consensus (broad groups), a reproducibility summary; plus TSS enrichment (`qc.tss`), organelle read fraction (`qc.organelle`), and peak-level blacklist filtering (`blacklist`). Every new stage is default-off; enabling them is a config flip (see [docs/user-guide.md](docs/user-guide.md) §5.3/§5.4). The `idr` tool installs separately (python2; via the software.yaml `paths:` mechanism).
+> **Status (v0.5.0, unreleased)**: replicate-aware peak analysis — per-replicate peak calling, pairwise IDR (narrow groups), overlap consensus (broad groups), a reproducibility summary; differential binding via DiffBind (explicit group contrasts + optional condition/batch sample-table columns); per-sample normalized bigWigs; HOMER motif enrichment; plus TSS enrichment (`qc.tss`), organelle read fraction (`qc.organelle`), and peak-level blacklist filtering (`blacklist`). Every new stage is default-off; enabling them is a config flip (see [docs/user-guide.md](docs/user-guide.md) §5.3-§5.6). External tools (`idr`, HOMER) install via the software.yaml `paths:` mechanism; DiffBind ships in the conda template.
 >
 > **Status (v0.4.0)**: engineering aligned with rna-seq v0.8.0 — unified `run.sh` ops CLI (four scheduler profiles + auto detection + preflight + resource overrides + unlock), unified environment system (`workflow/environment.yaml` all-in-one template + `config/software.yaml` to reuse existing environments/R libraries; per-rule conda removed), per-rule cluster resource model, synthetic-data dry-run regression + unit tests + CI, and four docs (README / docs/user-guide.md / CONTRIBUTING.md / CHANGELOG). All derived outputs are consolidated under the project's `results/` directory (configurable via `results_dir`). The DAG passes the CI dry-run and an independent review; for end-to-end runs see [Server validation steps](#server-validation-steps).
 
@@ -33,6 +33,8 @@ flowchart LR
     F & G -.peak.replicate.-> M[per-replicate calling → pairwise IDR<br>(narrow) / multiinter consensus (broad)<br>+ reproducibility summary]
     M -.optional blacklist.-> N[blacklist_filtered/<br>peak copies → FRiP / annotation]
     F & G -.qc.tss / qc.organelle.-> O[TSS enrichment plots + TSSE<br>organelle read fraction]
+    F -.bigwig.per_sample.-> P[normalized per-sample bigWigs]
+    M -.motif / diffbind.-> Q[HOMER motif enrichment<br>DiffBind differential binding]
 ```
 
 ## Environment setup
@@ -87,8 +89,8 @@ chip_cuttag_atac_faire/
 ├── workflow/
 │   ├── Snakefile             # unified entry (seqtype-column routing + species presets + conditional QC includes)
 │   ├── environment.yaml      # all-in-one conda environment template (pinned; created explicitly by the user)
-│   ├── rules/                # common/upstream/dedup/callpeak/annotation/frip/qc_deeptools/spp_qc/meta + v0.5: callpeak_replicate/tss_qc/organelle_qc/blacklist
-│   ├── scripts/              # runtime_config.py (software.yaml resolver), annoPeak_batch.R, collect_versions.py + v0.5: replicate_summary/tss_from_bed/tss_score/organelle_summary (.py)
+│   ├── rules/                # common/upstream/dedup/callpeak/annotation/frip/qc_deeptools/spp_qc/meta + v0.5: callpeak_replicate/tss_qc/organelle_qc/blacklist/motif/diffbind
+│   ├── scripts/              # runtime_config.py (software.yaml resolver), annoPeak_batch.R, collect_versions.py + v0.5: replicate_summary/tss_from_bed/tss_score/organelle_summary/diffbind_sheet (.py), run_diffbind.R
 │   ├── profile/              # default / pbs / sge / slurm profiles + README (cluster commands and pinned params)
 │   └── multiqc_config.yaml
 ├── config/
@@ -120,6 +122,9 @@ All derived artifacts live under `results/` in the working directory (rename via
 | TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/` |
 | Organelle read fraction (`qc.organelle: true`) | `results/5.QC/organelle/Organelle_summary.tsv` |
 | Blacklist-filtered peaks + counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
+| Per-sample normalized bigWigs (`bigwig.per_sample`) | `results/4.peak/samples/{sample}.bw` |
+| HOMER motif results (`motif.enabled`) | `results/6.motif/{group}/` |
+| Differential binding (`diffbind.enabled`) | `results/6.diffbind/{A}__vs__{B}/DB_results.tsv` (+ significant subset, plots) |
 | Signal-track bigWigs | `results/4.peak/{group}_FE.bw` |
 | Peak annotation tables and plots | `results/4.peak/anno_result/*.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
 | bowtie2 index (reusable across projects) | `results/0.index/bowtie2*.bt2` |
@@ -163,10 +168,12 @@ Regression tests (need snakemake):
 bash tests/run_test.sh                          # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
 bash tests/run_test.sh --replicate              # replicate/IDR scenario (adds a 2-treat broad group, enables the stage)
 bash tests/run_test.sh --qc-full                # extended QC scenario (tss + organelle + synthetic blacklist)
+bash tests/run_test.sh --motif                  # motif stage scenario (dummy genome tag)
+bash tests/run_test.sh --diffbind               # differential binding scenario (adds a contrast group)
 bash tests/run_test.sh --real-run               # end-to-end run + output assertions (server validation; needs a full analysis environment)
 ```
 
-Dry-run job-count baselines (rule/localrule blocks): default 47, `--replicate` 79, `--qc-full` 60, combined 99. Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples — plus a 2-treat broad group in the replicate scenario; sequences drawn from the reference genome) and is never committed. CI (repository-root `.github/workflows/ci.yml`) runs lint, the default regression, and both scenario dry-runs on push/PR.
+Dry-run job-count baselines (rule/localrule blocks): default 47, `--replicate` 79, `--qc-full` 60, `--motif` 49, `--diffbind` 69, all-on 134. Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples — plus scenario groups; sequences drawn from the reference genome) and is never committed. CI (repository-root `.github/workflows/ci.yml`) runs lint, the default regression, and every scenario dry-run on push/PR.
 
 ### Server validation steps
 
@@ -182,7 +189,7 @@ bash run.sh -P /path/to/real_project -n              # 3) real-project dry-run t
 
 1. **End-to-end real run pending**: CI and regression cover the dry-run level; the real-data end-to-end run (including conda environment solving and confirming the MACS2 no-control `control_lambda` outputs) follows the "Server validation steps" above and is then recorded in the CHANGELOG.
 2. The bowtie2 index rule only declares `.bt2` (for references >4Gbp bowtie2 produces `.bt2l`; build the index manually and place it under `results/0.index/`).
-3. **DiffBind differential analysis**: not yet implemented (contrast and design formula TBD); the former empty stub scripts (DiffBind/ChIPQC/DROMPAplus etc.) were archived out of the repository (not in version control); restore them from local archives or git history when needed.
+3. **DiffBind differential analysis**: implemented in v0.5 (`diffbind` stage, default-off) with dry-run + unit coverage; a server real-run validation (live DiffBind) is still pending — see docs/TODO.md §0.
 4. Only paired-end (PE) data is supported.
 
 ## License

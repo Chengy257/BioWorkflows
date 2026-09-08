@@ -170,6 +170,8 @@ Input_faire,control,faire_root_vs_Input,faire,PE,none
 | `seqtype` | `chip` / `cuttag` / `atac` / `faire` | assay type; mixing rows is what makes a mixed-assay project |
 | `layout` | `PE` | only paired-end is supported in this version |
 | `peak_type` | `narrow` / `broad` / `none` | treat rows of chip/cuttag must be `narrow` or `broad`; atac/faire are fixed to `none` (the peak type is decided by the workflow) |
+| `condition` | optional free label | differential binding (§5.6): labels the contrast factor; a group's treats must share one value; falls back to the group name when absent |
+| `batch` | optional free label | differential blocking factor (sequencing batch); ignored unless `diffbind.batch_correction` is on and it has ≥ 2 levels |
 
 ### 3.2 Validation rules (row by row at parse time, errors carry line numbers)
 
@@ -237,6 +239,17 @@ Scheduler resources are layered separately: see §4.3 for `config/resources.yaml
 | `peak.replicate.frip_on` | `"pooled"` | peak set FRiP is computed against: `pooled` or `consensus` (requires the stage enabled) |
 | `peak.atac.mode` | `bampe` | `bampe` = ENCODE ATAC v2 recipe (pile up real fragment lengths); `shifted` = classic Tn5 offset recipe (`--nomodel --shift -100 --extsize 200`) |
 | `peak.atac.shift` / `peak.atac.extsize` | `-100` / `200` | effective in `shifted` mode only |
+| `peak.bigwig_measure` | `"FE"` | group signal-track measure: `FE` (fold enrichment) or `logFE`; the filename stays `{group}_FE.bw` |
+| `bigwig.per_sample` | `false` | per-sample normalized coverage bigWigs under `results/4.peak/samples/` (browser-level replicate comparison) |
+| `bigwig.normalize` / `bigwig.bin` | `"RPGC"` / `25` | bamCoverage normalization (RPGC uses `genome_size`) and bin size |
+| `motif.enabled` | `false` | HOMER motif enrichment on the final peak sets (§5.5); needs an external HOMER install |
+| `motif.homer_genome` | `""` | required when the stage is on: HOMER genome tag (`hg38`, `mm10`, …) or `custom:/path/to/genome` |
+| `motif.size` / `motif.background` / `motif.extra` | `"given"` / `""` / `""` | `-size`, optional `-bg` BED, extra findMotifsGenome.pl arguments |
+| `diffbind.enabled` | `false` | DiffBind differential binding between sample-table groups (§5.6) |
+| `diffbind.contrasts` | `[]` | list of `[groupA, groupB]` pairs; each arm needs ≥ 2 treats |
+| `diffbind.analysis` | `"DESeq2"` | backend: `DESeq2` or `edgeR` |
+| `diffbind.summit_flank` | `250` | count regions = summit ± this many bp (`0` = full peak regions) |
+| `diffbind.use_controls` / `fdr` / `foldchange` / `batch_correction` | `false` / `0.05` / `1.0` / `true` | attach single controls as background; significant-table cutoffs; blocking on the optional `batch` column |
 | `blacklist` | `""` | optional BED of artifact regions; empty disables. Filtered peak copies feed FRiP/annotation (§5.4) |
 | `region_flank` | `3000` | peak-annotation flank distance and deeptools signal window up/downstream length (bp); one key controls both |
 | `qc.tss` | `false` | TSS enrichment for atac/faire treat samples (per-sample CPM coverage ±2kb around TSS; §5.2) |
@@ -340,7 +353,32 @@ By default the workflow calls peaks once per group on the pooled replicates (`-t
 
 Set the top-level `blacklist` key to a BED file of known artifact regions and the workflow writes filtered copies (bedtools `intersect -v`) of the pooled and final peak sets into `results/4.peak/blacklist_filtered/`, with a before/after count table in `results/5.QC/blacklist/blacklist_summary.tsv`. FRiP and peak annotation read the filtered copies automatically. Filtering happens at the peak level only (BAMs are untouched). No ENCODE blacklist exists for rice — build or borrow one appropriate for your genome, or leave the key empty (default).
 
-### 5.5 Checks and dry-run
+### 5.5 HOMER motif enrichment (v0.5, `motif`)
+
+With `motif.enabled: true`, every group's final peak set (the same deliverable annotation uses — IDR/consensus when the replicate stage is on, blacklist-filtered when a blacklist is set) goes through `findMotifsGenome.pl`; results land in `results/6.motif/{group}/` (de novo + known motif tables and logos). Requirements and knobs:
+
+- `motif.homer_genome` is mandatory: a HOMER genome tag installed via `configureHomer`, or a `custom:/path/to/genome` directory. Rice has no stock HOMER genome — configure one for your assembly.
+- HOMER is an external distribution (not in the conda template): the `findMotifsGenome.pl` entry point resolves via the software.yaml `paths:` section (`homer_findmotifs` → `CHIP_HOMER_FINDMOTIFS`) or from PATH.
+- `motif.size` (`given` = peak widths), an optional matched `motif.background` BED, and free-form `motif.extra` (e.g. `"-len 8,10,12 -nmotifs 12"`) cover the common recipes.
+- De novo discovery is slow (hours on large peak sets); tune the `motif_enrichment` entry in `config/resources.yaml` before queueing.
+
+### 5.6 Differential binding (v0.5, `diffbind`)
+
+Differential enrichment between two conditions, DiffBind (DESeq2 or edgeR backend), driven by explicit contrasts:
+
+```yaml
+diffbind:
+  enabled: true
+  contrasts: [["H3K27ac_WT_vs_IgG", "H3K27ac_mut_vs_IgG"]]   # two sample-table groups
+```
+
+Each contrast arm must carry ≥ 2 treat replicates (parse-time error otherwise). The sample table's optional `condition` column labels the two factor levels (falling back to the group names); the optional `batch` column becomes a blocking factor when `diffbind.batch_correction` is on and has ≥ 2 levels. Per contrast, `results/6.diffbind/{A}__vs__{B}/` receives the generated sample sheet, `DB_results.tsv` (every consensus region with Fold/FDR/p), `DB_significant.tsv` (passing `fdr` and `|Fold| >= foldchange`), MA/volcano/PCA plots, and sessionInfo.
+
+Two design notes: DiffBind counts reads over the consensus peak set derived from the **per-sample peak files** — with `peak.replicate.enabled: true` those are the per-replicate calls (recommended); without it every sample of a group maps to the identical pooled set, which still runs but loses replicate-level peak structure. `diffbind.summit_flank: 250` recenters counting on summits (narrow peaks); set `0` to count full peak regions (usually better for broad marks). `diffbind.use_controls: true` attaches a group's exactly-one control as the DiffBind background sample.
+
+**Environment note**: `bioconductor-diffbind` is part of the conda template (pulls DESeq2/edgeR transitively). When reusing server R libraries instead, add DiffBind (e.g. `BiocManager::install("DiffBind")`) to the `r.lib_paths` libraries.
+
+### 5.7 Checks and dry-run
 
 ```bash
 bash run.sh -P . -n                    # dry-run: builds the DAG and prints the jobs it would run, without executing
@@ -351,7 +389,7 @@ bash run.sh -P . --check-r             # R-side preflight only
 
 The dry-run automatically skips the software preflight (no tools executed; needs only snakemake + python3/PyYAML, not the full analysis environment). Sample-table and config validation happen at parse time, so the dry-run and `--validate-only` catch the same errors listed in §3.2 / §4.4.
 
-### 5.6 Resuming and Snakemake passthrough
+### 5.8 Resuming and Snakemake passthrough
 
 - Resuming: Snakemake skips completed steps based on output timestamps; after an interruption, **simply rerun the same command**;
 - profiles pin `keep-going: true` and `rerun-incomplete: true`; `latency-wait` defaults to 90 (default/pbs) or 60 (sge/slurm), overridable via `--latency-wait SEC`;
@@ -457,6 +495,7 @@ workdir/
     │   ├── replicates/      # peak.replicate stage: {group}/{sample}_peaks.{narrowPeak,broadPeak}
     │   ├── idr/             # peak.replicate stage: {group}/{a}__vs__{b}.narrowPeak pairwise IDR
     │   ├── blacklist_filtered/   # blacklist stage: filtered copies of the pooled/final peak sets
+    │   ├── samples/         # bigwig.per_sample stage: {sample}.bw normalized coverage tracks
     │   └── anno_result/     # {group}.Anno.xls, Peakanno_PeakDistributions.pdf
     ├── 5.QC/
     │   ├── frip/            # {group}__{sample}.frip.tsv, FRiP_summary.tsv
@@ -468,6 +507,8 @@ workdir/
     │   ├── deeptools/       # correlation heatmap / PCA / fingerprint / fragment size / gene-region signal profile
     │   ├── software_versions.yaml   # tool versions actually resolved for this run (incl. Snakemake)
     │   └── logs/            # QC rule logs (e.g. software_versions.log.txt)
+    ├── 6.motif/             # motif stage: {group}/ HOMER results (known + de novo)
+    ├── 6.diffbind/          # diffbind stage: {A}__vs__{B}/ sample sheet, DB tables, plots
     └── logs/                # per-rule logs (PBS .o job logs are collected here after success)
 ```
 
@@ -484,6 +525,9 @@ workdir/
 | TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/TSSE_summary.tsv` |
 | Organelle fraction (`qc.organelle: true`) | `results/5.QC/organelle/Organelle_summary.tsv` |
 | Blacklist-filtered peaks / counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
+| Per-sample normalized bigWigs (`bigwig.per_sample`) | `results/4.peak/samples/{sample}.bw` |
+| HOMER motif results (`motif.enabled`) | `results/6.motif/{group}/` |
+| Differential binding tables/plots (`diffbind.enabled`) | `results/6.diffbind/{A}__vs__{B}/DB_results.tsv` (+ `DB_significant.tsv`, plots) |
 | Signal-track bigWig (fold enrichment) | `results/4.peak/{group}_FE.bw` |
 | Peak annotation tables and plots | `results/4.peak/anno_result/{group}.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
 | bowtie2 index | `results/0.index/bowtie2*.bt2` |
@@ -548,6 +592,8 @@ make lint                        # static suite (bash/shellcheck/py/R/yaml/snake
 bash tests/run_test.sh           # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
 bash tests/run_test.sh --replicate   # replicate/IDR scenario dry-run (adds a 2-treat broad group)
 bash tests/run_test.sh --qc-full     # extended QC scenario dry-run (tss + organelle + blacklist)
+bash tests/run_test.sh --motif       # motif stage scenario dry-run (dummy genome tag)
+bash tests/run_test.sh --diffbind    # differential binding scenario dry-run (adds a contrast group)
 bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples); the dry-run defaults to 50000 read pairs per sample (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
@@ -560,3 +606,9 @@ ENCODE maintains blacklists for human/mouse; for rice there is none, so the work
 
 **Q15: My ATAC library shows a huge organelle fraction — what do I do?**
 Enable `qc.organelle` and check `results/5.QC/organelle/Organelle_summary.tsv`. High chloroplast fractions (common in plant ATAC from green tissues) waste sequencing depth; aligning against a nuclear-only reference, or in silico removing organelle-mapped reads upstream, are the standard remedies. The metric is informational — the workflow never filters BAMs on it.
+
+**Q16: How do I run a differential binding comparison?**
+Give the two conditions their own sample-table groups (≥ 2 treat replicates each), optionally label them with the `condition` column (plus `batch` for sequencing-batch blocking), then set `diffbind.enabled: true` and `diffbind.contrasts: [["groupA", "groupB"]]` (§5.6). Best combined with `peak.replicate.enabled: true` so DiffBind counts over per-replicate peak sets.
+
+**Q17: Do I need HOMER for the motif stage?**
+Yes — HOMER (findMotifsGenome.pl + a configured genome) is an external distribution, deliberately not in the conda template. Point the software.yaml `paths: homer_findmotifs` entry at the binary, install a genome for your assembly via `configureHomer`, and set `motif.homer_genome` (§5.5).
