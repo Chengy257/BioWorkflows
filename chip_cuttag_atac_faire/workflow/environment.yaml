@@ -7,7 +7,8 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - python=3.11
+  # python is unpinned: macs2 2.2.7.1 solves against python 3.10 (WSL real-run
+  # finding 2026-09-09; a 3.11 pin makes the solve fail)
   - git
   - pyyaml
   - snakemake-minimal=7.32.4
@@ -21,15 +22,22 @@ dependencies:
   # Dedup / peak calling / signal tracks
   - picard=3.0.0
   - macs2=2.2.7.1
-  - bedtools=2.31.0
+  # bedtools/ucsc are unpinned: the 2.31.0/482 builds lost their xz providers
+  # in current repodata (2026-09-09 solve round)
+  - bedtools
   - deeptools=3.5.1
-  - ucsc-bedclip=482
-  - ucsc-bedgraphtobigwig=482
+  # deeptools 3.5.1 imports matplotlib.cm.register_cmap, removed in
+  # matplotlib 3.9 (WSL real-run finding 2026-09-09); pin below 3.9
+  - matplotlib<3.9
+  - ucsc-bedclip
+  - ucsc-bedgraphtobigwig
   # SPP NSC/RSC
   - phantompeakqualtools=1.2.2
   - r-base=4.3
-  - bioconductor-chipseeker=1.38.0
-  - bioconductor-genomicfeatures=1.54.0
+  # bioconductor builds unpinned: exact 1.38.0/1.54.0 left the current
+  # repodata; they solve against the R 4.3 line (1.38 landed as of 2026-09-09)
+  - bioconductor-chipseeker
+  - bioconductor-genomicfeatures
   # Differential binding (optional stage, diffbind.enabled; pulls DESeq2 and
   # edgeR transitively — unpinned on purpose, solved against the R 4.3 line
   # the same way srna-seq ships bioconductor-deseq2 for its DE stage)

@@ -22,7 +22,7 @@ Outputs (written to the --outdir directory; paths follow the data working-direct
 
 Samples: chip_treat_rep1/rep2 + chip_control (narrow group g1),
          atac_treat_rep1/rep2 (atac group g2).
-Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
+Enrichment design: twenty-four 2kb peak regions pre-seeded on chr1; treat samples draw
 70% of fragments from peak regions, control samples sample uniformly genome-wide.
 
 Usage:
@@ -50,7 +50,9 @@ FRAG_MIN, FRAG_MAX = 150, 300   # fragment length range (bp)
 GENE_START = 1000         # first gene start (0-based)
 GENE_SPACING = 3000       # gene spacing
 GENE_LEN = 2000           # gene span
-PEAK_REGIONS = [(20000, 22000), (50000, 52000), (80000, 82000)]  # chr1 enrichment peaks (0-based half-open)
+# 24 seeded regions clear idr's 20-peaks-post-merge minimum so --replicate
+# --real-run exercises the real idr binary end to end
+PEAK_REGIONS = [(2000 + i * 4000, 2000 + i * 4000 + 2000) for i in range(24)]  # chr1 enrichment peaks (0-based half-open)
 PEAK_PROB = 0.7           # probability a treat fragment comes from a peak region (control samples uniformly)
 ERROR_RATE = 0.005        # substitution-type sequencing error rate (a few errors avoid pathological exact duplicates)
 SEED = 42                 # default random seed
