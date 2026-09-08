@@ -74,6 +74,8 @@ rule multiqc:
                             if (QC_TSS and TSS_SAMPLES) else []),
         organelle_mqc=lambda wc: ([R("5.QC/organelle/Organelle_summary_mqc.tsv")]
                                   if QC_ORGANELLE else []),
+        gates_mqc=lambda wc: ([R("5.QC/gates/gate_summary_mqc.tsv")]
+                              if GATES["enabled"] else []),
     output:
         R("2.cleandata/fastqc/multiqc/multiqc_report.html"),
     params:

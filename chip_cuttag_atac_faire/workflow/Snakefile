@@ -57,6 +57,7 @@ rule all:
         BLACKLIST_TARGETS,
         TSS_TARGETS,
         ORGANELLE_TARGETS,
+        GATES_TARGETS,
         MOTIF_TARGETS,
         DIFFBIND_TARGETS,
         R("4.peak/anno_result/Peakanno_PeakDistributions.pdf"),
@@ -84,6 +85,8 @@ if QC_TSS and TSS_SAMPLES:
     include: os.path.join(WORKFLOW_DIR, "rules", "tss_qc.smk")
 if QC_ORGANELLE:
     include: os.path.join(WORKFLOW_DIR, "rules", "organelle_qc.smk")
+if GATES["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "qc_gates.smk")
 if MOTIF["enabled"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "motif.smk")
 if DIFFBIND["enabled"]:

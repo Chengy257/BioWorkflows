@@ -255,6 +255,8 @@ Scheduler resources are layered separately: see §4.3 for `config/resources.yaml
 | `qc.tss` | `false` | TSS enrichment for atac/faire treat samples (per-sample CPM coverage ±2kb around TSS; §5.2) |
 | `qc.organelle` | `false` | organelle (chloroplast/mitochondrion) mapped-read fraction from idxstats (§5.2) |
 | `qc.organelle_patterns` | `[chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]` | contig-name patterns; ≤3-char patterns match contig names exactly (case-insensitive), longer ones as substrings |
+| `qc.gates.enabled` | `false` | per-sample QC gate summary table (`results/5.QC/gates/gate_summary.tsv`, injected into MultiQC; §5.2.1) |
+| `qc.gates.thresholds.*` | see §5.2.1 | informational gate thresholds (`mapping_rate_min` 0.70, `dup_rate_max` 0.50, `frip_min` 0.01, `nsc_min` 1.05, `rsc_min` 0.8, `tss_min` 6.0, `organelle_max` 0.20); validated as numbers in [0, 1] except `nsc_min`/`rsc_min`/`tss_min` (any positive number) |
 
 Reference keys (`genome_fa`/`gtf`/`bed`/`chromsize`/`genome_size`) that the project config leaves unset fall back to the selected species preset; an explicit key in the project config wins over the preset.
 
@@ -334,8 +336,24 @@ The `qc:` section of config.yaml controls the optional QC modules (their rule se
 | `qc.nsc_rsc` | `false` | `results/5.QC/spp/NSC_RSC_mqc.tsv` (SPP cross-correlation, slow; also injected into MultiQC) |
 | `qc.tss` | `false` | `results/5.QC/tss/`: per atac/faire treat sample a TSS profile plot + enrichment score (`{sample}_TSSE.txt`), plus `TSSE_summary.tsv` (injected into MultiQC). The score is the max of the ±2kb profile normalized by the outer-flank baseline (ENCODE-flavored definition on CPM coverage) — healthy ATAC libraries show a clear TSS spike |
 | `qc.organelle` | `false` | `results/5.QC/organelle/Organelle_summary.tsv` (injected into MultiQC): per-sample chloroplast/mitochondrial mapped-read fraction from `samtools idxstats`. Plant ATAC libraries frequently lose a large fraction of reads to the chloroplast; the number is diagnostic for library quality and for whether the reference should be nuclear-only |
+| `qc.gates` | `false` | `results/5.QC/gates/gate_summary.tsv` (+ MultiQC table): one PASS/WARN/FAIL row per sample aggregating the metrics above against configurable thresholds (§5.2.1) |
 
 Regardless of the switches, `results/5.QC/software_versions.yaml` (record of the tool versions actually used, including the Snakemake version) and the MultiQC summary report are always generated; FastQC, bowtie2 alignment stats, and picard dedup metrics are pulled into MultiQC automatically.
+
+### 5.2.1 QC gate summary (v0.6, `qc.gates`)
+
+With `qc.gates.enabled: true` the workflow writes one PASS/WARN/FAIL row per sample into `results/5.QC/gates/gate_summary.tsv` (also injected into the MultiQC report), aggregating the metrics it already computes. Each sample additionally gets a raw `samtools flagstat` report at `results/5.QC/gates/{sample}_flagstat.txt` (the mapping-rate source):
+
+| Metric | Source stage | Gate | Default threshold |
+|---|---|---|---|
+| `mapping_rate` | always (`samtools flagstat` mapped/total of the analysis BAM) | value ≥ `mapping_rate_min` | 0.70 |
+| `dup_rate` | `dedup.<assay>: true` (picard `PERCENT_DUPLICATION`) | value ≤ `dup_rate_max` | 0.50 |
+| `frip` | `qc.frip: true` (always on by default) | value ≥ `frip_min` | 0.01 |
+| `nsc` / `rsc` | `qc.nsc_rsc: true` (SPP cross-correlation) | value ≥ `nsc_min` / `rsc_min` | 1.05 / 0.8 |
+| `tss_enrichment` | `qc.tss: true` (TSS enrichment score) | value ≥ `tss_min` | 6.0 |
+| `organelle_fraction` | `qc.organelle: true` (organelle read fraction) | value ≤ `organelle_max` | 0.20 |
+
+Semantics: a metric whose source stage is off (or whose file is missing) renders `NA` and does not gate; every other metric PASSes or FAILs against its threshold. The per-sample `gate` column is **FAIL** when any metric fails, **WARN** when nothing fails but at least one metric is NA, and **PASS** otherwise; the `failed`/`na` columns name the offending metrics. Thresholds are user-tunable numbers under `qc.gates.thresholds` (each is validated as a number in [0, 1], except `nsc_min`/`rsc_min`/`tss_min`, which accept any positive value) and are strictly informational — **the pipeline never hard-fails on a gate**.
 
 ### 5.3 Replicate-aware peak stage (v0.5, `peak.replicate`)
 
@@ -500,6 +518,7 @@ workdir/
     ├── 5.QC/
     │   ├── frip/            # {group}__{sample}.frip.tsv, FRiP_summary.tsv
     │   ├── replicate_peaks/ # peak.replicate stage: Replicate_summary.tsv (+ MultiQC table)
+    │   ├── gates/           # qc.gates stage: {sample}_flagstat.txt, gate_summary.tsv
     │   ├── tss/             # qc.tss stage: {sample}_TSSE.txt, profile plots, TSSE_summary.tsv
     │   ├── organelle/       # qc.organelle stage: {sample}_idxstats.tsv, Organelle_summary.tsv
     │   ├── blacklist/       # blacklist stage: blacklist_summary.tsv (before/after counts)
@@ -524,6 +543,7 @@ workdir/
 | Replicate summary table | `results/5.QC/replicate_peaks/Replicate_summary.tsv` |
 | TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/TSSE_summary.tsv` |
 | Organelle fraction (`qc.organelle: true`) | `results/5.QC/organelle/Organelle_summary.tsv` |
+| QC gate summary (`qc.gates: true`) | `results/5.QC/gates/gate_summary.tsv` (+ per-sample `{sample}_flagstat.txt`) |
 | Blacklist-filtered peaks / counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
 | Per-sample normalized bigWigs (`bigwig.per_sample`) | `results/4.peak/samples/{sample}.bw` |
 | HOMER motif results (`motif.enabled`) | `results/6.motif/{group}/` |
@@ -594,6 +614,7 @@ bash tests/run_test.sh --replicate   # replicate/IDR scenario dry-run (adds a 2-
 bash tests/run_test.sh --qc-full     # extended QC scenario dry-run (tss + organelle + blacklist)
 bash tests/run_test.sh --motif       # motif stage scenario dry-run (dummy genome tag)
 bash tests/run_test.sh --diffbind    # differential binding scenario dry-run (adds a contrast group)
+bash tests/run_test.sh --gates       # QC gate summary scenario dry-run (qc.gates)
 bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples); the dry-run defaults to 50000 read pairs per sample (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
@@ -612,3 +633,6 @@ Give the two conditions their own sample-table groups (≥ 2 treat replicates ea
 
 **Q17: Do I need HOMER for the motif stage?**
 Yes — HOMER (findMotifsGenome.pl + a configured genome) is an external distribution, deliberately not in the conda template. Point the software.yaml `paths: homer_findmotifs` entry at the binary, install a genome for your assembly via `configureHomer`, and set `motif.homer_genome` (§5.5).
+
+**Q18: A QC gate shows FAIL — did my run fail?**
+No. The `qc.gates` table (§5.2.1) is informational: it compares the existing QC metrics against configurable reference thresholds (`qc.gates.thresholds`) but never aborts the pipeline. A `FAIL` names the metrics worth a look (`failed` column); `NA` marks metrics whose source stage is off (e.g. `dup_rate` for CUT&Tag, where duplicates are kept, or `tss_enrichment` for chip-only projects) — NAs alone produce a `WARN`, not a failure.

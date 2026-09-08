@@ -99,3 +99,15 @@ qc:
   organelle: false    # organelle (chloroplast/mitochondrion) read fraction from idxstats
   # organelle_patterns: [chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]
   #   contig-name patterns; <= 3 chars match exactly (case-insensitive), longer as substrings
+  gates:              # QC gate summary (v0.6): one PASS/WARN/FAIL row per sample
+    enabled: false    # aggregating the QC metrics into results/5.QC/gates/gate_summary.tsv
+                      # (injected into MultiQC; informational only — the pipeline never
+                      # hard-fails on a gate)
+    thresholds:       # each metric gates only when its source stage is on (else NA)
+      mapping_rate_min: 0.70   # flagstat mapped/total of the analysis BAM
+      dup_rate_max: 0.50       # picard PERCENT_DUPLICATION (needs dedup.<assay>: true)
+      frip_min: 0.01           # FRiP floor (qc.frip)
+      nsc_min: 1.05            # SPP floors (qc.nsc_rsc)
+      rsc_min: 0.8
+      tss_min: 6.0             # TSS enrichment floor (qc.tss)
+      organelle_max: 0.20      # organelle fraction ceiling (qc.organelle)

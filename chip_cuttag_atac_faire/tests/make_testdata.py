@@ -27,7 +27,7 @@ Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
 
 Usage:
     python tests/make_testdata.py --outdir <dir> [--reads 50000] [--seed 42]
-        [--replicate] [--qc-full]
+        [--replicate] [--qc-full] [--motif] [--diffbind] [--gates]
 """
 import argparse
 import gzip
@@ -108,6 +108,19 @@ QC_FULL_TAIL = """\
 """
 
 QC_FULL_BLACKLIST = '\n# ---------- Extended QC (--qc-full scenario) ----------\nblacklist: "ref/blacklist.bed"\n'
+
+GATES_TAIL = """\
+  gates:
+    enabled: true
+    thresholds:
+      mapping_rate_min: 0.70
+      dup_rate_max: 0.50
+      frip_min: 0.01
+      nsc_min: 1.05
+      rsc_min: 0.8
+      tss_min: 6.0
+      organelle_max: 0.20
+"""
 
 MOTIF_CONFIG_BLOCK = """
 # ---------- Motif enrichment (--motif scenario) ----------
@@ -360,7 +373,8 @@ def write_blacklist(outdir):
         fh.write(BLACKLIST_BED)
 
 
-def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False):
+def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False,
+                 gates=False):
     """Write the test config.yaml (relative paths, consumed via run.sh -c).
 
     Scenario flags splice the matching sub-blocks into the base config."""
@@ -374,6 +388,10 @@ def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=F
         assert anchor in text, "base config anchor for the qc-full block moved"
         text = text.replace(anchor, anchor + QC_FULL_TAIL, 1)
         text += QC_FULL_BLACKLIST
+    if gates:
+        anchor = "  deeptools: true\n"
+        assert anchor in text, "base config anchor for the gates block moved"
+        text = text.replace(anchor, anchor + GATES_TAIL, 1)
     if motif:
         text += MOTIF_CONFIG_BLOCK
     if diffbind:
@@ -405,6 +423,9 @@ def main():
     ap.add_argument("--diffbind", action="store_true",
                     help="add a 2-treat narrow chip group (g4) with condition/"
                          "batch columns and enable one DiffBind contrast")
+    ap.add_argument("--gates", action="store_true",
+                    help="enable the QC gate summary stage (qc.gates) with the "
+                         "default thresholds")
     args = ap.parse_args()
     if args.reads < 1:
         ap.error("--reads must be a positive integer")
@@ -420,14 +441,15 @@ def main():
     write_fastqs(args.outdir, chroms, genes, args.reads, args.seed, samples)
     write_samples(args.outdir, samples, extended=args.diffbind)
     write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full,
-                 motif=args.motif, diffbind=args.diffbind)
+                 motif=args.motif, diffbind=args.diffbind, gates=args.gates)
     if args.qc_full:
         write_blacklist(args.outdir)
 
     tags = [t for t, on in (("+replicate", args.replicate),
                             ("+qc-full", args.qc_full),
                             ("+motif", args.motif),
-                            ("+diffbind", args.diffbind)) if on]
+                            ("+diffbind", args.diffbind),
+                            ("+gates", args.gates)) if on]
     print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
           f"{len(samples)} samples x {args.reads} PE read pairs (seed={args.seed}"
           + (", " + ", ".join(tags) if tags else "") + ")")

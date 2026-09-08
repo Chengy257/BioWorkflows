@@ -339,6 +339,39 @@ vc_case("diffbind.foldchange below 1 reported",
 vc_case("diffbind block of wrong type reported",
         lambda c: c.__setitem__("diffbind", "on"), ["diffbind must be a mapping"])
 
+# --- v0.6 keys: qc.gates ---
+vc_case("valid qc.gates block accepted",
+        lambda c: c["qc"].__setitem__(
+            "gates", {"enabled": True,
+                      "thresholds": {"mapping_rate_min": 0.7, "dup_rate_max": 0.5,
+                                     "frip_min": 0.01, "nsc_min": 1.05, "rsc_min": 0.8,
+                                     "tss_min": 6.0, "organelle_max": 0.2}}),
+        [], expect_error=False)
+vc_case("qc.gates block is optional (legacy configs stay valid)",
+        lambda c: c["qc"].pop("gates", None), [], expect_error=False)
+vc_case("non-boolean qc.gates.enabled reported",
+        lambda c: c["qc"].__setitem__("gates", {"enabled": "yes"}), ["qc.gates.enabled"])
+vc_case("qc.gates of wrong type reported",
+        lambda c: c["qc"].__setitem__("gates", "on"), ["qc.gates must be a mapping"])
+vc_case("qc.gates.thresholds of wrong type reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": 3}),
+        ["qc.gates.thresholds must be a mapping"])
+vc_case("gates mapping_rate_min above 1 reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"mapping_rate_min": 1.5}}),
+        ["qc.gates.thresholds.mapping_rate_min"])
+vc_case("gates negative frip_min reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"frip_min": -0.1}}),
+        ["qc.gates.thresholds.frip_min"])
+vc_case("gates non-positive nsc_min reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"nsc_min": 0}}),
+        ["qc.gates.thresholds.nsc_min"])
+vc_case("gates fractional tss_min accepted",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"tss_min": 0.5}}),
+        [], expect_error=False)
+vc_case("gates non-numeric rsc_min reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"rsc_min": "high"}}),
+        ["qc.gates.thresholds.rsc_min"])
+
 print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
 check("regex: exact match (with escaping)",
@@ -508,6 +541,11 @@ if HAS_YAML:
           and cfg.get("motif", {}).get("enabled") is False
           and cfg.get("diffbind", {}).get("enabled") is False
           and cfg["peak"].get("bigwig_measure", "FE") == "FE")
+    check("config: qc.gates block present, default-off, full threshold set",
+          cfg["qc"].get("gates", {}).get("enabled") is False
+          and {"mapping_rate_min", "dup_rate_max", "frip_min", "nsc_min",
+               "rsc_min", "tss_min", "organelle_max"}
+          <= set(cfg["qc"].get("gates", {}).get("thresholds", {})))
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
@@ -515,6 +553,8 @@ if HAS_YAML:
     _bad_res = [k for k, v in (res_cfg.get("resources") or {}).items()
                 if not isinstance(v, dict) or not {"threads", "mem_mb", "runtime_min"} <= set(v)]
     check("resources.yaml: every rule entry has threads/mem_mb/runtime_min", not _bad_res, str(_bad_res))
+    check("resources.yaml: gates rules declared",
+          {"gates_flagstat", "qc_gates"} <= set(res_cfg.get("resources") or {}))
 
 print("== 8. Per-rule resource declarations ==")
 # --- resource helpers: extract the real source from common.smk, inject config ---
@@ -807,6 +847,110 @@ _r = _run_py("diffbind_sheet.py",
               "--out", _db_sheet])
 check("diffbind_sheet: unknown contrast group fails with a clear error",
       _r.returncode != 0 and "not found" in _r.stderr, f"rc={_r.returncode}")
+
+# --- gates_summary.py: PASS/WARN/FAIL aggregation over the canonical QC sources ---
+_gd = os.path.join(_stmp, "results")
+for _rel in ("3.align/bowtie2", "5.QC/frip", "5.QC/spp", "5.QC/tss",
+             "5.QC/organelle", "5.QC/gates"):
+    os.makedirs(os.path.join(_gd, _rel), exist_ok=True)
+
+
+def _wtext(path, text):
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _flagstat(total, mapped):
+    """samtools 1.17-style flagstat excerpt, byte-format as emitted by the
+    pinned samtools (trailing "(x% : N/A)" after the counts; percentage
+    + mate-mapped lines must not confuse the count-line parser)."""
+    pct = 100.0 * mapped / total
+    return (f"{total} + 0 in total (QC-passed reads + QC-failed reads)\n"
+            "0 + 0 secondary\n"
+            "0 + 0 supplementary\n"
+            "0 + 0 duplicates\n"
+            "0 + 0 primary duplicates\n"
+            f"{total} + 0 primary\n"
+            f"{mapped} + 0 mapped ({pct:.2f}% : N/A)\n"
+            f"{total} + 0 primary mapped ({pct:.2f}% : N/A)\n"
+            f"{pct:.2f}% + 0.00% mapped\n"
+            f"{total} + 0 paired in sequencing\n"
+            "900 + 0 with itself and mate mapped\n"
+            "0 + 0 singletons\n"
+            "0.00% + 0.00% with mate mapped to a different chr\n")
+
+
+def _picard_metrics(percent):
+    return ("## htsjdk.samtools.metrics.StringHeader\n"
+            "# MarkDuplicates INPUT=[x_sorted.bam] OUTPUT=[x_rmdup.bam]\n"
+            "## METRICS CLASS\tpicard.sam.DuplicationMetrics\n"
+            "LIBRARY\tUNPAIRED_READS_EXAMINED\tREAD_PAIRS_EXAMINED\t"
+            "SECONDARY_OR_SUPPLEMENTARY_RDS\tUNMAPPED_READS\t"
+            "UNPAIRED_READ_DUPLICATES\tREAD_PAIR_DUPLICATES\t"
+            "READ_PAIR_OPTICAL_DUPLICATES\tPERCENT_DUPLICATION\t"
+            "ESTIMATED_LIBRARY_SIZE\n"
+            f"lib\t0\t1000\t0\t0\t0\t100\t0\t{percent}\t9090\n\n"
+            "## HISTOGRAM\tjava.lang.Double\n")
+
+
+for _s, _total, _mapped in (("a", 1000, 900), ("b", 1000, 850),
+                            ("c", 1000, 500), ("d", 1000, 900)):
+    _wtext(os.path.join(_gd, "5.QC/gates", f"{_s}_flagstat.txt"),
+           _flagstat(_total, _mapped))
+_wtext(os.path.join(_gd, "3.align/bowtie2", "a_dup_metrics.txt"), _picard_metrics("0.100000"))
+_wtext(os.path.join(_gd, "3.align/bowtie2", "b_dup_metrics.txt"), _picard_metrics("0.800000"))
+_FRIP_HDR = "sample\tgroup\ttotal_reads\treads_in_peaks\tFRiP\n"
+_wtext(os.path.join(_gd, "5.QC/frip/g1__a.frip.tsv"), _FRIP_HDR + "a\tg1\t1000\t50\t0.0500\n")
+_wtext(os.path.join(_gd, "5.QC/frip/g1__b.frip.tsv"), _FRIP_HDR + "b\tg1\t1000\t20\t0.0200\n")
+_wtext(os.path.join(_gd, "5.QC/frip/g2__d.frip.tsv"), _FRIP_HDR + "d\tg2\t1000\t30\t0.0300\n")
+_wtext(os.path.join(_gd, "5.QC/spp/a_NSC.txt"), "1.15\n")
+_wtext(os.path.join(_gd, "5.QC/spp/a_RSC.txt"), "0.95\n")
+_wtext(os.path.join(_gd, "5.QC/tss/a_TSSE.txt"), "a\t7.2000\t3.0000\t1.000000\t2\n")
+_wtext(os.path.join(_gd, "5.QC/organelle/Organelle_summary.tsv"),
+       "sample\tmapped_reads\torganelle_reads\torganelle_fraction\tmatched_contigs\n"
+       "a\t900\t90\t0.1000\tChrC:90\n"
+       "b\t850\t765\t0.9000\tChrC:765\n")
+
+_gs_out = os.path.join(_stmp, "gate.tsv")
+_gs_mqc = os.path.join(_stmp, "gate_mqc.tsv")
+_r = _run_py("gates_summary.py",
+             ["--samples", "a=g1", "b=g1", "c=g2", "d=g2",
+              "--align-dir", os.path.join(_gd, "3.align", "bowtie2"),
+              "--qc-dir", os.path.join(_gd, "5.QC"),
+              "--gates-dir", os.path.join(_gd, "5.QC", "gates"),
+              "--out", _gs_out, "--mqc", _gs_mqc])
+_gs = open(_gs_out, encoding="utf-8").read().splitlines() if os.path.exists(_gs_out) else []
+check("gates_summary: PASS/FAIL/WARN rows over the canonical sources",
+      _r.returncode == 0 and len(_gs) == 5
+      and _gs[0] == "sample\tgroup\tmapping_rate\tdup_rate\tfrip\tnsc\trsc\t"
+                    "tss_enrichment\torganelle_fraction\tfailed\tna\tgate"
+      and _gs[1] == "a\tg1\t0.9000\t0.1000\t0.0500\t1.1500\t0.9500\t7.2000\t"
+                    "0.1000\t-\t-\tPASS"
+      and _gs[2] == "b\tg1\t0.8500\t0.8000\t0.0200\tNA\tNA\tNA\t0.9000\t"
+                    "dup_rate,organelle_fraction\tnsc,rsc,tss_enrichment\tFAIL"
+      and _gs[3] == "c\tg2\t0.5000\tNA\tNA\tNA\tNA\tNA\tNA\tmapping_rate\t"
+                    "dup_rate,frip,nsc,rsc,tss_enrichment,organelle_fraction\tFAIL"
+      and _gs[4] == "d\tg2\t0.9000\tNA\t0.0300\tNA\tNA\tNA\tNA\t-\t"
+                    "dup_rate,nsc,rsc,tss_enrichment,organelle_fraction\tWARN",
+      f"rc={_r.returncode} rows={_gs}")
+check("gates_summary: mqc wrapper carries the MultiQC header",
+      os.path.exists(_gs_mqc)
+      and "# id: 'gate_summary_table'" in open(_gs_mqc, encoding="utf-8").read())
+
+_gs_out2 = os.path.join(_stmp, "gate_loose.tsv")
+_r2 = _run_py("gates_summary.py",
+              ["--samples", "a=g1", "c=g2",
+               "--align-dir", os.path.join(_gd, "3.align", "bowtie2"),
+               "--qc-dir", os.path.join(_gd, "5.QC"),
+               "--gates-dir", os.path.join(_gd, "5.QC", "gates"),
+               "--out", _gs_out2, "--mqc", os.path.join(_stmp, "gate_loose_mqc.tsv"),
+               "--thresholds", "mapping_rate_min=0.4"])
+_gs2 = open(_gs_out2, encoding="utf-8").read().splitlines() if os.path.exists(_gs_out2) else []
+check("gates_summary: --thresholds overrides flip a FAIL into a WARN",
+      _r2.returncode == 0 and len(_gs2) == 3
+      and _gs2[2] == "c\tg2\t0.5000\tNA\tNA\tNA\tNA\tNA\tNA\t-\t"
+                     "dup_rate,frip,nsc,rsc,tss_enrichment,organelle_fraction\tWARN",
+      f"rc={_r2.returncode} rows={_gs2}")
 shutil.rmtree(_stmp, ignore_errors=True)
 
 print()

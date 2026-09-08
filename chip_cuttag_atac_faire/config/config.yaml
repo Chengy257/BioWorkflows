@@ -117,5 +117,16 @@ qc:
   organelle_patterns: [chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]
                      # contig-name patterns; <= 3 chars match exactly (case-insensitive),
                      # longer ones as substrings
+  gates:             # QC gate summary (v0.6; default off): one PASS/WARN/FAIL row per
+                     # sample aggregating the metrics above (results/5.QC/gates/)
+    enabled: false
+    thresholds:      # informational gates; the pipeline never hard-fails on them
+      mapping_rate_min: 0.70   # flagstat mapped/total of the analysis BAM
+      dup_rate_max: 0.50       # picard PERCENT_DUPLICATION (NA when dedup.<assay> is off)
+      frip_min: 0.01           # ENCODE TF floor; loosen for histone marks
+      nsc_min: 1.05            # only gates when qc.nsc_rsc is on
+      rsc_min: 0.8             # only gates when qc.nsc_rsc is on
+      tss_min: 6.0             # only gates when qc.tss is on
+      organelle_max: 0.20      # only gates when qc.organelle is on
 
 # Scheduler resources (per rule) now live in config/resources.yaml.

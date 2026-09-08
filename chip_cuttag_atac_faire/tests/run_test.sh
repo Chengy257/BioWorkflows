@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash tests/run_test.sh [--reads N] [--keep] [--real-run] \
-#       [--replicate] [--qc-full] [--help]
+#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--help]
 #     --reads     PE read pairs per sample, default 50000 (CI passes 2000)
 #     --keep      keep tests/data and tests/work (cleaned up by default)
 #     --real-run  run end-to-end and assert that outputs exist (default is
@@ -47,6 +47,8 @@ Usage:
                 dry-run only — a real run needs an external HOMER install)
     --diffbind  scenario: 2-treat narrow group (condition/batch columns) +
                 one DiffBind contrast (dry-run; a real run needs DiffBind)
+    --gates     scenario: enable the QC gate summary stage (qc.gates;
+                per-sample flagstat + PASS/WARN/FAIL gate table)
     -h, --help  show this help
 
 Requires:
@@ -68,6 +70,7 @@ REPLICATE=0
 QC_FULL=0
 MOTIF=0
 DIFFBIND=0
+GATES=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
@@ -80,6 +83,7 @@ while [[ $# -gt 0 ]]; do
         --qc-full)   QC_FULL=1; shift ;;
         --motif)     MOTIF=1; shift ;;
         --diffbind)  DIFFBIND=1; shift ;;
+        --gates)     GATES=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
     esac
@@ -91,6 +95,7 @@ SCENARIO_ARGS=()
 [[ "$QC_FULL" == 1 ]] && SCENARIO_ARGS+=(--qc-full)
 [[ "$MOTIF" == 1 ]] && SCENARIO_ARGS+=(--motif)
 [[ "$DIFFBIND" == 1 ]] && SCENARIO_ARGS+=(--diffbind)
+[[ "$GATES" == 1 ]] && SCENARIO_ARGS+=(--gates)
 
 echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS, scenario_args=${SCENARIO_ARGS[*]:-none})"
 command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exit 1; }
@@ -180,6 +185,12 @@ if [[ "$REAL_RUN" == 1 ]]; then
             "results/6.diffbind/g1__vs__g4/DB_results.tsv"
         )
     fi
+    if [[ "$GATES" == 1 ]]; then
+        EXPECTED+=(
+            "results/5.QC/gates/gate_summary.tsv"
+            "results/5.QC/gates/gate_summary_mqc.tsv"
+        )
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -202,6 +213,9 @@ else
     fi
     if [[ "$DIFFBIND" == 1 ]]; then
         DAG_RULES+=(diffbind_sheet diffbind_report)
+    fi
+    if [[ "$GATES" == 1 ]]; then
+        DAG_RULES+=(gates_flagstat qc_gates)
     fi
     for rule in "${DAG_RULES[@]}"; do
         if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then

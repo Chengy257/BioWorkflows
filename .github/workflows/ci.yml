@@ -76,6 +76,8 @@ jobs:
         run: bash tests/run_test.sh --reads 2000 --motif
       - name: DiffBind scenario dry-run
         run: bash tests/run_test.sh --reads 2000 --diffbind
+      - name: QC gates scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --gates
 
   seclip-seq:
     name: seclip-seq (unit tests + lint + dry-run regression)

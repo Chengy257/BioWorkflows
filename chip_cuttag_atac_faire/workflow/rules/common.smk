@@ -292,6 +292,45 @@ def validate_config(cfg):
         if pats is not None and (not isinstance(pats, list)
                                  or not all(isinstance(x, str) and x for x in pats)):
             errors.append(f"qc.organelle_patterns must be a list of non-empty strings, got {pats!r}")
+        # QC gate summary (v0.6): qc.gates block, default off; thresholds are
+        # informational and validated as numbers in [0, 1] except the NSC/RSC/
+        # TSS floors (any positive number).
+        gates = cfg["qc"].get("gates")
+        if gates is not None:
+            if not isinstance(gates, dict):
+                errors.append(f"qc.gates must be a mapping, got {gates!r}")
+            else:
+                if not isinstance(gates.get("enabled", False), bool):
+                    errors.append(
+                        f"qc.gates.enabled must be true/false, got {gates.get('enabled')!r}")
+                thr = gates.get("thresholds")
+                if thr is not None:
+                    if not isinstance(thr, dict):
+                        errors.append(f"qc.gates.thresholds must be a mapping, got {thr!r}")
+                    else:
+                        for key in ("mapping_rate_min", "dup_rate_max",
+                                    "frip_min", "organelle_max"):
+                            if key in thr:
+                                try:
+                                    if not 0 <= float(thr[key]) <= 1:
+                                        errors.append(
+                                            f"qc.gates.thresholds.{key} must be in [0, 1], "
+                                            f"got {thr[key]!r}")
+                                except (TypeError, ValueError):
+                                    errors.append(
+                                        f"qc.gates.thresholds.{key} must be numeric, "
+                                        f"got {thr[key]!r}")
+                        for key in ("nsc_min", "rsc_min", "tss_min"):
+                            if key in thr:
+                                try:
+                                    if not float(thr[key]) > 0:
+                                        errors.append(
+                                            f"qc.gates.thresholds.{key} must be a positive "
+                                            f"number, got {thr[key]!r}")
+                                except (TypeError, ValueError):
+                                    errors.append(
+                                        f"qc.gates.thresholds.{key} must be numeric, "
+                                        f"got {thr[key]!r}")
     if isinstance(cfg.get("trim"), dict):
         t = cfg["trim"]
         for key, lo in (("quality", 0), ("stringency", 1)):
@@ -395,6 +434,33 @@ ORGANELLE_PATTERNS = list((config.get("qc") or {}).get("organelle_patterns")
                           or ["chrc", "chrm", "pt", "mt", "pltd",
                               "chloroplast", "mitochondr", "plastid"])
 
+# QC gate summary (v0.6, default off): one PASS/WARN/FAIL row per sample
+# aggregating the existing QC metrics (mapping rate, duplication, FRiP,
+# NSC/RSC, TSS enrichment, organelle fraction). Strictly informational —
+# the pipeline never hard-fails on a gate; aggregation lives in
+# workflow/scripts/gates_summary.py.
+GATES_DEFAULTS = {
+    "enabled": False,
+    "thresholds": {
+        "mapping_rate_min": 0.70,   # flagstat mapped/total of the analysis BAM
+        "dup_rate_max": 0.50,       # picard PERCENT_DUPLICATION (NA when dedup is off)
+        "frip_min": 0.01,           # ENCODE TF floor; loosen for histone marks
+        "nsc_min": 1.05,
+        "rsc_min": 0.8,
+        "tss_min": 6.0,
+        "organelle_max": 0.20,
+    },
+}
+_gates_cfg = (config.get("qc") or {}).get("gates") or {}
+_gates_user_thr = _gates_cfg.get("thresholds") or {}
+_unknown_gates_thr = [k for k in _gates_user_thr if k not in GATES_DEFAULTS["thresholds"]]
+if _unknown_gates_thr:
+    print(f"[config warning] unknown qc.gates.thresholds keys are ignored: {_unknown_gates_thr}")
+_gates_thr = dict(GATES_DEFAULTS["thresholds"])
+_gates_thr.update({k: v for k, v in _gates_user_thr.items()
+                   if k in GATES_DEFAULTS["thresholds"]})
+GATES = {"enabled": bool(_gates_cfg.get("enabled", False)), "thresholds": _gates_thr}
+
 # Signal tracks (v0.5 Phase 4): per-sample normalized coverage bigWigs and the
 # group-track measure; both optional, defaults keep today's FE-only behavior.
 BIGWIG_DEFAULTS = {"per_sample": False, "normalize": "RPGC", "bin": 25}
@@ -449,6 +515,13 @@ if REPLICATE["enabled"]:
 if QC_TSS and not TSS_SAMPLES:
     print("[config warning] qc.tss is enabled but the table has no atac/faire "
           "treat sample; the TSS stage is skipped")
+
+# Gate summary covers every sample; the FRiP filenames need each sample's
+# group (first group wins for a sample listed in several groups).
+GATES_SAMPLE_GROUPS = {}
+for _g, _v in GROUPS.items():
+    for _s in _v["treat"] + _v["control"]:
+        GATES_SAMPLE_GROUPS.setdefault(_s, _g)
 
 # DiffBind contrast enumeration (slugs reuse the '__vs__' convention; group
 # names cannot contain '__' so the split is unambiguous).
@@ -751,6 +824,8 @@ RESOURCE_DEFAULTS = {
     "tss_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
     "organelle_idxstats": {"threads": 1, "mem_mb": 2048, "runtime_min": 30},
     "organelle_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "gates_flagstat": {"threads": 1, "mem_mb": 2048, "runtime_min": 15},
+    "qc_gates": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
     "bigwig_sample": {"threads": 2, "mem_mb": 8192, "runtime_min": 60},
     "motif_enrichment": {"threads": 2, "mem_mb": 8192, "runtime_min": 720},
     "diffbind_sheet": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
@@ -866,6 +941,13 @@ if QC_ORGANELLE:
     ORGANELLE_TARGETS += [R(f"5.QC/organelle/{s}_idxstats.tsv") for s in SAMPLES]
     ORGANELLE_TARGETS += [R("5.QC/organelle/Organelle_summary.tsv"),
                           R("5.QC/organelle/Organelle_summary_mqc.tsv")]
+
+# QC gate summary targets (only aggregated when the stage is enabled).
+GATES_TARGETS = []
+if GATES["enabled"]:
+    GATES_TARGETS += [R(f"5.QC/gates/{s}_flagstat.txt") for s in SAMPLES]
+    GATES_TARGETS += [R("5.QC/gates/gate_summary.tsv"),
+                      R("5.QC/gates/gate_summary_mqc.tsv")]
 
 # Software-version record: generated by the software_versions rule in
 # meta.smk (no input dependency, scheduled freely within the DAG); always

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - unreleased
+
+### Added
+
+- **QC gate summary stage (`qc.gates`, default off)**: one PASS/WARN/FAIL row per sample aggregating the QC metrics the workflow already computes — mapping rate (`samtools flagstat` of the analysis BAM, new per-sample `results/5.QC/gates/{sample}_flagstat.txt`), duplication rate (picard `PERCENT_DUPLICATION`), FRiP, NSC/RSC, TSS enrichment, and organelle fraction — into `results/5.QC/gates/gate_summary.tsv` (plus a MultiQC custom-content table). A metric whose source stage is off (or whose file is missing) renders `NA`; the per-sample gate is FAIL when any metric fails its threshold, WARN when nothing fails but at least one metric is NA, PASS otherwise (`failed`/`na` columns name the offending metrics). All thresholds are user-tunable numbers under `qc.gates.thresholds` (defaults: `mapping_rate_min` 0.70, `dup_rate_max` 0.50, `frip_min` 0.01, `nsc_min` 1.05, `rsc_min` 0.8, `tss_min` 6.0, `organelle_max` 0.20; validated as numbers in [0, 1] except `nsc_min`/`rsc_min`/`tss_min`, which accept any positive value) and are strictly informational — the pipeline never hard-fails on a gate. Aggregation lives in `workflow/scripts/gates_summary.py` (stdlib only, sample=group tokens baked from the sample table); the new `gates_flagstat`/`qc_gates` rules and their `config/resources.yaml` entries only enter the DAG when the stage is enabled (default dry-run baseline unchanged at 47 jobs; `tests/run_test.sh --gates` dry-runs the scenario, CI gained a matching step).
+
 ## [0.5.0] - unreleased
 
 ### Added
