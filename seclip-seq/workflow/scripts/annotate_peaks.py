@@ -202,7 +202,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Merge bedtools intersect/closest outputs into the "
                     "seclip-seq peak annotation TSV.")
-    parser.add_argument("--peaks", required=True, help="peak BED (BED6 PureCLIP or 4-column consensus)")
+    parser.add_argument("--peaks", required=True,
+                        help="peak BED (7-column PureCLIP BED6+attributes, or 4-column consensus)")
     parser.add_argument("--exon-hits", required=True,
                         help="bedtools intersect -a peaks -b exons.bed -u output")
     parser.add_argument("--gene-hits", required=True,
@@ -211,8 +212,8 @@ def main(argv=None):
                         help="bedtools closest -a peaks -b genes.bed -d -t first output")
     parser.add_argument("--gene-table", required=True,
                         help="gene_id/gene_name/gene_biotype TSV from gtf_to_gene_regions.py")
-    parser.add_argument("--peak-cols", type=int, default=6,
-                        help="peak columns in the bedtools outputs (6 = PureCLIP BED6, 4 = consensus)")
+    parser.add_argument("--peak-cols", type=int, default=7,
+                        help="peak columns in the bedtools outputs (7 = PureCLIP BED6+attributes, 4 = consensus)")
     parser.add_argument("--score-col", type=int, default=5,
                         help="1-based peak column used as the score (5 = PureCLIP score, 4 = support)")
     parser.add_argument("--out", required=True, help="output annotation TSV")

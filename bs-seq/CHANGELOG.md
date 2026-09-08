@@ -55,6 +55,18 @@ All notable changes to this project are documented in this file. Format based on
   `example/samples.csv` documents the optional `group` column (s1/s2
   control; the two-sample example cannot enable dmr as shipped).
 
+### Fixed
+
+- Final-review fix: `rules/common.smk` resolves the sample table once into the
+  module-level `_SAMPLE_TABLE` (absolute > project-relative > repository-relative)
+  and `rules/dmr.smk` consumes that resolved path instead of the raw
+  `config["SampleListFile"]` value — a table declared relative to the repository
+  root would previously have failed at job runtime (matches the srna-seq deg
+  pattern).
+- Real-run round: `--real-run --dmr` (2x2, methylKit inside the workflow) passes
+  all assertions including `results/6.DMR/DMR_summary.tsv` after the pinned
+  environment gained `r-base` + `bioconductor-methylkit`.
+
 ## [0.1.0] - 2026-09-05
 
 ### Changed (2026-09-05/06, WSL real-run reconciliation against bismark 0.24.0)

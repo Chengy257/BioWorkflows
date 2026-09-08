@@ -63,7 +63,7 @@ All notable changes to this project are documented in this file. Format based on
 - `tests/make_testdata.py --with-inputs`: opt-in input-control test samples (FC_in1 /
   FC_in2, appended to the RNG stream after the ip samples, so the default output stays
   byte-identical); `tests/test_gtf_regions.py` gains a flagged-consensus (BED5) case
-  (27 tests total).
+  and a 7-column PureCLIP-layout case (28 tests total).
 - Parse-time validation for the new switches (aggregated in `validate_config`): both
   sections are optional (absent = disabled, so v0.1 project configs keep working);
   `reproducible_peaks.{enabled,min_replicates}` and `annotate_peaks.enabled` shapes;
@@ -75,10 +75,10 @@ All notable changes to this project are documented in this file. Format based on
 - New scheduler-resource defaults (`RESOURCE_DEFAULTS` in common.smk):
   `consensus_peaks` 1 thread / 2048 MB / 30 min, `gtf_gene_regions` and
   `annotate_peaks` 1 / 4096 / 60 (overridable per rule via a project resources.yaml).
-- `tests/test_gtf_regions.py`: 26 pytest unit tests for both scripts (attribute
+- `tests/test_gtf_regions.py`: pytest unit tests for both scripts (attribute
   parsing, interval extraction, output contracts, merge/feature-class logic, error
-  paths); `make unit` target (`python3 -m pytest tests -q`) and `make test` now runs
-  check + lint + unit.
+  paths; 28 cases after the real-run round additions); `make unit` target
+  (`python -m pytest tests -q`) and `make test` now runs check + lint + unit.
 - `tests/run_test.sh --consensus` scenario: rewrites the test sample table to the
   condition/role form (both samples one ip condition), enables both stages in the
   test config, dry-runs, and asserts `consensus_peaks`, `gtf_gene_regions`,
@@ -87,8 +87,10 @@ All notable changes to this project are documented in this file. Format based on
 ### Changed
 
 - README results tables now document the PureCLIP output contract (the workflow's
-  first written record of it): `results/5.callpeak/{sample}.pureclip.bed` is BED6 —
-  chromosome, start, end, site name, crosslink-site score, strand.
+  first written record of it): `results/5.callpeak/{sample}.pureclip.bed` carries 7
+  columns — BED6 (chromosome, start, end, site name, crosslink-site score, strand)
+  plus a trailing score-attributes field (`[score_CL=...;...]`), corrected from the
+  first draft's BED6 assumption by the 40k-read real-run round (see Fixed below).
 - Final-review fix: the four bedtools multiinter rules sort their input beds with
   `LC_COLLATE=C sort -k1,1 -k2,2n` (numeric start, stable collation) — the same form
   chip's `callpeak.smk` codified from a real 2026-09-05 deployment failure; the
@@ -111,7 +113,22 @@ All notable changes to this project are documented in this file. Format based on
   background/consensus/filtered outputs); `--consensus` and `--input-control` are
   mutually exclusive; `--consensus --real-run` / `--input-control --real-run`
   additionally need bedtools (documented, not rejected, matching the existing
-  convention).
+  convention.
+
+### Fixed
+
+- Real-run round (40k reads, both v0.2 scenarios green end-to-end): PureCLIP 1.3.1
+  emits 7 columns (BED6 + a trailing score-attributes field), not BED6 as first
+  documented — `annotate_sample_peaks` passes `--peak-cols 7` (the merge script's
+  column-count check caught the 14-vs-13 closest mismatch); README, user-guide,
+  and the script docs carry the corrected contract and a regression test pins the
+  7-column closest layout.
+- Real-run round: `tests/make_testdata.py` plants deterministic crosslink hotspots
+  (shared ones in every sample, ip-only ones in ip samples) — with uniformly random
+  30 bp reads, crosslink sites essentially never coincide across replicates, so the
+  consensus filtered to an empty file and the input control flagged every site;
+  the scenarios now produce non-empty consensus, background, flagged, and filtered
+  outputs under real runs.
 
 ## [0.1.0] - 2026-09-05
 
