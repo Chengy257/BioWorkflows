@@ -6,8 +6,12 @@
 # -> assert -> clean up
 #
 # Usage:
-#   bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
+#   bash tests/run_test.sh [--reads N] [--dmr] [--keep] [--real-run] [--help]
 #     --reads     PE read pairs per sample, default 50000
+#     --dmr       differential-methylation scenario: 4 samples (s1/s2
+#                 control, s3/s4 treat), group column in the sample table,
+#                 dmr enabled; dry-run asserts dmr_methylkit in the DAG
+#                 (default scenario: 20 jobs, --dmr scenario: 35)
 #     --keep      keep tests/data and tests/work (cleaned up by default)
 #     --real-run  run end-to-end and assert that outputs exist (default is
 #                 a dry-run that only validates DAG integrity; a real run
@@ -29,8 +33,10 @@ One-command regression test: synthetic data -> assemble working directory
 -> dry-run (default) / --real-run end-to-end -> assertions
 
 Usage:
-  bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
+  bash tests/run_test.sh [--reads N] [--dmr] [--keep] [--real-run] [--help]
   --reads     PE read pairs per sample, default 50000
+  --dmr       differential-methylation scenario (4 samples, group design,
+              dmr enabled; asserts the dmr_methylkit rule in the DAG)
   --keep      keep tests/data and tests/work (cleaned up by default)
   --real-run  run end-to-end and assert that outputs exist (default only
               dry-runs to validate DAG integrity; a real run needs a full
@@ -47,12 +53,14 @@ EOF
 READS=50000
 KEEP=0
 REAL_RUN=0
+DMR=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
             [[ $# -ge 2 ]] || { echo "[ERROR] --reads requires a value" >&2; exit 1; }
             [[ "$2" =~ ^[0-9]+$ ]] || { echo "[ERROR] --reads must be a positive integer: $2" >&2; exit 1; }
             READS="$2"; shift 2 ;;
+        --dmr)      DMR=1; shift ;;
         --keep)     KEEP=1; shift ;;
         --real-run) REAL_RUN=1; shift ;;
         -h|--help)  usage; exit 0 ;;
@@ -67,8 +75,12 @@ command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exi
 command -v python3   >/dev/null || { echo "[ERROR] python3 not found" >&2; exit 1; }
 python3 -c 'import yaml' >/dev/null 2>&1 || { echo "[ERROR] python3 is missing pyyaml" >&2; exit 1; }
 
-echo "[test] 2/5 Generating synthetic test data (reads=$READS, fixed seed)"
-python3 "$TESTS_DIR/make_testdata.py" --outdir "$DATA_DIR" --reads "$READS"
+echo "[test] 2/5 Generating synthetic test data (reads=$READS, fixed seed, dmr=$DMR)"
+GEN_ARGS=(--outdir "$DATA_DIR" --reads "$READS")
+if [[ "$DMR" == 1 ]]; then
+    GEN_ARGS+=(--dmr)
+fi
+python3 "$TESTS_DIR/make_testdata.py" "${GEN_ARGS[@]}"
 
 echo "[test] 3/5 Assembling test project tests/work"
 rm -rf "$WORK_DIR"
@@ -107,6 +119,9 @@ if [[ "$REAL_RUN" == 1 ]]; then
         "results/5.QC/multiqc/multiqc_report.html"
         "results/5.QC/software_versions.yaml"
     )
+    if [[ "$DMR" == 1 ]]; then
+        EXPECTED+=("results/6.DMR/DMR_summary.tsv")
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -116,13 +131,28 @@ if [[ "$REAL_RUN" == 1 ]]; then
     done
 else
     SNAKE_LOG="$WORK_DIR/snakemake.logs.txt"
-    for rule in bismark_align deduplicate methylation_extractor coverage2cytosine; do
+    DRY_RULES=(bismark_align deduplicate methylation_extractor coverage2cytosine)
+    if [[ "$DMR" == 1 ]]; then
+        DRY_RULES+=(dmr_methylkit)
+    fi
+    for rule in "${DRY_RULES[@]}"; do
         if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
             echo "  PASS  DAG contains rule $rule"
         else
             echo "  FAIL  DAG does not contain rule $rule"; FAIL=1
         fi
     done
+    if [[ "$DMR" != 1 ]]; then
+        # Default-off contract: with no dmr config the rule must be absent
+        # from the DAG entirely.
+        if grep -q "dmr_methylkit" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  FAIL  default DAG must not contain rule dmr_methylkit"; FAIL=1
+        else
+            echo "  PASS  default DAG contains no rule dmr_methylkit"
+        fi
+    fi
+    JOB_COUNT=$(grep -cE '^(local)?rule ' "$CAPTURE_LOG" 2>/dev/null || true)
+    echo "[test]   dry-run job count: ${JOB_COUNT:-unknown} (baseline 20; --dmr scenario 35)"
 fi
 if [[ "$FAIL" != "0" ]]; then
     echo "[ERROR] Assertions failed; keeping workspace for debugging: $WORK_DIR" >&2

@@ -1,5 +1,5 @@
-sample_id
-root_rep1
-root_rep2
-leaf_rep1
-leaf_rep2
+sample_id,group
+root_rep1,root
+root_rep2,root
+leaf_rep1,leaf
+leaf_rep2,leaf

@@ -6,7 +6,7 @@ This directory contains everything needed to start a bs-seq project (Bismark met
 
 | File | Description |
 |---|---|
-| `samples.csv` | sample table for the example project (`s1`, `s2`), single `sample_id` column — replace them with your own ids |
+| `samples.csv` | sample table for the example project (`s1`, `s2`) with `sample_id,group` columns (both control; the group feeds the optional DMR stage, which needs at least two groups — a single `sample_id` column remains valid) — replace them with your own ids |
 | `config.yaml` | filled copy of `config/config.template.yaml` with the full bs-seq schema: `species: "osa"` (rice IRGSP-1.0 preset), the Trim Galore parameters, the Bismark alignment extras, and the methylation-extraction options (`cx_report` / `merge_cpg` / `buffer_frac`); the genome still holds a `/path/to/` placeholder |
 
 For the miniature synthetic dataset (no real data needed) see `tests/make_testdata.py` (`bash tests/run_test.sh` assembles the working directory and dry-runs automatically); a real analysis project must supply its own FASTQ files.

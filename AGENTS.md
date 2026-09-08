@@ -18,11 +18,9 @@ unvalidated for the cluster profiles).
   `docs/dag_test.svg`; seclip-seq v0.1 shipped it tracked by mistake — do not
   repeat that.
 - **Cross-project code lives in `shared/`, consumed in place (never copied)**,
-  and `shared/` stays project-agnostic. Consumers today: `lib/launcher.sh` and
-  `python/bioworkflows_versions.py` are used by all five workflows;
-  `python/bioworkflows_runtime.py` (the WorkflowSpec framework) by rna-seq,
-  seclip-seq, srna-seq, bs-seq — `chip_cuttag_atac_faire` is the documented
-  exception (see its `docs/TODO.md` §5; never migrate it as a drive-by).
+  and `shared/` stays project-agnostic. Consumers today: `lib/launcher.sh`,
+  `python/bioworkflows_versions.py`, and `python/bioworkflows_runtime.py`
+  (the WorkflowSpec framework) are used by all five workflows.
 - **Old implementations and process docs are archived to
   `D:\BioWorkflows_archive\` (outside the repo), never tracked.** Implementation
   plans go under its `plans/` directory.
@@ -87,7 +85,8 @@ pbs, sge, slurm}}`, `tests/{lint.sh, make_testdata.py, run_test.sh}`,
   asserts declared outputs exist (needs the full analysis environment). DAG svg
   regeneration is best-effort and never fails the test.
 - Dry-run job-count baselines — re-verify after refactors: chip 47, rna-seq deg
-  25, seclip-seq 23, srna-seq 27, bs-seq 20.
+  25, seclip-seq 23 (consensus 28 / input-control 45), srna-seq 27 (deg 28 /
+  novel-mirna 29), bs-seq 20 (dmr 35).
 - Known issues (do not re-litigate): rna-seq CI end-to-end fails at
   `trimAdapter_PE` on the runner (recorded in its CHANGELOG; the user validates
   on the real server); srna DAG-svg generation can fail noisily under `dot`.
@@ -102,13 +101,14 @@ pbs, sge, slurm}}`, `tests/{lint.sh, make_testdata.py, run_test.sh}`,
    `paths:`, large references in `databases:`. `environment.yaml` carries the
    standard header ("Optional all-in-one environment template for a new server.
    This file is NOT created automatically by Snakemake.") with block-form
-   `channels:` and pinned versions (bs-seq's older headerless/inline-style file
-   is to be aligned on its next touch).
+   `channels:` and pinned versions.
 4. Add a CI job in `.github/workflows/ci.yml` following the seclip/srna/bs
-   template: setup-python 3.10, `snakemake==7.32.4` + `pulp==2.7.0` + pyyaml,
-   apt shellcheck graphviz, lint, `bash tests/run_test.sh --reads 2000`, DAG
-   artifact upload (uploads read the working tree; `.gitignore` is irrelevant
-   to artifact upload).
+   template: setup-python 3.10, `snakemake==7.32.4` + `pulp==2.7.0` + pyyaml
+   + pytest, apt shellcheck graphviz, unit tests (`python -m pytest tests -q`
+   when the project carries a pytest suite), lint, `bash tests/run_test.sh
+   --reads 2000` plus one enabled-stage scenario dry-run per new optional
+   stage, DAG artifact upload (uploads read the working tree; `.gitignore` is
+   irrelevant to artifact upload).
 5. Docs: register the workflow in the ROOT README table; write the per-project
    README / user-guide / TODO (deferred decisions and their rationale) /
    CHANGELOG entry.

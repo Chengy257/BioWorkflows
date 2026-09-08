@@ -1,6 +1,7 @@
-sample_id
-FC_rep1
-FC_rep2
-FC_rep3
-FC_rep4
-FC_rep5
+sample_id,condition,role
+FC_rep1,FBL,ip
+FC_rep2,FBL,ip
+FC_rep3,FBL,ip
+FC_rep4,FBL,ip
+FC_rep5,FBL,ip
+FC_in1,FBL,input

@@ -1,6 +1,6 @@
 # seclip-seq workflow user guide
 
-> Updated: 2026-09-05 (v0.1.0)
+> Updated: 2026-09-08 (v0.2.0)
 > Intended audience: analysts running this workflow on their cluster/server
 > The workflow never creates Conda environments on its own: the runtime environment is created explicitly from `workflow/environment.yaml`, or reuses the server's existing environment via `config/software.yaml`. Cluster scheduling resources are declared per rule in `config/resources.yaml` and support project-level overrides. Raw inputs live in `1.rawdata/` at the working-directory root; every derived output is consolidated under the project's `results/` directory (`results_dir` in config).
 
@@ -15,7 +15,7 @@
 | Linux (PBS/SGE/SLURM cluster or a single machine; WSL works) | the scheduler is auto-detected by `run.sh` or set via `--profile` |
 | Snakemake | reference version **7.32.4** (pinned in `workflow/environment.yaml`); see the version matrix in §1.4 |
 | Python 3 + PyYAML | the bootstrap dependency `run.sh` needs to resolve `software.yaml` and run preflight checks; must be on the main PATH |
-| Analysis tools | STAR / samtools / umi-tools / cutadapt / seqkit / bgzip / FastQC / MultiQC / PureCLIP; plus CLIPper when peak clusters are wanted (external install, see §4.5) |
+| Analysis tools | STAR / samtools / bedtools / umi-tools / cutadapt / seqkit / bgzip / FastQC / MultiQC / PureCLIP; plus CLIPper when peak clusters are wanted (external install, see §4.5). bedtools (2.31.0) is only needed when the optional `reproducible_peaks` / `annotate_peaks` stages are enabled (§5.5) |
 
 Launcher bootstrap order: `run.sh` first uses the `python3` on the system PATH (with PyYAML) to resolve `config/software.yaml`, then injects the main environment/tools into the current process — so even on the conda_prefix reuse route, the login-node PATH must have `python3` (snakemake is supplied by the main environment after resolution).
 
@@ -28,7 +28,7 @@ mamba env create -f workflow/environment.yaml   # environment name seclip-seq
 conda activate seclip-seq
 ```
 
-This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, star 2.7.10b, samtools 1.17, cutadapt 4.6, umi-tools 1.1.5 (pip; python 3.9 — see the notes in `workflow/environment.yaml`), seqkit 2.13.0, fastqc 0.11.9, multiqc 1.21, pureclip 1.3.1.
+This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, star 2.7.10b, samtools 1.17, bedtools 2.31.0, cutadapt 4.6, umi-tools 1.1.5 (pip; python 3.9 — see the notes in `workflow/environment.yaml`), seqkit 2.13.0, fastqc 0.11.9, multiqc 1.21, pureclip 1.3.1.
 
 **Path 2: reuse an existing conda environment on the server**
 
@@ -112,7 +112,7 @@ cp FC_rep1.fq.gz FC_rep2.fq.gz ~/work/fbl/1.rawdata/
 cp example/samples.csv ~/work/fbl/samples.csv
 ```
 
-Edit the file with your own samples (a single `sample_id` column; validation rules in §3).
+Edit the file with your own samples (a single `sample_id` column is enough; the optional `condition`/`role` grouping columns are described in §3; validation rules in §3.1).
 
 **Step 4: write the project config**
 
@@ -146,28 +146,36 @@ After a successful launch the main log is `~/work/fbl/snakemake.logs.txt` (chang
 
 ## 3. Sample table in detail
 
-The sample table is a **single-column CSV** (template `config/samples.csv`):
+The sample table is a CSV with one of two accepted headers (template `config/samples.csv`):
+
+The classic **single-column** form (all you need for per-sample peak calling):
 
 ```csv
 sample_id
 FC_rep1
 FC_rep2
-FC_rep3
-FC_rep4
-FC_rep5
 ```
 
-Every row is one sample; v0.1 has no other columns (no group/control/IP-input concept yet — see the [TODO backlog](../docs/TODO.md)). Each `sample_id` must match the prefix of a FASTQ file in `1.rawdata/`.
+The **three-column** form (optional since v0.2; drives the `reproducible_peaks` consensus stage, §5.5):
+
+```csv
+sample_id,condition,role
+FC_rep1,FBL,ip
+FC_rep2,FBL,ip
+```
+
+`condition` groups replicates that measure the same target (the value becomes a file name, so it obeys the same naming rules as `sample_id`); `role` marks the channel and accepts exactly `ip` or `input` — input controls pair with the ip replicates of their condition, and they join the peak-calling target set only when `reproducible_peaks.input_control: true` (§5.5; otherwise only the ip samples are peak-called once the consensus stage is enabled). Each `sample_id` must match the prefix of a FASTQ file in `1.rawdata/`. The grouping columns only take effect when `reproducible_peaks.enabled: true` (§5.5); a single-column table stays fully valid and the two v0.2 stages error out with a clear message if enabled without them.
 
 ### 3.1 Validation rules (at parse time, errors carry line numbers)
 
-Validation runs centrally at Snakemake parse time (`load_sample_table` in `workflow/rules/common.smk`); any violation aborts the workflow before any job runs:
+Validation runs centrally at Snakemake parse time (`load_sample_table` / `_read_sample_table` in `workflow/rules/common.smk`); any violation aborts the workflow before any job runs:
 
-1. The header must be **exactly one column named `sample_id`** — otherwise: `Sample table <path> must have exactly one column with header 'sample_id' (got [...]); see config/samples.csv`;
+1. The header must be **exactly `sample_id`** or **exactly `sample_id,condition,role`** — otherwise: `Sample table <path> header must be exactly ['sample_id'] or exactly ['sample_id', 'condition', 'role'] (got [...]); see config/samples.csv` (a partially extended header, extra columns, or reordered columns are all rejected);
 2. `sample_id` must not be empty — `Sample table line <n>: sample_id must not be empty`;
 3. `sample_id` allows only **alphanumerics plus `. _ -`**, must start alphanumeric, must not start with `-`, and must not contain consecutive underscores `__` (ids become file names and STAR command-line arguments) — `Sample table line <n>: sample_id='...' contains illegal characters; only alphanumerics and . _ - are allowed (no leading '-', no '__')`;
 4. `sample_id` must be unique — `Sample table line <n>: duplicate sample_id '...'`;
-5. The table must have at least one data row — `Sample table <path> has no data rows`.
+5. With the grouping columns present: `condition` must be non-empty and follow the same character rules as `sample_id` (`condition='...' contains illegal characters ...`), and `role` must be exactly `ip` or `input` (`role='...' must be 'ip' or 'input'`);
+6. The table must have at least one data row — `Sample table <path> has no data rows`.
 
 ### 3.2 Raw FASTQ resolution
 
@@ -216,6 +224,11 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 | `callpeak.pureclip` | bool | `true` | run PureCLIP on the deduplicated BAM; `false` removes it from the target list |
 | `callpeak.clipper` | bool | `true` | request CLIPper peak clusters; effective only when a CLIPper executable is configured (§5.2) |
 | `callpeak.clipper_species` | string | `"GRCh38_v40"` | CLIPper `--species` value; must be non-empty when `callpeak.clipper: true` |
+| `reproducible_peaks.enabled` | bool | `false` | optional v0.2 stage (§5.5): build a per-condition consensus of the ip-role PureCLIP beds (`bedtools multiinter`); requires the `condition`/`role` sample-table columns and `callpeak.pureclip: true` |
+| `reproducible_peaks.min_replicates` | int >= 1 | `2` | a consensus site must be present in at least this many ip samples of the condition; every condition must actually have that many ip samples (parse-time error otherwise) |
+| `reproducible_peaks.input_control` | bool | `false` | with the consensus stage enabled: also peak-call the `role: input` samples and build a per-condition background union from their PureCLIP beds; the consensus of conditions with inputs gains the binary `in_input_background` flag column (§5.5) |
+| `reproducible_peaks.filter_by_input` | bool | `false` | requires `input_control: true`: additionally write `{condition}.consensus.filtered.bed` with the input-background-flagged sites removed and feed the filtered BED to the consensus annotation (§5.5) |
+| `annotate_peaks.enabled` | bool | `false` | optional v0.2 stage (§5.5): annotate every peak set (per-sample PureCLIP + consensus) with nearest gene, distance, and biotype from the configured `gtf`; requires `callpeak.pureclip: true` |
 | `resources` | mapping of rule -> {threads, mem_mb, runtime_min} | `{}` | per-rule scheduler-resource overrides, same shape as `config/resources.yaml` (§4.4) |
 
 Validation runs at parse time (`validate_config` in `workflow/rules/common.smk`) and aggregates all problems into a single `WorkflowError` report. Reference files that do not exist (or are still `/path/to/` placeholders) only **print a warning and do not abort** — dry-run/lint often run on machines without the reference files; in a real run a missing reference fails the corresponding rule, so confirm each warning before launching.
@@ -251,7 +264,7 @@ resources:
     threads: 16
 ```
 
-Built-in defaults per rule (identical to `config/resources.yaml`):
+Built-in defaults per rule (identical to `config/resources.yaml` for the always-on rules; the three optional-stage rules at the bottom ship as workflow defaults only — a project `resources.yaml` can override them by name like any other rule):
 
 | Rule | threads | mem_mb | runtime_min |
 |---|---:|---:|---:|
@@ -269,6 +282,12 @@ Built-in defaults per rule (identical to `config/resources.yaml`):
 | `read_count` | 1 | 2000 | 10 |
 | `callpeak_clipper` | 4 | 16000 | 240 |
 | `callpeak_pureclip` | 8 | 16000 | 360 |
+| `consensus_peaks` (optional stage) | 1 | 2048 | 30 |
+| `input_background` (optional stage) | 1 | 2048 | 30 |
+| `flag_input_background` (optional stage) | 1 | 2048 | 30 |
+| `filter_input_background` (optional stage) | 1 | 2048 | 30 |
+| `gtf_gene_regions` (optional stage) | 1 | 4096 | 60 |
+| `annotate_peaks` (optional stage, both annotate rules) | 1 | 4096 | 60 |
 
 ### 4.5 software.yaml
 
@@ -339,6 +358,73 @@ with the env vars the launcher would normally provide (`SECLIP_RESOURCES_CONFIG`
 - a stale working-directory lock (e.g. a job was force-killed) is cleared with `bash run.sh -P . --unlock`;
 - arguments after `--` pass through to Snakemake untouched, e.g. `bash run.sh -P . -- --rerun-triggers mtime`;
 - the launcher log defaults to `snakemake.logs.txt` (change with `--log FILE`); `-q` reduces the launcher's own output.
+
+### 5.5 Optional v0.2 stages: `reproducible_peaks` and `annotate_peaks`
+
+Both stages are **default off** and drop out of the DAG entirely while disabled — a v0.1-style config (single-column sample table, no new sections) produces exactly the v0.1 pipeline.
+
+**Cross-sample reproducible peaks** (`reproducible_peaks.enabled: true`): v0.1/v0.2 call peaks per sample; this stage adds the cross-replicate view. Requires the `condition`/`role` sample-table columns (§3) and `callpeak.pureclip: true`.
+
+```yaml
+reproducible_peaks:
+  enabled: true
+  min_replicates: 2
+```
+
+One `consensus_peaks` job runs per condition: the PureCLIP beds of that condition's ip-role samples are numerically coordinate-sorted (`LC_COLLATE=C sort -k1,1 -k2,2n`, the form bedtools multiinter requires) and merged with `bedtools multiinter`; sites present in >= `min_replicates` input beds are kept and the support count (how many replicates carry the site) is written to column 4 of `results/6.reproducible_peaks/{condition}.consensus.bed`. Parse-time validation errors out when the table has no `condition`/`role` columns, when `callpeak.pureclip` is off, or when a condition has fewer ip samples than `min_replicates` (the support threshold could never be reached).
+
+**Input controls** (`reproducible_peaks.input_control: true`, needs `enabled: true` and the `condition`/`role` columns; closes backlog item 3):
+
+```yaml
+reproducible_peaks:
+  enabled: true
+  min_replicates: 2
+  input_control: true       # peak-call the role=input samples too
+  filter_by_input: false    # optionally drop flagged consensus sites
+```
+
+The upstream chain never changes — trim/align/dedup always run for every declared sample — but the PureCLIP target set does: without `input_control` only the ip samples of each condition are peak-called, with `input_control` the role=input samples join as well. Their beds feed one `input_background` job per condition with inputs: a `bedtools multiinter` union (every row has support >= 1 by construction, so the whole union is kept; column 4 reports how many input controls cover a feature) written to `results/6.reproducible_peaks/{condition}.input_background.bed`.
+
+For every condition that declares input samples, the final consensus keeps the W7 columns 1-4 (chrom, start, end, support) and appends the binary `in_input_background` flag as column 5 (1 = the site overlaps the condition's input background, 0 = ip-specific). The background is **condition-scoped**: an input control only flags the consensus of the ip replicates declared under the same `condition`. Conditions without input samples keep the plain unflagged BED4 — byte-identical to the no-`input_control` output (parse-time warning when `input_control` is on). With `filter_by_input: true`, an additional `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` drops the flagged sites (BED4 again) and the annotation stage consumes the filtered BED for those conditions; without filtering it annotates the flagged BED5 and drops the flag column per its column contract (`score` stays the consensus support).
+
+Design rationale (recorded when backlog item 3 was closed): the background is condition-scoped because an input control only pairs meaningfully with the ip replicates of the same condition; the union uses the lowest possible threshold (support >= 1 — every interval ever seen in any input counts as background); and flagging is the default over filtering so both the annotated-with-flag view (all reproducible sites, background membership recorded) and the cleaned view (opt-in `filter_by_input`) remain available.
+
+Validation additions (parse-time, aggregated): `input_control` requires the `condition`/`role` columns and `reproducible_peaks.enabled: true` (a warning while the stage is off); `filter_by_input` requires `input_control`; a condition with input samples but no ip samples is a hard error (there is no ip consensus to build or flag); an ip condition without inputs only warns (the background is simply absent).
+
+**GTF-based peak annotation** (`annotate_peaks.enabled: true`): annotates every existing peak set — each per-sample PureCLIP bed plus each consensus bed. Requires `callpeak.pureclip: true` (it annotates PureCLIP output; CLIPper beds are not annotated).
+
+```yaml
+annotate_peaks:
+  enabled: true
+```
+
+Three rule kinds join the DAG: `gtf_gene_regions` parses the configured `gtf` (the same file the STAR index uses) into `results/6.annotation/_ref/genes.bed` + `exons.bed` + a `gene_id/gene_name/gene_biotype` table (stdlib parser, no extra dependency); then one job per peak set runs `bedtools intersect -u` against exons and gene bodies (feature classification: `exon` = overlaps an exon, `gene` = inside a gene body but not an exon, `intergenic` = neither) and `bedtools closest -d -t first` (nearest gene + signed distance), merged by the stdlib script `workflow/scripts/annotate_peaks.py` into `results/6.annotation/{set}.annotation.tsv` with the columns:
+
+```
+chrom  start  end  score  nearest_gene  nearest_gene_id  distance  feature_class  gene_biotype
+```
+
+`score` is the PureCLIP crosslink-site score for sample sets and the consensus support for consensus sets (`{set} = {condition}.consensus`); `distance` is 0 for overlapping peaks, negative when the nearest gene lies upstream of the peak, and `NA` when the peak's contig carries no gene at all. Peak coordinates stay in the BED system (0-based start) so results round-trip against the peak files.
+
+Typical combined setup (the legacy five-replicate FBL example in `example/`):
+
+```yaml
+# samples.csv
+sample_id,condition,role
+FC_rep1,FBL,ip
+FC_rep2,FBL,ip
+...
+```
+
+```yaml
+reproducible_peaks:
+  enabled: true
+  min_replicates: 3     # consensus sites must replicate in >= 3 of the 5 FBL replicates
+annotate_peaks:
+  enabled: true
+```
+
+Dry-run first (`bash run.sh -P . -n`): the consensus and annotation rules appear in the DAG as `consensus_peaks`, `gtf_gene_regions`, `annotate_sample_peaks`, and `annotate_consensus_peaks`; with `input_control` the raw consensus becomes the `consensus_peaks_raw` intermediate and `input_background`, `flag_input_background`, and (with `filter_by_input`) `filter_input_background` join the DAG. Scheduler resources for the new rules default to 1 thread / 2048 MB / 30 min (`consensus_peaks` and the three input-control rules) and 1 / 4096 / 60 (GTF prep and annotation); override them per rule via a project `resources.yaml` (§4.4). The regression script exercises both scenarios with synthetic data: `bash tests/run_test.sh --consensus` and `bash tests/run_test.sh --input-control`.
 
 ---
 
@@ -464,6 +550,11 @@ workdir/
     │   ├── {sample}_readnum.txt                # mapped-read count
     │   └── {sample}_stats/                     # umi_tools dedup statistics
     ├── 5.callpeak/             # {sample}.pureclip.bed, {sample}.clipper.peakClusters.bed
+    ├── 6.reproducible_peaks/   # optional: {condition}.consensus.bed (support in column 4; with
+    │                           #   input_control conditions with inputs carry the in_input_background
+    │                           #   flag in column 5), plus {condition}.input_background.bed and
+    │                           #   {condition}.consensus.filtered.bed (filter_by_input)
+    ├── 6.annotation/           # optional: {set}.annotation.tsv + _ref/ (genes.bed, exons.bed, genes.tsv)
     ├── 5.QC/
     │   ├── multiqc/multiqc_report.html
     │   ├── software_versions.yaml
@@ -487,8 +578,13 @@ workdir/
 | dedup BAM | `results/4.rmdup/{sample}.rmDupSo.bam` (+ `.bai`) | UMI-collapsed, coordinate-sorted alignments |
 | dedup stats | `results/4.rmdup/{sample}_stats/{sample}_edit_distance.tsv` | umi_tools dedup statistics (aggregated into MultiQC) |
 | read count | `results/4.rmdup/{sample}_readnum.txt` | mapped reads after dedup (one integer) |
-| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` | crosslink-site clusters |
+| PureCLIP peaks | `results/5.callpeak/{sample}.pureclip.bed` | crosslink sites, 7 columns: BED6 (chromosome, start, end, site name, crosslink-site score, strand) plus a trailing score-attributes field |
 | CLIPper peaks | `results/5.callpeak/{sample}.clipper.peakClusters.bed` | peak clusters (only with a configured CLIPper) |
+| Consensus peaks (`reproducible_peaks.enabled`) | `results/6.reproducible_peaks/{condition}.consensus.bed` | per-condition cross-sample consensus; BED4 with the replicate support count in column 4 (§5.5); with `input_control`, conditions with input samples carry the binary `in_input_background` flag in column 5 |
+| Input background (`reproducible_peaks.input_control`) | `results/6.reproducible_peaks/{condition}.input_background.bed` | union of the condition's input-control PureCLIP beds, BED4 (column 4 = number of inputs covering the feature) |
+| Filtered consensus (`reproducible_peaks.filter_by_input`) | `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` | consensus minus the input-background-flagged sites (BED4) |
+| Peak annotation (`annotate_peaks.enabled`) | `results/6.annotation/{set}.annotation.tsv` | nearest gene / distance / biotype per peak set, one row per peak (§5.5) |
+| Annotation reference | `results/6.annotation/_ref/` | GTF-derived `genes.bed` / `exons.bed` / `genes.tsv` behind the annotation |
 | QC report | `results/5.QC/multiqc/multiqc_report.html` | everything above in one HTML |
 | version record | `results/5.QC/software_versions.yaml` | tool versions actually resolved for the run (incl. Snakemake) |
 | per-rule logs | `results/logs/` | one log per rule/sample |
@@ -502,7 +598,7 @@ This workflow intentionally ships no Bismark/RNA-seq-specific QC modules; judge 
 3. **FastQC** (`*_fastqc.html`): per-base quality after trimming — residual adapter signal or a quality collapse at the 3' end points at wrong adapter sequences;
 4. **Alignment** (`*_Log.final.out`, MultiQC STAR module): input reads vs uniquely mapped reads; with `align_multimap_nmax: 1` the unique fraction is the usable signal;
 5. **Deduplication** (`*_edit_distance.tsv`, MultiQC umi_tools module) and **`{sample}_readnum.txt`**: how many unique molecules survived; the ratio of dedup output to alignment input is the effective library complexity;
-6. **Peaks** (`results/5.callpeak/`): compare per-sample BED sizes; wildly different peak counts across replicates of the same IP suggest depth or quality problems.
+6. **Peaks** (`results/5.callpeak/`): compare per-sample BED sizes; wildly different peak counts across replicates of the same IP suggest depth or quality problems. With `reproducible_peaks.enabled` the consensus support column (§5.5) adds the cross-replicate view directly.
 
 Everything above lands in `results/5.QC/multiqc/multiqc_report.html` (title "seCLIP QC Summary"); the exact tool versions used are recorded in `results/5.QC/software_versions.yaml`.
 
@@ -511,7 +607,7 @@ Everything above lands in `results/5.QC/multiqc/multiqc_report.html` (title "seC
 ## 8. FAQ
 
 **Q1: Can I run paired-end (PE) data?**
-No. v0.1 is single-end only: the sample-table parser accepts exactly one `sample_id` column and the FASTQ resolver looks only for `{sample}[_R1]{.fastq,.fq}.gz` files. The 10-base UMI sits at the start of the single read (`umi.pattern`, configurable if your library layout differs). PE support would need a new sample-table design and is not scheduled for v0.1.
+No. The workflow is single-end only: the sample-table parser accepts exactly one `sample_id` column (plus the optional `condition`/`role` grouping columns, §3) and the FASTQ resolver looks only for `{sample}[_R1]{.fastq,.fq}.gz` files. The 10-base UMI sits at the start of the single read (`umi.pattern`, configurable if your library layout differs). PE support would need a new sample-table design and is not scheduled.
 
 **Q2: CLIPper is not installed on my server — is the workflow unusable?**
 No. CLIPper is optional by design: leave `paths.clipper` empty in software.yaml and the workflow auto-skips the `callpeak_clipper` rule with a `[config warning]` line, keeping PureCLIP peaks. To enable it, install CLIPper anywhere and put its absolute path in `paths.clipper` (a project software.yaml wins over the repository default), then set `callpeak.clipper_species` to the value your CLIPper build expects (default `GRCh38_v40`).
@@ -536,8 +632,14 @@ Three fixes, in order of preference: (1) targeted per-rule override in a project
 ```bash
 make check                          # bash -n syntax checks (no snakemake needed)
 make lint                           # static suite (missing optional tools are skipped)
+make unit                           # pytest suite for the annotation scripts
 bash tests/run_test.sh              # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
+bash tests/run_test.sh --consensus  # dry-run with the optional v0.2 stages enabled
+bash tests/run_test.sh --input-control  # dry-run with the input-control consensus scenario
 bash tests/run_test.sh --real-run   # end-to-end run + output assertions (needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 2 samples); the dry-run baseline DAG is 23 jobs (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 2 samples; 4 with `--with-inputs`); the default dry-run DAG is 23 jobs (CI passes `--reads 2000`), the `--consensus` scenario dry-runs 28 jobs, and the `--input-control` scenario 45. Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+
+**Q9: How do I get reproducible peaks across replicates, and what do the annotation columns mean?**
+Enable the two optional stages (§5.5): extend the sample table to `sample_id,condition,role` (§3), then set `reproducible_peaks.enabled: true` (with `min_replicates`) and `annotate_peaks.enabled: true` in the project config. Each condition gets `results/6.reproducible_peaks/{condition}.consensus.bed` (BED4, column 4 = number of replicates carrying the site) and every peak set gets `results/6.annotation/{set}.annotation.tsv` (`feature_class` = exon/gene/intergenic, `distance` = signed distance to the nearest gene with 0 = overlapping). Both stages stay out of the DAG while disabled, so existing projects are unaffected. With `input_control: true` the consensus of conditions with input samples additionally carries the binary `in_input_background` flag (column 5), and `filter_by_input: true` writes a filtered BED without those background sites (§5.5).

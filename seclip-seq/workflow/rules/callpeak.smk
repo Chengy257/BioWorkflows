@@ -1,5 +1,12 @@
 # UMI deduplication, read counts, and peak calling.
 # Depends on workflow/rules/common.smk for CLIPPER/CLIPPER_ENABLED/helpers.
+# Target-set note: the rule definitions here stay sample-agnostic (upstream
+# trim/align/dedup run for every declared sample). Which samples join the
+# PureCLIP target set is decided in common.smk (PEAKCALL_SAMPLES): with the
+# condition/role sample table and reproducible_peaks enabled, the ip-role
+# samples only — unless reproducible_peaks.input_control is enabled, in which
+# case role=input samples run PureCLIP too so their beds can form the
+# per-condition background consensus (rules/consensus.smk).
 
 rule umi_dedup:
     input:

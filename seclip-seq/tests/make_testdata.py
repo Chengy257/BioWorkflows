@@ -18,16 +18,20 @@ every read for every sample in order. Outputs (--outdir, default tests/data/):
                                  genome-derived, 25% repeats-derived, 15%
                                  random; 1% substitution errors (default 2000
                                  reads per sample, --reads N)
-    samples.csv                  sample table (sample_id column)
+    samples.csv                  sample table (sample_id column; with
+                                 --with-inputs the condition/role form)
     config.yaml                  ready-to-run miniature configuration (relative
                                  ref/ paths, tiny STAR indices, CLIPper
                                  disabled -- the test environment has no
                                  CLIPper, so this also exercises the skip path)
 
-Samples: FC_rep1, FC_rep2.
+Samples: FC_rep1, FC_rep2; with --with-inputs additionally the input controls
+FC_in1, FC_in2 (same generator and RNG stream, appended after the ip samples,
+so the default output stays byte-identical).
 
 Usage:
     python3 make_testdata.py [--outdir tests/data] [--reads 2000] [--seed 42]
+                             [--with-inputs]
 """
 import argparse
 import gzip
@@ -46,8 +50,22 @@ ADAPTER = "AGATCGGAAGAGCAC"   # first of the 20 shifted 3' adapter variants
 ERROR_RATE = 0.01       # substitution errors in genomic/repeat-derived bodies
 GENOME_FRAC = 0.60      # genome-derived reads
 REPEAT_FRAC = 0.25      # repeats-derived reads (random noise takes the rest)
+# Deterministic crosslink hotspots: 55% of the genome-derived reads
+# concentrate around fixed (chrom, start) windows so PureCLIP calls
+# crosslink sites at shared coordinates and the reproducible-peaks
+# consensus (support >= min_replicates) has sites to keep -- uniformly
+# random 30 bp reads essentially never coincide across replicates (empty
+# consensus observed on the 2026-09-08 40k-read real run).
+# SHARED_HOTSPOTS fire in every sample (ip and input): those consensus
+# sites carry the in_input_background flag and the filtered BED drops
+# them. IP_HOTSPOTS fire only in ip samples, so their consensus sites
+# survive the input filter and the filtered BED stays non-empty.
+HOTSPOT_FRAC = 0.55
+SHARED_HOTSPOTS = [(1, 3000), (2, 8000)]
+IP_HOTSPOTS = [(1, 6500), (1, 12000), (2, 2200), (2, 15000)]
 SEED = 42
 SAMPLES = ["FC_rep1", "FC_rep2"]
+INPUT_SAMPLES = ["FC_in1", "FC_in2"]   # opt-in via --with-inputs (condition FC)
 
 BASES = "ACGT"
 
@@ -139,17 +157,25 @@ def build_reference(rng):
     return chroms, genes, repeats
 
 
-def make_read(chroms, repeats, rng):
+def make_read(chroms, repeats, rng, ip_sample=False):
     """One simulated SE read: UMI + body(+errors) + shifted adapter prefix.
 
     Body source mix: 60% genome substring, 25% repeats substring, 15% random
-    noise. Every read keeps the same 10 N UMI + 30 bp body + adapter tail
-    structure so umi_tools extract and cutadapt both see realistic input."""
+    noise. ip samples draw their hotspot reads from SHARED + IP hotspots,
+    input samples from SHARED only. Every read keeps the same 10 N UMI +
+    30 bp body + adapter tail structure so umi_tools extract and cutadapt
+    both see realistic input."""
     umi = "".join(rng.choice(BASES) for _ in range(UMI_LEN))
     u = rng.random()
     if u < GENOME_FRAC:
-        source = chroms["chr%d" % (rng.randrange(N_CHROM) + 1)]
-        start = rng.randrange(len(source) - READ_BODY)
+        hotspots = SHARED_HOTSPOTS + (IP_HOTSPOTS if ip_sample else [])
+        if rng.random() < HOTSPOT_FRAC:
+            h_chrom, h_start = hotspots[rng.randrange(len(hotspots))]
+            source = chroms["chr%d" % h_chrom]
+            start = h_start + rng.randrange(-8, 9)   # +/- 8 nt jitter
+        else:
+            source = chroms["chr%d" % (rng.randrange(N_CHROM) + 1)]
+            start = rng.randrange(len(source) - READ_BODY)
         body = mutate(source[start:start + READ_BODY], rng)
     elif u < GENOME_FRAC + REPEAT_FRAC:
         source = repeats[rng.randrange(N_REPEATS)][1]
@@ -198,26 +224,40 @@ def write_reference(outdir, chroms, genes, repeats):
                 fh.write(seq[i:i + 60] + "\n")
 
 
-def write_fastqs(outdir, chroms, repeats, reads_per_sample, rng):
-    """Draw the simulated SE reads for every sample from the shared stream."""
+def write_fastqs(outdir, samples, chroms, repeats, reads_per_sample, rng):
+    """Draw the simulated SE reads for every sample from the shared stream.
+
+    Samples are written in list order, so appending the input controls after
+    the ip samples leaves the ip FASTQ bytes untouched."""
     raw_dir = os.path.join(outdir, "1.rawdata")
     os.makedirs(raw_dir, exist_ok=True)
-    for sample in SAMPLES:
+    for sample in samples:
         fq = _gzip_text(os.path.join(raw_dir, "%s_R1.fq.gz" % sample))
         try:
             for n in range(reads_per_sample):
-                read = make_read(chroms, repeats, rng)
+                read = make_read(chroms, repeats, rng,
+                                 ip_sample=sample not in INPUT_SAMPLES)
                 fq.write("@r%07d 1:N:0:1\n%s\n+\n%s\n"
                          % (n, read, "I" * len(read)))
         finally:
             fq.close()
 
 
-def write_samples(outdir):
+def write_samples(outdir, with_inputs):
+    """Sample table: single column by default; with --with-inputs the
+    condition/role form (FC_rep1/FC_rep2 ip, FC_in1/FC_in2 input, all one
+    condition FC)."""
     with open(os.path.join(outdir, "samples.csv"), "w") as fh:
-        fh.write("sample_id\n")
-        for sample in SAMPLES:
-            fh.write(sample + "\n")
+        if with_inputs:
+            fh.write("sample_id,condition,role\n")
+            for sample in SAMPLES:
+                fh.write("%s,FC,ip\n" % sample)
+            for sample in INPUT_SAMPLES:
+                fh.write("%s,FC,input\n" % sample)
+        else:
+            fh.write("sample_id\n")
+            for sample in SAMPLES:
+                fh.write(sample + "\n")
 
 
 def write_config(outdir):
@@ -234,20 +274,25 @@ def main():
     ap.add_argument("--reads", type=int, default=2000,
                     help="SE reads per sample")
     ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--with-inputs", action="store_true",
+                    help="also emit the input controls FC_in1/FC_in2 and "
+                         "write the condition/role sample table (default "
+                         "output unchanged)")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
+    samples = list(SAMPLES) + list(INPUT_SAMPLES) if args.with_inputs else list(SAMPLES)
     rng = random.Random(args.seed)
     chroms, genes, repeats = build_reference(rng)
     write_reference(args.outdir, chroms, genes, repeats)
-    write_fastqs(args.outdir, chroms, repeats, args.reads, rng)
-    write_samples(args.outdir)
+    write_fastqs(args.outdir, samples, chroms, repeats, args.reads, rng)
+    write_samples(args.outdir, args.with_inputs)
     write_config(args.outdir)
 
     print("[make_testdata] chromosomes %d x %dbp, genes %d, repeats %d x %dbp"
           % (N_CHROM, CHROM_LEN, len(genes), N_REPEATS, REPEAT_LEN))
     print("[make_testdata] samples %s x %d SE reads"
-          % (", ".join(SAMPLES), args.reads))
+          % (", ".join(samples), args.reads))
     print("[make_testdata] output root: %s" % os.path.abspath(args.outdir))
 
 

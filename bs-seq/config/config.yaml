@@ -9,7 +9,7 @@
 ## =====================================================================
 
 ## ---- Outputs and samples ----
-SampleListFile: "config/samples.csv"   # sample table (single sample_id column; relative to the working directory)
+SampleListFile: "config/samples.csv"   # sample table (sample_id column, optional group/batch for dmr; relative to the working directory)
 results_dir: "results"          # run outputs root directory (relative to the working directory)
 threads: 12                     # Legacy/default thread cap; explicit resources.<rule>.threads can override
 
@@ -44,6 +44,22 @@ methylation_extractor:
   cx_report: false              # true = also write the full CX-context cytosine report (large)
   merge_cpg: true               # coverage2cytosine --merge_CpG per sample
   buffer_frac: 4                # extractor --buffer_size = mem_mb / buffer_frac (in GB)
+
+## ---- Differential methylation (methylKit, default off) ----
+## Consumes the merged CpG tables (requires methylation_extractor.merge_cpg: true)
+## and a group design in the sample table (header sample_id,group[,batch]);
+## every contrast is treat-vs-control_group and every group needs >= 2 replicates.
+dmr:
+  enabled: false                # true = call DMCs/DMRs into 6.DMR/ (single methylKit job)
+  control_group: "control"      # sample-table group used as the reference in every contrast
+  qvalue: 0.01                  # getMethylDiff qvalue cutoff (SLIM adjusted)
+  min_diff: 25                  # minimum percent methylation difference (treatment - control)
+  tile_len: 1000                # DMR tiling window size (bp)
+  tile_step: 100                # DMR tiling step (bp)
+  min_cpg: 3                    # minimum covered CpGs per tile (cov.bases)
+  batch_correction: "F"         # "T" = include the sample-table batch column as a covariate (requires batch)
+  min_cov: 10                   # minimum per-site coverage (read-time mincov + filterByCoverage lo.count)
+  max_cov: 500                  # absolute per-site coverage ceiling (filterByCoverage hi.count)
 
 ## Software executables, Conda runtime, and large tool databases
 ## are configured separately in config/software.yaml (or project software.yaml).

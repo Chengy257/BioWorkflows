@@ -14,3 +14,15 @@ dependencies:
   - trim-galore=0.6.10
   - fastqc=0.11.9
   - multiqc=1.21
+  # miRDeep-P2 novel-miRNA prediction; needed only when novel_mirna.enabled is true
+  - mirdeep-p2=1.1.4
+  # R runtime for the optional differential-expression stage (deg /
+  # DESeq2); needed only when deg.enabled is true in the project config.
+  - r-base=4.3
+  - bioconductor-deseq2
+  - bioconductor-biocparallel
+  - r-getopt
+  - r-ggplot2
+  - r-gplots
+  - r-amap
+  - r-rcolorbrewer

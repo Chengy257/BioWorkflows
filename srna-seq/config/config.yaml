@@ -68,5 +68,29 @@ genome:
 bowtie:
   extra: ""                     # extra bowtie1 args, e.g. "-v 1 --best --strata"
 
+## ---- Differential expression (optional; DEFAULT OFF) ----
+## DESeq2 over the per-class count matrices (results/6.DEG/). Enabling it
+## requires a group column (and optionally batch) in the sample table
+## (headers: sample_id[, group[, batch]]); the design is ~ group, or
+## ~ batch + group with batch_correction "T". Docs: docs/user-guide.md.
+deg:
+  enabled: false                # true turns on the deg_deseq2 stage
+  classes: ["miRNA"]            # cascade classes to analyze (must be configured)
+  control_group: "control"      # reference group; tables are <treat>_vs_<control>
+  foldchange: 2                 # DEG fold-change threshold (Up >= FC, Down <= 1/FC)
+  padj: 0.05                    # adjusted-pvalue threshold
+  batch_correction: "F"         # "T" adds batch to the design (needs a batch column)
+  pca_ntop: 2000                # top variable features used in the PCA plot
+
+## ---- Novel miRNA discovery (optional; DEFAULT OFF) ----
+## miRDeep-P2 (bioconda mirdeep-p2=1.1.4) novel miRNA prediction from the
+## trimmed reads: candidate hairpins are excised from the reference genome
+## and scored by mapping signature. Enabling it requires a configured genome
+## (genome.fasta above) and a known mature-miRNA fasta. Results land in
+## results/6.novel_mirna/<sample>/ (tool-native tree). Docs: docs/user-guide.md.
+novel_mirna:
+  enabled: false                # true turns on the novel_mirna stage
+  mature_fasta: ""              # known mature-miRNA reference fasta (required when enabled)
+
 ## Software executables, Conda runtime, and large tool databases
 ## are configured separately in config/software.yaml (or project software.yaml).

@@ -34,7 +34,11 @@ if _EXTRA_CONFIG and os.path.exists(_EXTRA_CONFIG):
 
 # Resolve species presets into the cascade entries: a project-config
 # entry with an empty fasta inherits the preset path for that class;
-# the genome fasta falls back the same way.
+# the genome fasta falls back the same way. The merge must run before
+# common.smk is included (its parse-time validation consumes the merged
+# references), so it stays inline here; rules/common.smk carries the
+# identical apply_species_presets() def, and tests/test_common.py pins
+# the two implementations together.
 SPECIES = config.get("species", "osa")
 if SPECIES not in ("osa", "none"):
     raise ValueError(f"Unknown species '{SPECIES}'. Choose osa or none.")
@@ -64,4 +68,6 @@ rule all:
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "cascade.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "quant.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "deg.smk")
+include: os.path.join(WORKFLOW_DIR, "rules", "novel_mirna.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

@@ -1,6 +1,6 @@
 # bs-seq workflow user guide
 
-> Updated: 2026-09-05 (v0.1.0)
+> Updated: 2026-09-08 (v0.2.0)
 > Intended audience: analysts running this workflow on their cluster/server
 > The workflow never creates Conda environments on its own: the runtime environment is created explicitly from `workflow/environment.yaml`, or reuses the server's existing environment via `config/software.yaml`. Cluster scheduling resources are declared per rule in `config/resources.yaml` and support project-level overrides. Raw inputs live in `1.rawdata/` at the working-directory root; every derived output is consolidated under the project's `results/` directory (`results_dir` in config).
 
@@ -16,6 +16,7 @@
 | Snakemake | reference version **7.32.4** (pinned in `workflow/environment.yaml`); see the version matrix in §1.4 |
 | Python 3 + PyYAML | the bootstrap dependency `run.sh` needs to resolve `software.yaml` and run preflight checks; must be on the main PATH |
 | Analysis tools | Bismark 0.24.x suite (bismark / bismark_genome_preparation / deduplicate_bismark / bismark_methylation_extractor / coverage2cytosine / bam2nuc / bismark2report / bismark2summary) / bowtie2 / samtools / Trim Galore (brings Cutadapt + FastQC) / MultiQC |
+| R + methylKit | only for the optional differential-methylation stage (`dmr.enabled: true`): R 4.3 with Bioconductor methylKit and the getopt package (shipped in `workflow/environment.yaml`; resolved via the `r:` section of `config/software.yaml`) |
 
 Launcher bootstrap order: `run.sh` first uses the `python3` on the system PATH (with PyYAML) to resolve `config/software.yaml`, then injects the main environment/tools into the current process — so even on the conda_prefix reuse route, the login-node PATH must have `python3` (snakemake is supplied by the main environment after resolution).
 
@@ -28,7 +29,7 @@ mamba env create -f workflow/environment.yaml   # environment name bs-seq
 conda activate bs-seq
 ```
 
-This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, bismark 0.24.0, bowtie2 2.5.2, samtools 1.17, trim-galore 0.6.10, fastqc 0.11.9, multiqc 1.21.
+This command is executed explicitly by the user; Snakemake never creates or modifies software environments on its own. Pinned versions in the template: snakemake-minimal 7.32.4, bismark 0.24.0, bowtie2 2.5.2, samtools 1.17, trim-galore 0.6.10, fastqc 0.11.9, multiqc 1.21, plus the R stack for the optional differential-methylation stage (r-base 4.3, bioconductor-methylkit, r-getopt).
 
 **Path 2: reuse an existing conda environment on the server**
 
@@ -54,7 +55,7 @@ environment:
   strict: true
 ```
 
-`strict: true` makes the preflight fail loudly when a required executable is missing instead of continuing silently. All Bismark suite executables (bismark / bismark_genome_preparation / deduplicate_bismark / bismark_methylation_extractor / coverage2cytosine / bam2nuc / bismark2report / bismark2summary), bowtie2, samtools, trim_galore, fastqc, multiqc, and python3 resolve from PATH automatically; `software.yaml` needs no `tools:` overrides unless a binary lives outside PATH. Like the other v0.1 workflows there is no R section.
+`strict: true` makes the preflight fail loudly when a required executable is missing instead of continuing silently. All Bismark suite executables (bismark / bismark_genome_preparation / deduplicate_bismark / bismark_methylation_extractor / coverage2cytosine / bam2nuc / bismark2report / bismark2summary), bowtie2, samtools, trim_galore, fastqc, multiqc, and python3 resolve from PATH automatically; `software.yaml` needs no `tools:` overrides unless a binary lives outside PATH. R is resolved through the `r:` section (see §4.5) but is only exercised when the optional differential-methylation stage is enabled.
 
 ### 1.3 Preflight checks
 
@@ -110,7 +111,7 @@ cp s1_1.fastq.gz s1_2.fastq.gz s2_1.fastq.gz s2_2.fastq.gz ~/work/bsseq/1.rawdat
 cp example/samples.csv ~/work/bsseq/samples.csv
 ```
 
-Edit the file with your own samples (a single `sample_id` column; validation rules in §3).
+Edit the file with your own samples (a `sample_id` column, plus the optional `group`/`batch` design columns described in §3; validation rules in §3.1).
 
 **Step 4: write the project config**
 
@@ -144,7 +145,7 @@ After a successful launch the main log is `~/work/bsseq/snakemake.logs.txt` (cha
 
 ## 3. Sample table in detail
 
-The sample table is a **single-column CSV** (template `config/samples.csv`):
+The sample table is a CSV with the `sample_id` column and two optional design columns (template `config/samples.csv`):
 
 ```csv
 sample_id
@@ -152,17 +153,30 @@ s1
 s2
 ```
 
-Every row is one sample; v0.1 has no other columns (no group/condition/batch design yet — see the [TODO backlog](TODO.md)). Each `sample_id` must match the prefix of FASTQ file(s) in `1.rawdata/`.
+Every row is one sample; each `sample_id` must match the prefix of FASTQ file(s) in `1.rawdata/`. With the optional differential-methylation stage (§4.2 `dmr`) the table can carry a **group design** and an optional **batch** column — accepted headers are exactly `sample_id`, `sample_id,group`, or `sample_id,group,batch`:
+
+```csv
+sample_id,group,batch
+s1,control,b1
+s2,control,b2
+t1,heat,b1
+t2,heat,b1
+```
+
+`group` names the condition of each sample; every non-control group is contrasted against `dmr.control_group`, and `batch` (used only when `dmr.batch_correction: "T"`) is included as a covariate. The design columns are ignored while `dmr` is disabled — a single-column table keeps parsing exactly as before.
 
 ### 3.1 Validation rules (at parse time, errors carry line numbers)
 
 Validation runs centrally at Snakemake parse time (`load_sample_table` in `workflow/rules/common.smk`); any violation aborts the workflow before any job runs:
 
-1. The header must be **exactly one column named `sample_id`** — otherwise: `Sample table <path> must have exactly one column with header 'sample_id' (got [...]); see config/samples.csv`;
+1. The header must be **`sample_id`, `sample_id,group`, or `sample_id,group,batch`** — otherwise: `Sample table <path> header must be 'sample_id', 'sample_id,group' or 'sample_id,group,batch' (got [...]); see config/samples.csv`;
 2. `sample_id` must not be empty — `Sample table line <n>: sample_id must not be empty`;
 3. `sample_id` allows only **alphanumerics plus `. _ -`**, must start alphanumeric, must not start with `-`, and must not contain consecutive underscores `__` (ids become file names and Bismark command-line arguments) — `Sample table line <n>: sample_id='...' contains illegal characters; only alphanumerics and . _ - are allowed (no leading '-', no '__')`;
 4. `sample_id` must be unique — `Sample table line <n>: duplicate sample_id '...'`;
-5. The table must have at least one data row — `Sample table <path> has no data rows`.
+5. `group`/`batch` values, when the column is present, follow the same character rules as `sample_id` and must not be empty (leave the column out entirely when unused) — `Sample table line <n>: group must not be empty (sample '...'; ...)` / `... contains illegal characters ...`;
+6. The table must have at least one data row — `Sample table <path> has no data rows`.
+
+When `dmr.enabled: true`, an additional design validation runs at parse time (§4.2): the `group` column is required, `dmr.control_group` must be one of the group values, every group (control included) needs **>= 2 replicates** (methylKit cannot fit fewer — a hard error), `dmr.batch_correction: "T"` requires the `batch` column, and `methylation_extractor.merge_cpg` must be `true`. All violations are aggregated into a single `dmr design validation failed (N issues)` report.
 
 ### 3.2 Raw FASTQ resolution and library layout
 
@@ -207,6 +221,16 @@ Scheduler resources are layered separately: see §4.4 for `config/resources.yaml
 | `methylation_extractor.cx_report` | bool | `false` | `true` = also run the extractor with `--CX --cytosine_report` (the full all-context cytosine report; large) |
 | `methylation_extractor.merge_cpg` | bool | `true` | request the per-sample `coverage2cytosine --merge_CpG` step (`{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz`) |
 | `methylation_extractor.buffer_frac` | int >= 1 | `4` | the extractor `--buffer_size` (GB) = the rule's `mem_mb / 1024 / buffer_frac`, minimum 1 (§5.2) |
+| `dmr.enabled` | bool | `false` | `true` = run the differential-methylation stage (single `dmr_methylkit` job into `results/6.DMR/`); needs a `group` column in the sample table (§3) and `methylation_extractor.merge_cpg: true` |
+| `dmr.control_group` | string | `"control"` | sample-table group used as the reference in every treat-vs-control contrast |
+| `dmr.qvalue` | float in (0, 1] | `0.01` | methylKit `getMethylDiff` qvalue cutoff (SLIM-adjusted) |
+| `dmr.min_diff` | number in [0, 100] | `25` | minimum percent methylation difference (treatment minus control) |
+| `dmr.tile_len` | int >= 1 | `1000` | DMR tiling window size in bp (`tileMethylCounts win.size`) |
+| `dmr.tile_step` | int >= 1, <= tile_len | `100` | DMR tiling step in bp (`tileMethylCounts step.size`) |
+| `dmr.min_cpg` | int >= 1 | `3` | minimum covered CpGs per tile (`tileMethylCounts cov.bases`) |
+| `dmr.batch_correction` | `"T"` / `"F"` | `"F"` | `"T"` = include the sample-table `batch` column as a covariate in `calculateDiffMeth` (requires the batch column, §3) |
+| `dmr.min_cov` | int >= 1 | `10` | minimum per-site coverage (read-time `methRead mincov` + `filterByCoverage lo.count`) |
+| `dmr.max_cov` | int >= 1 | `500` | absolute per-site coverage ceiling (`filterByCoverage hi.count`); sites above it in any sample are dropped |
 | `resources` | mapping of rule -> {threads, mem_mb, runtime_min} | `{}` | per-rule scheduler-resource overrides, same shape as `config/resources.yaml` (§4.4) |
 
 Validation runs at parse time (`validate_config` in `workflow/rules/common.smk`) and aggregates all problems into a single `WorkflowError` report (missing keys, type/range checks for every key above). Reference files that are still `/path/to/` placeholders only **print a warning and do not abort** — dry-run/lint often run on machines without the reference files; in a real run a missing genome fails `bismark_genome_prep`, so confirm each warning before launching.
@@ -261,6 +285,7 @@ Built-in defaults per rule (identical to `config/resources.yaml`):
 | `coverage2cytosine` | 4 | 16000 | 720 |
 | `bismark2report` | 1 | 4096 | 30 |
 | `bismark2summary` | 1 | 4096 | 30 |
+| `dmr` | 4 | 16000 | 240 |
 
 (`fastqc` has its own entry for completeness; in v0.1 FastQC runs inside the trim jobs via `trim_galore --fastqc`. The `mem_mb` of `methylation_extractor` also feeds the `--buffer_size` derivation, §5.2.)
 
@@ -275,12 +300,20 @@ environment:
   conda_name: ""                # alternative to conda_prefix
   strict: true
 
+r:
+  rscript: "Rscript"            # command name or absolute executable path
+  version: ""                   # optional, e.g. "4.3" or "4.3.3"
+  version_check: major_minor    # major_minor | exact | warn | off
+  lib_paths: []                 # optional R library directories
+  lib_mode: prepend             # prepend | append | replace
+  package_sources: {}           # optional package -> local tarball, used for install hints only
+
 tools: {}          # add overrides only for binaries outside the main PATH
 paths: {}
 databases: {}
 ```
 
-All analysis tools (the Bismark suite, bowtie2, samtools, trim_galore, fastqc, multiqc, python3) are ordinary PATH executables resolved through `workflow/scripts/runtime_config.py`; `run.sh` exports the resolved values to the workflow. Nothing here needs a hand-installed absolute path unless your site installs a tool outside PATH.
+All analysis tools (the Bismark suite, bowtie2, samtools, trim_galore, fastqc, multiqc, python3) are ordinary PATH executables resolved through `workflow/scripts/runtime_config.py`; `run.sh` exports the resolved values to the workflow. The `r:` section resolves `Rscript` (exported to the workflow as `BSSEQ_RSCRIPT`) for the optional differential-methylation stage — the preflight never demands R while `dmr` is disabled, and site-specific R library paths go under `r.lib_paths`. Nothing else here needs a hand-installed absolute path unless your site installs a tool outside PATH.
 
 ---
 
@@ -297,6 +330,7 @@ Per-sample decisions, all made at DAG-building time:
 | `trim.enabled: false` | no trim job at all; the raw reads in `1.rawdata/` are aligned directly (legacy behavior) |
 | `methylation_extractor.merge_cpg: true` | one `coverage2cytosine` job per sample |
 | `methylation_extractor.cx_report: true` | the extractor additionally writes the full CX-context cytosine report |
+| `dmr.enabled: true` | one `dmr_methylkit` job over every sample's merged CpG table (needs the `group` column design, §3) |
 | always | `bismark_genome_prep` + `bam2nuc_genome` (once per run), `bam2nuc_sample` / `bismark2report` per sample, `bismark2summary` + `multiqc` + `software_versions` once |
 
 The generated cytosine reports always cover the standard contexts (CpG/CHG/CHH) plus the gzipped bedGraph; the extra per-sample report inputs (splitting report, M-bias) require the genome, which every run has by construction.
@@ -462,6 +496,7 @@ workdir/
     │   ├── multiqc/multiqc_report.html
     │   ├── software_versions.yaml
     │   └── logs/               # QC rule logs (e.g. software_versions.log.txt)
+    ├── 6.DMR/                  # optional (dmr.enabled): per-contrast DMC/DMR tables + DMR_summary.tsv
     └── logs/                   # per-rule logs (trim_pe/, bismark_align/, deduplicate/, ...)
 ```
 
@@ -485,12 +520,35 @@ workdir/
 | nucleotide stats | `results/5.methylation/{sample}/{sample}.deduplicated.nucleotide_stats.txt` | input-DNA nucleotide composition of the sample (bam2nuc) |
 | merged CpG table | `results/5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz` | coverage2cytosine `--merge_CpG` product (CpG sites merged across strands) |
 | per-sample report | `results/5.methylation/{sample}/{sample}.html` | alignment + dedup + splitting + M-bias + nucleotide stats in one HTML |
+| DMC tables (optional) | `results/6.DMR/{treat}_vs_{control}_DMC_{all,hyper,hypo}.tsv` | per-CpG differential sites (`dmr.enabled: true`; columns: chr, start, end, strand, meth.diff, pvalue, qvalue) |
+| DMR tiles (optional) | `results/6.DMR/{treat}_vs_{control}_DMR_tiles.tsv` | tiled differential regions (same columns; `tile_len`/`tile_step`/`min_cpg` windows) |
+| DMR summary (optional) | `results/6.DMR/DMR_summary.tsv` | one row per contrast: `contrast, dmc_all, dmc_hyper, dmc_hypo, dmr_tiles` |
 | run-level summary | `results/5.QC/bismark2summary.html` | one-row-per-sample overview of all Bismark numbers |
 | QC report | `results/5.QC/multiqc/multiqc_report.html` | trimming + FastQC + Bismark reports in one HTML |
 | version record | `results/5.QC/software_versions.yaml` | tool versions actually resolved for the run (incl. Snakemake) |
 | per-rule logs | `results/logs/` | one log per rule/sample |
 
 Note the derived-name chain: every methylation output carries the `.deduplicated` infix inherited from the input BAM name (see "Bismark output naming" in the [README](../README.md)).
+
+#### Differential-methylation tables (`6.DMR/`, when `dmr.enabled: true`)
+
+One single job contrasts every non-control sample-table group against `dmr.control_group` (methylKit is pairwise; the treatment vector is control=0 / treat=1). Per contrast `{treat}_vs_{control}`:
+
+- `{treat}_vs_{control}_DMC_all.tsv` — differential CpG sites passing `dmr.qvalue` and `dmr.min_diff`; `_hyper.tsv` / `_hypo.tsv` are the hyper-/hypomethylated subsets (positive/negative `meth.diff`);
+- `{treat}_vs_{control}_DMR_tiles.tsv` — the same test on tiled regions (`tile_len`/`tile_step` windows holding at least `min_cpg` covered CpGs);
+- `DMR_summary.tsv` — counts per contrast.
+
+Every DMC/DMR table has exactly these tab-separated columns:
+
+| column | meaning |
+|---|---|
+| `chr` / `start` / `end` | site or tile coordinates (CpG merged across strands by coverage2cytosine) |
+| `strand` | always `*` (the bismark coverage layout carries no strand information) |
+| `meth.diff` | percent methylation difference, **treatment minus control** (negative = hypomethylated in the treatment group) |
+| `pvalue` | methylKit logistic-regression p-value |
+| `qvalue` | SLIM-adjusted q-value, cutoff `dmr.qvalue` |
+
+Coverage filtering: sites below `dmr.min_cov` (any sample) or above `dmr.max_cov` are removed before testing. With `dmr.batch_correction: "T"` the `batch` column enters `calculateDiffMeth` as a covariate. `sessionInfo.txt` in the same folder records the R session.
 
 ### 7.3 Reading the numbers
 
@@ -500,7 +558,7 @@ Note the derived-name chain: every methylation output carries the `.deduplicated
 4. **CpG methylation level** (splitting report, cytosine report): the CpG-context methylation percentage should be in the organism's expected range (rice/human endogenous CG methylation is high, tens of percent); near-zero CpG methylation with high CHH is the signature of chloroplast/organellar contamination or a conversion problem. CHG/CHH levels in rice are distinctly non-zero (plant contexts).
 5. **M-bias** (`*.M-bias.txt`): methylation percentage per read position. Strong end-of-read biases are the reason people trim the first/last bases with bismark's `--mbias`; inspect before adding such trims to `bismark.align_extra`.
 
-Everything above lands in `results/5.QC/multiqc/multiqc_report.html` (title "BS-seq QC Summary") and `results/5.QC/bismark2summary.html`; the exact tool versions used are recorded in `results/5.QC/software_versions.yaml`. Differential methylation between conditions is out of scope for v0.1 (see [docs/TODO.md](TODO.md)).
+Everything above lands in `results/5.QC/multiqc/multiqc_report.html` (title "BS-seq QC Summary") and `results/5.QC/bismark2summary.html`; the exact tool versions used are recorded in `results/5.QC/software_versions.yaml`. Differential methylation between conditions is available behind the default-off `dmr:` section (§4.2; output interpretation above).
 
 ---
 
@@ -536,7 +594,8 @@ Three fixes, in order of preference: (1) targeted per-rule override in a project
 make check                          # bash -n syntax checks (no snakemake needed)
 make lint                           # static suite (missing optional tools are skipped)
 bash tests/run_test.sh              # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
+bash tests/run_test.sh --dmr        # differential-methylation scenario (4-sample 2x2 design; dmr_methylkit in the DAG)
 bash tests/run_test.sh --real-run   # end-to-end run + output assertions (needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 2 samples of paired-end 100 bp reads simulated post-bisulfite); the dry-run baseline DAG is 20 jobs (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, 2 samples of paired-end 100 bp reads simulated post-bisulfite; `--dmr` generates 4 samples with the group design and dmr enabled); the default dry-run baseline DAG is 20 jobs and the `--dmr` scenario is 35 jobs (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).

@@ -1,8 +1,8 @@
 # bs-seq
 
-A **Snakemake** workflow for bisulfite sequencing (BS-seq) methylation calling. One command takes raw FASTQ files (paired-end or single-end, auto-detected per sample) through: optional 3' adapter/quality trimming (Trim Galore), bisulfite genome preparation (`bismark_genome_preparation`), Bismark alignment (bowtie2 backend), PCR-duplicate removal (`deduplicate_bismark`), per-sample methylation extraction (`bismark_methylation_extractor`) with an optional merged CpG table (`coverage2cytosine --merge_CpG`) and a per-sample HTML report, ending in a run-level `bismark2summary` and a combined MultiQC report.
+A **Snakemake** workflow for bisulfite sequencing (BS-seq) methylation calling. One command takes raw FASTQ files (paired-end or single-end, auto-detected per sample) through: optional 3' adapter/quality trimming (Trim Galore), bisulfite genome preparation (`bismark_genome_preparation`), Bismark alignment (bowtie2 backend), PCR-duplicate removal (`deduplicate_bismark`), per-sample methylation extraction (`bismark_methylation_extractor`) with an optional merged CpG table (`coverage2cytosine --merge_CpG`) and a per-sample HTML report, ending in a run-level `bismark2summary` and a combined MultiQC report — plus an optional methylKit differential-methylation stage (DMCs/DMRs over the merged CpG tables, `dmr.enabled`, default off) into `6.DMR/`.
 
-> **Status (v0.1.0)**: first-class subproject aligned with the `rna-seq` / `srna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets (rice `osa` / human `hsa`), three-layer config stacking, parse-time config/sample-table validation, PE/SE auto-detection, software-version provenance, and a synthetic-data dry-run regression test. The regression baseline DAG is **20 jobs**; for end-to-end validation see [Development and testing](#development-and-testing).
+> **Status (v0.2.0)**: first-class subproject aligned with the `rna-seq` / `srna-seq` / `chip_cuttag_atac_faire` engineering model — unified `run.sh` launcher (four scheduler profiles + auto detection + preflight + resource overrides + unlock), one main software environment resolved via `config/software.yaml` (never auto-created by Snakemake), per-rule cluster resources in `config/resources.yaml`, species presets (rice `osa` / human `hsa`), three-layer config stacking, parse-time config/sample-table validation, PE/SE auto-detection, software-version provenance, and a synthetic-data dry-run regression test. The default regression baseline DAG is **20 jobs** (`--dmr` scenario: 35); for end-to-end validation see [Development and testing](#development-and-testing).
 
 ## Workflow overview
 
@@ -20,6 +20,7 @@ A **Snakemake** workflow for bisulfite sequencing (BS-seq) methylation calling. 
 | `5.QC` | `bismark2summary` | run-level Bismark summary HTML across all samples |
 | | `multiqc` | combined QC report over trimming, FastQC, and the Bismark reports |
 | | `software_versions` | record of the tool versions actually resolved for the run |
+| `6.DMR` | `dmr_methylkit` | optional (dmr.enabled, default off) single methylKit job over every sample's merged CpG table: per-contrast DMC tables (all/hyper/hypo), tiled DMR table, and a summary; contrasts are treat-vs-`control_group` from the sample table's optional `group` column (>= 2 replicates per group) |
 
 ## Bismark output naming
 
@@ -42,11 +43,11 @@ These names were **reconciled against the pinned Bismark 0.24.0 in the 2026-09-0
 
 Three ways to get an environment (pick one; details in [docs/user-guide.md](docs/user-guide.md) §1):
 
-1. **Fresh server**: `mamba env create -f workflow/environment.yaml` (all-in-one environment `bs-seq`, pinning snakemake-minimal 7.32.4 / bismark 0.24.0 / bowtie2 2.5.2 / samtools 1.17 / trim-galore 0.6.10 / fastqc 0.11.9 / multiqc 1.21);
+1. **Fresh server**: `mamba env create -f workflow/environment.yaml` (all-in-one environment `bs-seq`, pinning snakemake-minimal 7.32.4 / bismark 0.24.0 / bowtie2 2.5.2 / samtools 1.17 / trim-galore 0.6.10 / fastqc 0.11.9 / multiqc 1.21, plus the R stack for the optional DMR stage: r-base 4.3 / bioconductor-methylkit / r-getopt);
 2. **Reuse an existing conda environment**: in `config/software.yaml` set `environment.type: conda` + `conda_prefix` (recommended) or `conda_name`; `run.sh` injects the prefix's `bin` into PATH automatically, no activate needed;
 3. **System mode**: with `environment.type: system`, all tools come from PATH.
 
-Environments are created explicitly by the user; Snakemake never deploys them automatically. Before launching, preflight with `bash run.sh -P <workdir> --check-software` (required executables: bismark / bismark_genome_preparation / deduplicate_bismark / bismark_methylation_extractor / coverage2cytosine / bam2nuc / bismark2report / bismark2summary / bowtie2 / samtools / trim_galore / fastqc / multiqc / python3).
+Environments are created explicitly by the user; Snakemake never deploys them automatically. Before launching, preflight with `bash run.sh -P <workdir> --check-software` (required executables: bismark / bismark_genome_preparation / deduplicate_bismark / bismark_methylation_extractor / coverage2cytosine / bam2nuc / bismark2report / bismark2summary / bowtie2 / samtools / trim_galore / fastqc / multiqc / python3; Rscript is resolved through the `r:` section for the optional DMR stage but is never demanded while `dmr` is disabled).
 
 Snakemake version matrix: **7.32.4** is the reference version (pinned in `workflow/environment.yaml`; the four cluster profiles target the 7.x classic `--cluster` interface). Snakemake 8.x moved cluster submission to the executor plugin system — parsing and dry-runs work, but test before real cluster runs.
 
@@ -73,7 +74,7 @@ bash run.sh -P ~/work/rice -j 10
 
 Key points:
 
-- Raw inputs live in `1.rawdata/` at the working-directory root; every derived artifact goes under `results/` (rename via `results_dir` in config) in numbered stage dirs (`0.index` / `2.cleandata` / `3.align` / `4.dedup` / `5.methylation` / `5.QC`);
+- Raw inputs live in `1.rawdata/` at the working-directory root; every derived artifact goes under `results/` (rename via `results_dir` in config) in numbered stage dirs (`0.index` / `2.cleandata` / `3.align` / `4.dedup` / `5.methylation` / `5.QC` / optional `6.DMR`);
 - Config chain: repository `config/config.yaml` defaults → project config (`-c` or positional; auto-detected `<workdir>/config.yaml`) → `config.local.yaml` in the working directory (auto-layered; later files win);
 - `species: "osa"` or `"hsa"` fills an unset `genome` path from the `config/species.yaml` preset (explicit non-empty keys win; `species: "none"` disables the fallback entirely);
 - Library layout is auto-detected per sample from the `1.rawdata/` file names (PE first: `{sample}_1.fastq.gz` + `{sample}_2.fastq.gz`; then SE: `{sample}.fastq.gz`) — PE and SE samples can coexist in one run;
@@ -87,7 +88,7 @@ bs-seq/
 ├── workflow/
 │   ├── Snakefile             # single entry point (species presets + config layering + target aggregation)
 │   ├── environment.yaml      # all-in-one conda environment template (pinned; created explicitly by the user)
-│   ├── rules/                # common / index / upstream / align / methylation / meta
+│   ├── rules/                # common / index / upstream / align / methylation / dmr / meta
 │   ├── scripts/              # runtime_config.py, collect_versions.py
 │   ├── profile/              # default / pbs / sge / slurm profiles + README (cluster commands and pinned params)
 │   └── multiqc_config.yaml
@@ -121,6 +122,7 @@ workdir/
     ├── 4.dedup/             # deduplicated BAMs + dedup reports
     ├── 5.methylation/       # per-sample cytosine/bedGraph/M-bias/splitting outputs + reports
     ├── 5.QC/                # bismark2summary + multiqc_report.html + software_versions.yaml
+    ├── 6.DMR/               # optional (dmr.enabled): methylKit DMC/DMR tables + summary
     └── logs/                # per-rule logs
 ```
 
@@ -146,6 +148,7 @@ All derived artifacts live under `results/` in the working directory (rename via
 | Splitting report / M-bias | `results/5.methylation/{sample}/{sample}.deduplicated_splitting_report.txt` / `{sample}.deduplicated.M-bias.txt` |
 | Merged CpG table | `results/5.methylation/{sample}/{sample}.CpG_merged.CpG_report.merged_CpG_evidence.cov.gz` (when `merge_cpg: true`) |
 | Per-sample HTML report | `results/5.methylation/{sample}/{sample}.html` |
+| DMC/DMR tables (optional) | `results/6.DMR/{treat}_vs_{control}_DMC_{all,hyper,hypo}.tsv` + `_DMR_tiles.tsv` + `DMR_summary.tsv` (when `dmr.enabled: true`) |
 | Run-level Bismark summary | `results/5.QC/bismark2summary.html` |
 | Combined QC report | `results/5.QC/multiqc/multiqc_report.html` |
 | Software version record | `results/5.QC/software_versions.yaml` |
@@ -187,10 +190,11 @@ Regression tests (need snakemake):
 
 ```bash
 bash tests/run_test.sh               # synthetic-data dry-run: generate -> assemble working directory -> validate DAG integrity
+bash tests/run_test.sh --dmr         # differential-methylation scenario: 4 samples (2x2 group design), asserts dmr_methylkit in the DAG
 bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 
-Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, paired-end 100 bp reads simulated post-bisulfite: C→T on read 1, G→A on read 2, 1% errors, 30% adapter-tailed pairs) and is never committed. The dry-run baseline DAG is **20 jobs** (rule all + 2 x trim_pe + bismark_genome_prep + 2 x bismark_align + 2 x deduplicate + bam2nuc_genome + 2 x bam2nuc_sample + 2 x methylation_extractor + 2 x coverage2cytosine + 2 x bismark2report + bismark2summary + multiqc + software_versions, 2 samples) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)).
+Test data is generated by `tests/make_testdata.py` with a fixed seed (2 x 20 kb chromosomes, paired-end 100 bp reads simulated post-bisulfite: C→T on read 1, G→A on read 2, 1% errors, 30% adapter-tailed pairs) and is never committed. The dry-run baseline DAG is **20 jobs** (rule all + 2 x trim_pe + bismark_genome_prep + 2 x bismark_align + 2 x deduplicate + bam2nuc_genome + 2 x bam2nuc_sample + 2 x methylation_extractor + 2 x coverage2cytosine + 2 x bismark2report + bismark2summary + multiqc + software_versions, 2 samples) — compare against this count after refactors (recorded in [CHANGELOG.md](CHANGELOG.md)); the `--dmr` scenario (4 samples, `dmr.enabled: true`) dry-runs **35 jobs** including the single `dmr_methylkit` job.
 
 The regression config runs with `species: "none"` and a relative miniature `ref/genome.fa`, exercising the full repository config schema. A handful of Bismark derived output names were reconciled against the pinned Bismark 0.24.0 in WSL `--real-run` validation (see the naming table above and [docs/TODO.md](docs/TODO.md) §1).
 
@@ -201,7 +205,7 @@ A lightweight CI job (lint + `--reads 2000` dry-run regression) runs at the repo
 Mirrors [docs/TODO.md](docs/TODO.md):
 
 1. **Bismark derived output names**: reconciled against Bismark 0.24.0 in WSL real-run validation (naming table above, [docs/TODO.md](docs/TODO.md) §1). Remaining caveats: `bismark2summary` skips dedup/splitting stats unless reports sit beside the BAM under the tool's own names, and per-sample `--parallel` alignment is deferred (Bismark 0.24 rejects `--basename` + `--multicore`).
-2. **Differential methylation / DMR**: v0.1 stops at per-sample cytosine reports and merged CpG tables; methylKit/DSS-style DMR calling (needs a group/batch design in the sample table) is the first v0.2 candidate.
+2. **Differential methylation / DMR**: done in v0.2.0 — methylKit DMC/DMR calling over the merged CpG tables behind the default-off `dmr:` section (see the workflow table above and [docs/user-guide.md](docs/user-guide.md) §4.2).
 3. **No unit-test suite**: the regression is a synthetic-data dry-run; pytest coverage for the pure-Python pieces and the `common.smk` validation is deferred.
 
 ## License
@@ -209,5 +213,7 @@ Mirrors [docs/TODO.md](docs/TODO.md):
 [Apache-2.0](LICENSE) © 2026 ChengYu
 
 ## Versions
+
+v0.2.0 (2026-09-08): optional methylKit differential-methylation stage (`dmr:` section, `6.DMR/` outputs, optional group/batch sample-table columns, R stack in the environment, `--dmr` test scenario) — see [CHANGELOG.md](CHANGELOG.md).
 
 v0.1.0 (2026-09-05): initial release — config layer, bisulfite-genome / trim / Bismark alignment / dedup / methylation-extraction / reporting rules, unified launcher, pinned environment, regression tests, and docs (see [CHANGELOG.md](CHANGELOG.md)).

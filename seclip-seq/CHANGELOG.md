@@ -2,6 +2,134 @@
 
 All notable changes to this project are documented in this file. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-09-08
+
+### Added
+
+- Optional `reproducible_peaks` stage (default off; closes TODO item 1): per-condition
+  cross-sample consensus of the ip-role PureCLIP beds via `bedtools multiinter`
+  (`rule consensus_peaks` in `workflow/rules/consensus.smk`); a site is kept when
+  present in >= `min_replicates` beds and the support count is written to column 4
+  of `results/6.reproducible_peaks/{condition}.consensus.bed`.
+- Optional `annotate_peaks` stage (default off; closes TODO item 2): GTF-based peak
+  annotation for every peak set (per-sample PureCLIP beds plus each consensus BED).
+  `rule gtf_gene_regions` derives gene/exon BEDs and a gene_id/gene_name/gene_biotype
+  table from the already-required GTF (new stdlib script
+  `workflow/scripts/gtf_to_gene_regions.py`: quoted/unquoted attribute parsing,
+  gene spans merged from gene + exon records, 1-based GTF -> 0-based half-open BED);
+  the `annotate_sample_peaks` / `annotate_consensus_peaks` rules classify each peak
+  with `bedtools intersect -u` (exon / gene overlap) and `bedtools closest -d -t first`
+  (nearest gene + signed distance) and merge everything into
+  `results/6.annotation/{set}.annotation.tsv` (chrom, start, end, score, nearest_gene,
+  nearest_gene_id, distance, feature_class exon|gene|intergenic, gene_biotype) via the
+  new stdlib script `workflow/scripts/annotate_peaks.py`.
+- Optional `condition`/`role` sample-table columns driving the consensus: the sample
+  table now accepts either exactly `[sample_id]` (unchanged; single-column tables keep
+  working) or exactly `[sample_id, condition, role]`. `role` is restricted to
+  `ip|input`, `condition` follows the sample-id name rules (values become file names);
+  `load_sample_table` keeps returning the ordered sample-id list, with the grouping
+  exposed as the module-level `SAMPLE_CONDITIONS` / `SAMPLE_ROLES` dicts
+  (`workflow/rules/common.smk`).
+- IP vs input control for the consensus stage (default off; closes TODO item 3): the
+  new `reproducible_peaks.input_control` switch peak-calls the `role: input` samples
+  too (without it, once the consensus stage is enabled, only ip samples join the
+  PureCLIP target set) and unions their PureCLIP beds per condition (`rule
+  input_background`: `bedtools multiinter` with support >= 1, i.e. the plain union;
+  column 4 = number of inputs covering the feature) into
+  `results/6.reproducible_peaks/{condition}.input_background.bed`. For conditions with
+  inputs, `rule flag_input_background` produces the final
+  `{condition}.consensus.bed` as BED5 — the W7 columns 1-4 plus the binary
+  `in_input_background` flag (1 = the site overlaps the condition's input background);
+  the raw pre-flagging consensus is kept as the `{condition}.consensus.raw.bed`
+  intermediate (`rule consensus_peaks_raw`). Conditions without input samples keep the
+  byte-identical W7 BED4 consensus pipeline (`rule consensus_peaks`, scoped to them by
+  per-rule wildcard constraints). `reproducible_peaks.filter_by_input` (requires
+  `input_control`) adds `rule filter_input_background`, writing
+  `results/6.reproducible_peaks/{condition}.consensus.filtered.bed` (flagged sites
+  dropped, BED4 again); the consensus annotation consumes the filtered BED under
+  `filter_by_input`, otherwise the flagged BED5 (`annotate_peaks.py` already accepts
+  arbitrary peak-column counts, so the flag column rides through the annotation
+  machinery and is dropped per its TSV column contract).
+- Parse-time validation for the input-control switches (aggregated in
+  `validate_config`): both keys must be booleans; `input_control` requires the
+  condition/role sample-table columns (and warns while `reproducible_peaks.enabled`
+  is false); `filter_by_input` requires `input_control`; a condition with input
+  samples but no ip samples is a hard error (no consensus to build or flag); an ip
+  condition without inputs warns (the background is simply absent and its consensus
+  stays unflagged).
+- New scheduler-resource defaults (`RESOURCE_DEFAULTS` in common.smk): `input_background`,
+  `flag_input_background`, and `filter_input_background` at 1 thread / 2048 MB /
+  30 min each (overridable per rule via a project resources.yaml).
+- `tests/make_testdata.py --with-inputs`: opt-in input-control test samples (FC_in1 /
+  FC_in2, appended to the RNG stream after the ip samples, so the default output stays
+  byte-identical); `tests/test_gtf_regions.py` gains a flagged-consensus (BED5) case
+  and a 7-column PureCLIP-layout case (28 tests total).
+- Parse-time validation for the new switches (aggregated in `validate_config`): both
+  sections are optional (absent = disabled, so v0.1 project configs keep working);
+  `reproducible_peaks.{enabled,min_replicates}` and `annotate_peaks.enabled` shapes;
+  enabled consensus requires the condition/role columns, `callpeak.pureclip=true`,
+  and at least `min_replicates` ip samples per condition (hard error, consensus
+  support could never be reached); enabled annotation requires `callpeak.pureclip=true`.
+- `bedtools=2.31.0` pinned in `workflow/environment.yaml` (seclip had no bedtools
+  before; matches the chip sibling pin; invoked bare from PATH like the other tools).
+- New scheduler-resource defaults (`RESOURCE_DEFAULTS` in common.smk):
+  `consensus_peaks` 1 thread / 2048 MB / 30 min, `gtf_gene_regions` and
+  `annotate_peaks` 1 / 4096 / 60 (overridable per rule via a project resources.yaml).
+- `tests/test_gtf_regions.py`: pytest unit tests for both scripts (attribute
+  parsing, interval extraction, output contracts, merge/feature-class logic, error
+  paths; 28 cases after the real-run round additions); `make unit` target
+  (`python -m pytest tests -q`) and `make test` now runs check + lint + unit.
+- `tests/run_test.sh --consensus` scenario: rewrites the test sample table to the
+  condition/role form (both samples one ip condition), enables both stages in the
+  test config, dry-runs, and asserts `consensus_peaks`, `gtf_gene_regions`,
+  `annotate_sample_peaks`, and `annotate_consensus_peaks` join the DAG.
+
+### Changed
+
+- README results tables now document the PureCLIP output contract (the workflow's
+  first written record of it): `results/5.callpeak/{sample}.pureclip.bed` carries 7
+  columns — BED6 (chromosome, start, end, site name, crosslink-site score, strand)
+  plus a trailing score-attributes field (`[score_CL=...;...]`), corrected from the
+  first draft's BED6 assumption by the 40k-read real-run round (see Fixed below).
+- Final-review fix: the four bedtools multiinter rules sort their input beds with
+  `LC_COLLATE=C sort -k1,1 -k2,2n` (numeric start, stable collation) — the same form
+  chip's `callpeak.smk` codified from a real 2026-09-05 deployment failure; the
+  lexicographic first draft mis-sorted starts past a 9999/10000 boundary and would
+  have corrupted the consensus support counts on real genomes.
+- Dry-run job-count baseline unchanged at **23 jobs** with both stages off (the new
+  sections are optional in validation; the default test scenario keeps the generated
+  single-column sample table). The `--consensus` scenario dry-run adds 5 jobs
+  (28 total: consensus 1 + GTF prep 1 + per-sample annotation 2 + consensus
+  annotation 1). The new `--input-control` scenario (4 samples: 2 ip + 2 input,
+  `input_control` + `filter_by_input` on, both annotation stages off) dry-runs 45
+  jobs (18 per-sample jobs for the two extra samples + background/flag/filter/raw
+  consensus). `config/resources.yaml` (repository mirror) intentionally not
+  extended — unlisted rules keep the built-in defaults per the documented override
+  semantics; a project copy can override the new rules by name.
+- `tests/run_test.sh`: new `--input-control` scenario (4-sample condition/role
+  table, reproducible_peaks enabled with input_control + filter_by_input; dry-run
+  asserts `consensus_peaks_raw`, `input_background`, `flag_input_background`, and
+  `filter_input_background` join the DAG; `--real-run` additionally asserts the
+  background/consensus/filtered outputs); `--consensus` and `--input-control` are
+  mutually exclusive; `--consensus --real-run` / `--input-control --real-run`
+  additionally need bedtools (documented, not rejected, matching the existing
+  convention.
+
+### Fixed
+
+- Real-run round (40k reads, both v0.2 scenarios green end-to-end): PureCLIP 1.3.1
+  emits 7 columns (BED6 + a trailing score-attributes field), not BED6 as first
+  documented — `annotate_sample_peaks` passes `--peak-cols 7` (the merge script's
+  column-count check caught the 14-vs-13 closest mismatch); README, user-guide,
+  and the script docs carry the corrected contract and a regression test pins the
+  7-column closest layout.
+- Real-run round: `tests/make_testdata.py` plants deterministic crosslink hotspots
+  (shared ones in every sample, ip-only ones in ip samples) — with uniformly random
+  30 bp reads, crosslink sites essentially never coincide across replicates, so the
+  consensus filtered to an empty file and the input control flagged every site;
+  the scenarios now produce non-empty consensus, background, flagged, and filtered
+  outputs under real runs.
+
 ## [0.1.0] - 2026-09-05
 
 ### Changed (2026-09-05/06, environment solve validation in WSL)
