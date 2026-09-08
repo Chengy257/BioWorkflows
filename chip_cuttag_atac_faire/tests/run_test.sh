@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash tests/run_test.sh [--reads N] [--keep] [--real-run] \
-#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--seacr] [--help]
+#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--seacr] [--footprint] [--help]
 #     --reads     PE read pairs per sample, default 50000 (CI passes 2000)
 #     --keep      keep tests/data and tests/work (cleaned up by default)
 #     --real-run  run end-to-end and assert that outputs exist (default is
@@ -57,6 +57,9 @@ Usage:
     --seacr     scenario: pooled peak caller = SEACR (peak.caller=seacr;
                 the pooled MACS2 caller rules are replaced and must be
                 absent from the DAG; FRiP still consumes the peaks)
+    --footprint scenario: enable the TOBIAS footprinting stage (footprint;
+                schedules for the atac group g2 only; dry-run only — a real
+                run additionally needs an external TOBIAS install)
     -h, --help  show this help
 
 Requires:
@@ -64,7 +67,7 @@ Requires:
   analysis environment (bowtie2/fastqc/trim_galore/macs2/deeptools/R etc.,
   see workflow/environment.yaml; --replicate additionally needs the external
   idr tool, --motif an external HOMER, --diffbind the DiffBind R package,
-  --seacr the external SEACR script).
+  --seacr the external SEACR script, --footprint an external TOBIAS install).
 EOF
 }
 
@@ -82,6 +85,7 @@ DIFFBIND=0
 GATES=0
 SPIKE=0
 SEACR=0
+FOOTPRINT=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
@@ -97,6 +101,7 @@ while [[ $# -gt 0 ]]; do
         --gates)     GATES=1; shift ;;
         --spike-in)  SPIKE=1; shift ;;
         --seacr)     SEACR=1; shift ;;
+        --footprint) FOOTPRINT=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
     esac
@@ -111,6 +116,7 @@ SCENARIO_ARGS=()
 [[ "$GATES" == 1 ]] && SCENARIO_ARGS+=(--gates)
 [[ "$SPIKE" == 1 ]] && SCENARIO_ARGS+=(--spike-in)
 [[ "$SEACR" == 1 ]] && SCENARIO_ARGS+=(--seacr)
+[[ "$FOOTPRINT" == 1 ]] && SCENARIO_ARGS+=(--footprint)
 if [[ "$REPLICATE" == 1 && "$SEACR" == 1 ]]; then
     echo "[ERROR] --replicate and --seacr are mutually exclusive (peak.caller=seacr" \
          "rejects peak.replicate.enabled at parse time)" >&2
@@ -225,6 +231,13 @@ if [[ "$REAL_RUN" == 1 ]]; then
             "results/4.peak/seacr/g2_treat.bg"
         )
     fi
+    if [[ "$FOOTPRINT" == 1 ]]; then
+        EXPECTED+=(
+            "results/7.footprint/g2/ataccorrect/g2_corrected.bw"
+            "results/7.footprint/g2/scorebigwig"
+            "results/7.footprint/g2/bindetect"
+        )
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -259,6 +272,9 @@ else
     fi
     if [[ "$SPIKE" == 1 ]]; then
         DAG_RULES+=(spike_bowtie2_index spike_align spike_summary)
+    fi
+    if [[ "$FOOTPRINT" == 1 ]]; then
+        DAG_RULES+=(footprint_ataccorrect footprint_scorebigwig footprint_bindetect)
     fi
     for rule in "${DAG_RULES[@]}"; do
         if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
@@ -303,6 +319,17 @@ else
             echo "  PASS  DAG does not contain a $pattern job"
         fi
     done
+    # Footprinting schedules for the ATAC/FAIRE groups only: the test data has
+    # exactly one such group (atac g2), so the three footprint rules must show
+    # exactly three job headers in the dry-run plan (no chip-group instances).
+    if [[ "$FOOTPRINT" == 1 ]]; then
+        N_FP_JOBS=$(grep -cE "^(local)?rule footprint_" "$SNAKE_LOG" 2>/dev/null || true)
+        if [[ "$N_FP_JOBS" == "3" ]]; then
+            echo "  PASS  footprint jobs scheduled for the atac group only (3 job headers: g2)"
+        else
+            echo "  FAIL  expected exactly 3 footprint job headers (atac group g2), found ${N_FP_JOBS:-0}"; FAIL=1
+        fi
+    fi
     # Job count (informational baseline; printed for the CHANGELOG/AGENTS
     # record). Snakemake 7 dry-runs print one rule/localrule block per planned
     # job (printshellcmds is pinned on in every profile); counting both keeps

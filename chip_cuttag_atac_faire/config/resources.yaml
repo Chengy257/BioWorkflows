@@ -65,3 +65,6 @@ resources:
   motif_enrichment:            {threads: 2,  mem_mb: 8192,  runtime_min: 720}
   diffbind_sheet:              {threads: 1,  mem_mb: 1024,  runtime_min: 10}
   diffbind_report:             {threads: 1,  mem_mb: 16384, runtime_min: 240}
+  footprint_ataccorrect:       {threads: 2,  mem_mb: 8192,  runtime_min: 240}
+  footprint_scorebigwig:       {threads: 1,  mem_mb: 4096,  runtime_min: 60}
+  footprint_bindetect:         {threads: 2,  mem_mb: 8192,  runtime_min: 240}

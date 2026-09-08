@@ -124,6 +124,19 @@ diffbind:
   foldchange: 1.0      # |Fold| cutoff (1.0 = no fold filter)
   batch_correction: true   # use the optional batch column as a blocking factor
 
+# ---------- TOBIAS footprinting (optional; ATAC/FAIRE groups only) ----------
+# Bias-corrected footprinting of the open-chromatin groups: TOBIAS ATACorrect
+# over each atac/faire group's pooled analysis BAM, ScoreBigwig footprint
+# scores, and (optionally) BINDetect TF binding detection
+# (results/7.footprint/{group}/). Needs an external TOBIAS install
+# (software.yaml paths: -> CHIP_TOBIAS); motifs points at a motif PFM file in
+# JASPAR/HOMER/MEME format (e.g. JASPAR PFMs for your TFs of interest).
+footprint:
+  enabled: false
+  motifs: ""          # required when enabled: motif PFM file (one file, many motifs)
+  bindetect: true     # run the BINDetect binding-detection step after scoring
+  motif_pvalue: 1e-4  # BINDetect motif significance cutoff (empty/null = tool default)
+
 # ---------- Annotation and signal windows ----------
 region_flank: 3000   # peak-annotation flank and deeptools signal window up/downstream (bp)
 

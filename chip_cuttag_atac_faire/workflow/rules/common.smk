@@ -386,6 +386,37 @@ def validate_config(cfg):
             name = sp.get("name", "spike")
             if not isinstance(name, str) or not name.strip():
                 errors.append(f"spike_in.name must be a non-empty string, got {name!r}")
+    # TOBIAS footprinting (v0.6): footprint block, default off. motifs is a
+    # required non-empty string when enabled (the TOBIAS footprinting recipes
+    # scan a fixed motif set); a "/path/to/"-style placeholder, which simply
+    # does not exist, warns only like every other reference file.
+    fp = cfg.get("footprint")
+    if fp is not None:
+        if not isinstance(fp, dict):
+            errors.append(f"footprint must be a mapping, got {fp!r}")
+        else:
+            if not isinstance(fp.get("enabled", False), bool):
+                errors.append(
+                    f"footprint.enabled must be true/false, got {fp.get('enabled')!r}")
+            if not isinstance(fp.get("bindetect", True), bool):
+                errors.append(
+                    f"footprint.bindetect must be true/false, got {fp.get('bindetect')!r}")
+            motifs = fp.get("motifs", "")
+            if not isinstance(motifs, str):
+                errors.append(f"footprint.motifs must be a string path, got {motifs!r}")
+            elif fp.get("enabled", False) and not motifs.strip():
+                errors.append(
+                    "footprint.motifs is required when footprint.enabled is true "
+                    "(a JASPAR/HOMER/MEME motif PFM file)")
+            mp = fp.get("motif_pvalue")
+            if mp not in (None, ""):
+                try:
+                    if not 0 < float(mp) <= 1:
+                        errors.append(
+                            f"footprint.motif_pvalue must be in (0, 1], got {mp!r}")
+                except (TypeError, ValueError):
+                    errors.append(
+                        f"footprint.motif_pvalue must be numeric, got {mp!r}")
     if isinstance(cfg.get("trim"), dict):
         t = cfg["trim"]
         for key, lo in (("quality", 0), ("stringency", 1)):
@@ -422,6 +453,16 @@ def validate_config(cfg):
         if _sp_path and not os.path.exists(_sp_path):
             warnings.append(
                 f"spike-in FASTA does not exist (verify before running): spike_in.fasta = {_sp_fa}")
+    _fp_cfg = cfg.get("footprint") if isinstance(cfg.get("footprint"), dict) else {}
+    if _fp_cfg.get("enabled", False):
+        _fp_motifs = str(_fp_cfg.get("motifs") or "").strip()
+        _fp_path = _fp_motifs
+        if _fp_path and not os.path.isabs(_fp_path) and not os.path.exists(_fp_path):
+            _fp_path = os.path.join(BASE_DIR, _fp_path)
+        if _fp_path and not os.path.exists(_fp_path):
+            warnings.append(
+                f"footprint motif file does not exist (verify before running): "
+                f"footprint.motifs = {_fp_motifs}")
     for w in warnings:
         print(f"[config warning] {w}")
 
@@ -556,6 +597,24 @@ _seacr_cfg.update({k: v for k, v in _seacr_user_cfg.items()
                    if k in PEAK_CALLER_DEFAULTS["seacr"]})
 PEAK_CALLER = {"caller": _peak_caller_cfg.get("caller", "macs2"), "seacr": _seacr_cfg}
 
+# TOBIAS footprinting (v0.6, default off): ATACorrect Tn5-bias correction over
+# the pooled analysis BAM of every atac/faire group, ScoreBigwig footprint
+# scores against a fixed motif PFM set, and (optional) BINDetect TF binding
+# detection. Footprinting models cut-site/Tn5 bias, so it is meaningful only
+# for the open-chromatin assays — chip/cuttag enrichment groups never get
+# footprint jobs (see FOOTPRINT_GROUPS below). motif_pvalue is passed to
+# BINDetect --motif-pvalue only when set (empty/None keeps the tool default).
+FOOTPRINT_DEFAULTS = {"enabled": False, "motifs": "", "bindetect": True,
+                      "motif_pvalue": 1e-4}
+FOOTPRINT = dict(FOOTPRINT_DEFAULTS)
+FOOTPRINT.update((config.get("footprint") or {}))
+FOOTPRINT_MOTIF_PVALUE_ARG = (
+    "" if FOOTPRINT.get("motif_pvalue") in (None, "")
+    else f"--motif-pvalue {FOOTPRINT['motif_pvalue']}")
+
+# Footprinting covers the ATAC/FAIRE groups only.
+FOOTPRINT_GROUPS = [g for g, v in GROUPS.items() if v["seqtype"] in ("atac", "faire")]
+
 # samtools flagstat count-line patterns (keep in sync with the compiled
 # copies in workflow/scripts/gates_summary.py and
 # workflow/scripts/spikein_summary.py — the standalone scripts duplicate
@@ -669,6 +728,9 @@ if REPLICATE["enabled"]:
 if QC_TSS and not TSS_SAMPLES:
     print("[config warning] qc.tss is enabled but the table has no atac/faire "
           "treat sample; the TSS stage is skipped")
+if FOOTPRINT["enabled"] and not FOOTPRINT_GROUPS:
+    print("[config warning] footprint is enabled but the table has no atac/faire "
+          "group; the footprinting stage is skipped")
 
 # Gate summary covers every sample; the FRiP filenames need each sample's
 # group (first group wins for a sample listed in several groups).
@@ -749,6 +811,14 @@ HOMER_BIN = os.environ.get("CHIP_HOMER_FINDMOTIFS", "findMotifsGenome.pl")
 # via software.yaml paths: -> CHIP_SEACR. The rules invoke it as
 # `bash {SEACR_BIN} ...` (SEACR is distributed as a shell script, not a binary).
 SEACR_BIN = os.environ.get("CHIP_SEACR", "SEACR_1.3.sh")
+
+# TOBIAS (the footprinting stage, footprint.enabled only) resolves the same
+# way: a heavyweight external tool deliberately kept OUT of the conda
+# template (its own environment, e.g. conda create -n chip-tobias -c bioconda
+# tobias), configured via software.yaml paths: -> CHIP_TOBIAS. The entry point
+# is the env's bin/TOBIAS console script (an absolute path works standalone
+# via its shebang interpreter).
+TOBIAS_BIN = os.environ.get("CHIP_TOBIAS", "TOBIAS")
 
 # Python interpreter for the workflow's own scripts (run.sh exports CHIP_PYTHON
 # from the runtime resolution; python3 is the sane fallback).
@@ -997,6 +1067,9 @@ RESOURCE_DEFAULTS = {
     "motif_enrichment": {"threads": 2, "mem_mb": 8192, "runtime_min": 720},
     "diffbind_sheet": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
     "diffbind_report": {"threads": 1, "mem_mb": 16384, "runtime_min": 240},
+    "footprint_ataccorrect": {"threads": 2, "mem_mb": 8192, "runtime_min": 240},
+    "footprint_scorebigwig": {"threads": 1, "mem_mb": 4096, "runtime_min": 60},
+    "footprint_bindetect": {"threads": 2, "mem_mb": 8192, "runtime_min": 240},
 }
 
 
@@ -1064,6 +1137,17 @@ if DIFFBIND["enabled"]:
                          for _a, _b, slug in DIFFBIND_CONTRASTS]
     DIFFBIND_TARGETS += [R(f"6.diffbind/{slug}/DB_results.tsv")
                          for _a, _b, slug in DIFFBIND_CONTRASTS]
+
+# TOBIAS footprinting targets (only aggregated when the stage is enabled; the
+# deliverables are the corrected bigWig file and one directory per scoring /
+# binding stage under the group's stage root — see workflow/rules/footprint.smk).
+FOOTPRINT_TARGETS = []
+if FOOTPRINT["enabled"]:
+    FOOTPRINT_TARGETS += [R(f"7.footprint/{g}/ataccorrect/{g}_corrected.bw")
+                          for g in FOOTPRINT_GROUPS]
+    FOOTPRINT_TARGETS += [R(f"7.footprint/{g}/scorebigwig") for g in FOOTPRINT_GROUPS]
+    if FOOTPRINT["bindetect"]:
+        FOOTPRINT_TARGETS += [R(f"7.footprint/{g}/bindetect") for g in FOOTPRINT_GROUPS]
 
 QC_TARGETS = [R("2.cleandata/fastqc/multiqc/multiqc_report.html")]
 if config["qc"]["nsc_rsc"]:

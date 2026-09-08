@@ -61,8 +61,10 @@ def _extra_exports(rt):
     findMotifsGenome.pl, needed only when motif.enabled is true (external
     HOMER distribution via configureHomer -> CHIP_HOMER_FINDMOTIFS). `seacr`
     is the SEACR bash script, needed only when peak.caller is seacr
-    (https://github.com/yeolab/SEACR -> CHIP_SEACR). All fall back to the
-    bare command name on PATH."""
+    (https://github.com/yeolab/SEACR -> CHIP_SEACR). `tobias` is the TOBIAS
+    entry point needed only when footprint.enabled is true (separate
+    environment, e.g. `conda create -n chip-tobias -c bioconda tobias` ->
+    CHIP_TOBIAS). All fall back to the bare command name on PATH."""
     values = {}
     paths = rt["paths"] or {}
     if paths.get("idr"):
@@ -71,6 +73,8 @@ def _extra_exports(rt):
         values["CHIP_HOMER_FINDMOTIFS"] = paths["homer_findmotifs"]
     if paths.get("seacr"):
         values["CHIP_SEACR"] = paths["seacr"]
+    if paths.get("tobias"):
+        values["CHIP_TOBIAS"] = paths["tobias"]
     return values
 
 

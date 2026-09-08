@@ -47,5 +47,13 @@ paths:
   # /opt/tools/SEACR_1.3.sh) or put it on PATH; exported to the rules as
   # CHIP_SEACR and invoked as `bash {CHIP_SEACR} ...`.
   seacr: "SEACR_1.3.sh"
+  # TOBIAS footprinting (needed only when footprint.enabled is true): a
+  # heavyweight tool with a dependency set of its own, deliberately kept OUT
+  # of the conda template. Install into a separate environment, e.g.:
+  #   conda create -n chip-tobias -c bioconda tobias
+  # then point this entry at the env's bin/TOBIAS console script (absolute
+  # path; it works standalone via its shebang interpreter) or put `TOBIAS`
+  # on PATH; exported to the rules as CHIP_TOBIAS.
+  tobias: "TOBIAS"
 
 databases: {}

@@ -418,6 +418,13 @@ check("spike_in placeholder fasta warns but does not abort",
       "[config warning]" in _out and "spike-in FASTA does not exist" in _out
       and "/path/to/spike.fa" in _out, _out[:200])
 
+_out = _vc_stdout(lambda c: c.update(
+    {"footprint": {"enabled": True, "motifs": "/path/to/motifs.pfm", "bindetect": True,
+                   "motif_pvalue": 1e-4}}))
+check("footprint placeholder motif file warns but does not abort",
+      "[config warning]" in _out and "footprint motif file does not exist" in _out
+      and "/path/to/motifs.pfm" in _out, _out[:200])
+
 # --- v0.6 keys: peak.caller / peak.seacr (alternative pooled caller) ---
 vc_case("peak.caller/seacr blocks are optional (legacy configs stay valid)",
         lambda c: (c["peak"].pop("caller", None), c["peak"].pop("seacr", None)),
@@ -452,6 +459,36 @@ vc_case("caller=seacr guard tolerates a non-mapping replicate block (type error 
         lambda c: (c["peak"].__setitem__("caller", "seacr"),
                    c["peak"].__setitem__("replicate", "on")),
         ["peak.replicate must be a mapping"], expect_error=True)
+
+# --- v0.6 keys: footprint (TOBIAS footprinting) ---
+vc_case("valid footprint block accepted (missing motif file warns only)",
+        lambda c: c.update({"footprint": {"enabled": True, "motifs": "/nonexistent/motifs.pfm",
+                                          "bindetect": True, "motif_pvalue": 1e-4}}),
+        [], expect_error=False)
+vc_case("footprint block is optional (legacy configs stay valid)",
+        lambda c: c.pop("footprint", None), [], expect_error=False)
+vc_case("footprint of wrong type reported",
+        lambda c: c.__setitem__("footprint", "on"), ["footprint must be a mapping"])
+vc_case("non-boolean footprint.enabled reported",
+        lambda c: c.__setitem__("footprint", {"enabled": "yes"}), ["footprint.enabled"])
+vc_case("non-boolean footprint.bindetect reported",
+        lambda c: c.__setitem__("footprint", {"bindetect": "yes"}), ["footprint.bindetect"])
+vc_case("footprint enabled without motifs reported",
+        lambda c: c.__setitem__("footprint", {"enabled": True, "motifs": ""}),
+        ["footprint.motifs is required"])
+vc_case("footprint non-string motifs reported",
+        lambda c: c.__setitem__("footprint", {"enabled": True, "motifs": 3}),
+        ["footprint.motifs must be a string"])
+vc_case("footprint motif_pvalue out of range reported",
+        lambda c: c.__setitem__("footprint", {"motif_pvalue": 2}),
+        ["footprint.motif_pvalue must be in (0, 1]"])
+vc_case("footprint motif_pvalue non-numeric reported",
+        lambda c: c.__setitem__("footprint", {"motif_pvalue": "x"}),
+        ["footprint.motif_pvalue must be numeric"])
+vc_case("footprint motif_pvalue empty accepted (tool default)",
+        lambda c: c.update({"footprint": {"enabled": True, "motifs": "motifs.pfm",
+                                          "motif_pvalue": None}}),
+        [], expect_error=False)
 
 print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
@@ -637,6 +674,10 @@ if HAS_YAML:
           and cfg["peak"].get("seacr", {}).get("mode") == "stringent"
           and cfg["peak"].get("seacr", {}).get("normalize") == "norm"
           and cfg["peak"].get("seacr", {}).get("fdr_threshold") == 0.01)
+    check("config: footprint block present and default-off",
+          cfg.get("footprint", {}).get("enabled") is False
+          and isinstance(cfg.get("footprint", {}).get("motifs"), str)
+          and cfg.get("footprint", {}).get("bindetect") is True)
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
@@ -652,6 +693,9 @@ if HAS_YAML:
     check("resources.yaml: seacr rules declared",
           {"seacr_bedgraph_treat", "seacr_bedgraph_control", "seacr_callpeak",
            "seacr_bigwig"} <= set(res_cfg.get("resources") or {}))
+    check("resources.yaml: footprint rules declared",
+          {"footprint_ataccorrect", "footprint_scorebigwig", "footprint_bindetect"}
+          <= set(res_cfg.get("resources") or {}))
 
 print("== 8. Per-rule resource declarations ==")
 # --- resource helpers: extract the real source from common.smk, inject config ---
@@ -816,6 +860,35 @@ try:
               f"rc={_gen4.returncode} stderr={_gen4.stderr[-200:]}")
     finally:
         shutil.rmtree(_gen_out4, ignore_errors=True)
+
+    # --footprint scenario: synthetic JASPAR-style PFM (2 motifs) + config splice
+    _gen_out5 = tempfile.mkdtemp(prefix="testdata_footprint_")
+    try:
+        _gen5 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out5,
+                                "--reads", "200", "--footprint"],
+                               capture_output=True, text=True, timeout=300)
+        _pfm_path = os.path.join(_gen_out5, "ref", "motifs.pfm")
+        _pfm_motifs, _pfm_rows = [], 0
+        if os.path.exists(_pfm_path):
+            with open(_pfm_path, encoding="ascii") as fh:
+                for line in fh:
+                    if line.startswith(">"):
+                        _pfm_motifs.append(line[1:].split()[0])
+                    elif line[:1] in "ACGT":
+                        _pfm_rows += 1
+        _cfg_text5 = ""
+        if os.path.exists(os.path.join(_gen_out5, "config.yaml")):
+            with open(os.path.join(_gen_out5, "config.yaml"), encoding="utf-8") as fh:
+                _cfg_text5 = fh.read()
+        check("generator --footprint: ref/motifs.pfm with 2 JASPAR motifs (4 count rows each) "
+              "and the config block spliced",
+              _gen5.returncode == 0 and _pfm_motifs == ["motif1", "motif2"]
+              and _pfm_rows == 8
+              and "footprint:" in _cfg_text5 and '"ref/motifs.pfm"' in _cfg_text5,
+              f"rc={_gen5.returncode} motifs={_pfm_motifs} rows={_pfm_rows} "
+              f"stderr={_gen5.stderr[-200:]}")
+    finally:
+        shutil.rmtree(_gen_out5, ignore_errors=True)
 except Exception as exc:  # generator-group exceptions must not abort the remaining summary
     check("generator assertion group aborted abnormally", False, repr(exc))
 finally:

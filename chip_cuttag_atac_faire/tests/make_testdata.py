@@ -28,6 +28,7 @@ Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
 Usage:
     python tests/make_testdata.py --outdir <dir> [--reads 50000] [--seed 42]
         [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--seacr]
+        [--footprint]
 """
 import argparse
 import gzip
@@ -155,6 +156,20 @@ spike_in:
   name: "lambda"
   scale_bigwigs: true
 """
+
+FOOTPRINT_CONFIG_BLOCK = """
+# ---------- TOBIAS footprinting (--footprint scenario) ----------
+footprint:
+  enabled: true
+  motifs: "ref/motifs.pfm"
+  bindetect: true
+  motif_pvalue: 1e-4
+"""
+
+# JASPAR-style PFM layout: one "> <name>\\t<tf>" header per motif followed by
+# four count rows (A/C/G/T) of the motif width.
+MOTIF_WIDTHS = [10, 12]   # one width per synthetic motif (--footprint scenario)
+MOTIF_COUNT_MAX = 15      # per-cell PFM count ceiling (deterministic, seeded)
 
 # Spliced under peak: for the --seacr scenario (no extra samples; the base
 # g1 chip-narrow group with a control exercises the control-bedGraph norm
@@ -409,8 +424,23 @@ def write_spike_reference(outdir, seed):
                 fh.write(s[j:j + 60] + "\n")
 
 
+def write_motif_pfms(outdir, seed):
+    """Write the --footprint synthetic motif PFM file ref/motifs.pfm
+    (JASPAR-style: "> motif_i\\ttf_i" header + A/C/G/T count rows; deterministic
+    from its own seeded rng, widths per MOTIF_WIDTHS)."""
+    rng = random.Random(seed + 202)
+    path = os.path.join(outdir, "ref", "motifs.pfm")
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        for i, width in enumerate(MOTIF_WIDTHS):
+            fh.write(f">motif{i + 1}\ttf{i + 1}\n")
+            for base in "ACGT":
+                counts = [rng.randint(0, MOTIF_COUNT_MAX) for _ in range(width)]
+                cells = ", ".join(str(c) for c in counts)
+                fh.write(f"{base}  [{cells}]\n")
+
+
 def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False,
-                 gates=False, spike=False, seacr=False):
+                 gates=False, spike=False, seacr=False, footprint=False):
     """Write the test config.yaml (relative paths, consumed via run.sh -c).
 
     Scenario flags splice the matching sub-blocks into the base config."""
@@ -438,6 +468,8 @@ def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=F
         text += DIFFBIND_CONFIG_BLOCK
     if spike:
         text += SPIKE_CONFIG_BLOCK
+    if footprint:
+        text += FOOTPRINT_CONFIG_BLOCK
     path = os.path.join(outdir, "config.yaml")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -475,6 +507,10 @@ def main():
                     help="switch the pooled peak caller to SEACR (peak.caller=seacr; "
                          "no extra samples: g1 exercises the control-norm route, "
                          "control-less g2 the FDR-threshold route)")
+    ap.add_argument("--footprint", action="store_true",
+                    help="enable the TOBIAS footprinting stage (footprint) with a "
+                         "synthetic 2-motif JASPAR-style PFM (ref/motifs.pfm); the "
+                         "rules schedule for the atac group g2 only")
     args = ap.parse_args()
     if args.reads < 1:
         ap.error("--reads must be a positive integer")
@@ -491,11 +527,13 @@ def main():
     write_samples(args.outdir, samples, extended=args.diffbind)
     write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full,
                  motif=args.motif, diffbind=args.diffbind, gates=args.gates,
-                 spike=args.spike_in, seacr=args.seacr)
+                 spike=args.spike_in, seacr=args.seacr, footprint=args.footprint)
     if args.qc_full:
         write_blacklist(args.outdir)
     if args.spike_in:
         write_spike_reference(args.outdir, args.seed)
+    if args.footprint:
+        write_motif_pfms(args.outdir, args.seed)
 
     tags = [t for t, on in (("+replicate", args.replicate),
                             ("+qc-full", args.qc_full),
@@ -503,7 +541,8 @@ def main():
                             ("+diffbind", args.diffbind),
                             ("+gates", args.gates),
                             ("+spike-in", args.spike_in),
-                            ("+seacr", args.seacr)) if on]
+                            ("+seacr", args.seacr),
+                            ("+footprint", args.footprint)) if on]
     print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
           f"{len(samples)} samples x {args.reads} PE read pairs (seed={args.seed}"
           + (", " + ", ".join(tags) if tags else "") + ")")

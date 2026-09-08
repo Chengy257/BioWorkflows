@@ -103,6 +103,15 @@ peak:
 #   foldchange: 1.0
 #   batch_correction: true # uses the optional sample-table batch column
 
+# ---------- TOBIAS footprinting (optional; ATAC/FAIRE groups only) ----------
+# footprint:
+#   enabled: false     # bias-corrected footprinting via TOBIAS on every atac/faire
+#                      # group (results/7.footprint/{group}/; external TOBIAS install
+#                      # via software.yaml paths: -> CHIP_TOBIAS)
+#   motifs: "/path/to/motifs.pfm"   # required when enabled (JASPAR/HOMER/MEME PFM file)
+#   bindetect: true    # also run the BINDetect binding-detection step
+#   motif_pvalue: 1e-4 # BINDetect motif significance cutoff (null = tool default)
+
 # ---------- Annotation and signal windows ----------
 region_flank: 3000   # peak-annotation flank and deeptools window length (bp)
 

@@ -253,6 +253,10 @@ Scheduler resources are layered separately: see §4.3 for `config/resources.yaml
 | `motif.enabled` | `false` | HOMER motif enrichment on the final peak sets (§5.5); needs an external HOMER install |
 | `motif.homer_genome` | `""` | required when the stage is on: HOMER genome tag (`hg38`, `mm10`, …) or `custom:/path/to/genome` |
 | `motif.size` / `motif.background` / `motif.extra` | `"given"` / `""` / `""` | `-size`, optional `-bg` BED, extra findMotifsGenome.pl arguments |
+| `footprint.enabled` | `false` | TOBIAS footprinting on the ATAC/FAIRE groups: ATACorrect bias correction → ScoreBigwig footprint scores → optional BINDetect (§5.5.1); needs an external TOBIAS install |
+| `footprint.motifs` | `""` | required when the stage is on: motif PFM file in JASPAR/HOMER/MEME format (one file, many motifs) |
+| `footprint.bindetect` | `true` | also run the TOBIAS BINDetect binding-detection step |
+| `footprint.motif_pvalue` | `1e-4` | BINDetect motif significance cutoff in (0, 1] (empty/null = tool default) |
 | `diffbind.enabled` | `false` | DiffBind differential binding between sample-table groups (§5.6) |
 | `diffbind.contrasts` | `[]` | list of `[groupA, groupB]` pairs; each arm needs ≥ 2 treats |
 | `diffbind.analysis` | `"DESeq2"` | backend: `DESeq2` or `edgeR` |
@@ -434,6 +438,21 @@ With `motif.enabled: true`, every group's final peak set (the same deliverable a
 - `motif.size` (`given` = peak widths), an optional matched `motif.background` BED, and free-form `motif.extra` (e.g. `"-len 8,10,12 -nmotifs 12"`) cover the common recipes.
 - De novo discovery is slow (hours on large peak sets); tune the `motif_enrichment` entry in `config/resources.yaml` before queueing.
 
+### 5.5.1 Footprinting (TOBIAS, v0.6, `footprint`)
+
+With `footprint.enabled: true` the ATAC/FAIRE groups (open-chromatin assays only — chip/cuttag enrichment data carries no footprint signal) go through TOBIAS footprinting into `results/7.footprint/{group}/`:
+
+1. **ATACorrect** (`results/7.footprint/{group}/ataccorrect/`): the group's treat analysis BAMs are pooled (the same `samtools merge` recipe the SEACR bedGraph rules use) and Tn5-bias-corrected against the reference genome over the group's final peak set (`group_final_peak_file()`: IDR/consensus when `peak.replicate.enabled`, pooled otherwise) — `{group}_corrected.bw` plus the bias/QC plots TOBIAS writes;
+2. **ScoreBigwig** (`results/7.footprint/{group}/scorebigwig/`): footprint scores for every motif in `footprint.motifs` — one footprint-score bigWig per motif;
+3. **BINDetect** (optional, `footprint.bindetect`, default on; `results/7.footprint/{group}/bindetect/`): per-TF binding detection over the same corrected track and peak set (Excel output skipped).
+
+Requirements and knobs:
+
+- `footprint.motifs` is mandatory when the stage is on: a motif PFM file in JASPAR pfm, HOMER, or MEME format (download JASPAR PFMs for your TFs of interest; one file may hold many motifs).
+- TOBIAS is an external install with a heavyweight dependency set of its own, deliberately not in the conda template: create a separate environment (`conda create -n chip-tobias -c bioconda tobias`) and either put `TOBIAS` on PATH or point the software.yaml `paths: tobias` entry at the env's `bin/TOBIAS` script (exported to the rules as `CHIP_TOBIAS`).
+- `footprint.motif_pvalue` (default `1e-4`) passes to BINDetect `--motif-pvalue`; set it empty/null to keep the tool default.
+- A table without any atac/faire group skips the stage with a parse-time warning.
+
 ### 5.6 Differential binding (v0.5, `diffbind`)
 
 Differential enrichment between two conditions, DiffBind (DESeq2 or edgeR backend), driven by explicit contrasts:
@@ -586,6 +605,7 @@ workdir/
     │   └── logs/            # QC rule logs (e.g. software_versions.log.txt)
     ├── 6.motif/             # motif stage: {group}/ HOMER results (known + de novo)
     ├── 6.diffbind/          # diffbind stage: {A}__vs__{B}/ sample sheet, DB tables, plots
+    ├── 7.footprint/         # footprint stage: {group}/{ataccorrect,scorebigwig,bindetect}/ (TOBIAS)
     └── logs/                # per-rule logs (PBS .o job logs are collected here after success)
 ```
 
@@ -608,6 +628,7 @@ workdir/
 | Blacklist-filtered peaks / counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
 | Per-sample normalized bigWigs (`bigwig.per_sample`) | `results/4.peak/samples/{sample}.bw` |
 | HOMER motif results (`motif.enabled`) | `results/6.motif/{group}/` |
+| TOBIAS footprinting (`footprint.enabled`, ATAC/FAIRE groups only) | `results/7.footprint/{group}/` — `ataccorrect/` (`{group}_corrected.bw` + QC plots), `scorebigwig/` (one footprint-score bigWig per motif), `bindetect/` (when `footprint.bindetect`) |
 | Differential binding tables/plots (`diffbind.enabled`) | `results/6.diffbind/{A}__vs__{B}/DB_results.tsv` (+ `DB_significant.tsv`, plots) |
 | Signal-track bigWig (fold enrichment) | `results/4.peak/{group}_FE.bw` |
 | Peak annotation tables and plots | `results/4.peak/anno_result/{group}.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
@@ -704,3 +725,6 @@ Point `spike_in.fasta` at the spike-in genome FASTA (e.g. E. coli lambda spiked 
 
 **Q20: How do I switch the pooled peak caller to SEACR?**
 Set `peak.caller: seacr` (§5.1.1) — the CUT&RUN/CUT&Tag alternative caller (Yo et al. 2021). Install the external SEACR bash script (download from the SEACR GitHub; not in the conda template) and point software.yaml `paths: seacr` at it or put it on PATH. The peaks still land at the standard `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}` paths, so FRiP/annotation/blacklist/motif keep working untouched. Two limitations to know: the replicate/IDR stage is MACS2-based, so `peak.replicate.enabled` cannot be combined with SEACR (validation error); and the `{group}_FE.bw` track carries pooled raw depth in SEACR mode (the bdgcmp fold-enrichment route needs MACS2's pileup), while `bigwig.per_sample` needs MACS2 mode entirely.
+
+**Q21: How do I run TOBIAS footprinting, and why is nothing scheduled for my chip groups?**
+Footprinting only makes sense for open-chromatin assays: with `footprint.enabled: true` the workflow runs TOBIAS ATACorrect/ScoreBigwig/BINDetect on the ATAC/FAIRE groups only (§5.5.1) — chip/cuttag groups never receive footprint jobs. Install TOBIAS in its own environment (`conda create -n chip-tobias -c bioconda tobias`) and point software.yaml `paths: tobias` at its `bin/TOBIAS` (or put `TOBIAS` on PATH), point `footprint.motifs` at a JASPAR/HOMER/MEME PFM file for your TFs, then verify the DAG with a dry-run (`bash run.sh -P . -n`); `bash tests/run_test.sh --footprint` dry-runs the same stage on the synthetic data without needing TOBIAS.

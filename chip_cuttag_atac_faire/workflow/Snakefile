@@ -61,6 +61,7 @@ rule all:
         SPIKEIN_TARGETS,
         MOTIF_TARGETS,
         DIFFBIND_TARGETS,
+        FOOTPRINT_TARGETS,
         R("4.peak/anno_result/Peakanno_PeakDistributions.pdf"),
         VERSION_TARGETS,
 
@@ -100,6 +101,11 @@ if MOTIF["enabled"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "motif.smk")
 if DIFFBIND["enabled"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "diffbind.smk")
+if FOOTPRINT["enabled"]:
+    # TOBIAS footprinting on the atac/faire groups only; with the stage on but
+    # no atac/faire group in the table the rules simply have no instances
+    # (a parse-time warning says so, see common.smk).
+    include: os.path.join(WORKFLOW_DIR, "rules", "footprint.smk")
 
 # Run metadata (software-version record), placed after all modules
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")
