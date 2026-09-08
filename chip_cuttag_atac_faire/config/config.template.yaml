@@ -48,6 +48,18 @@ peak:
     mode: bampe       # bampe (ENCODE ATAC v2 default) | shifted (classic Tn5 offset recipe)
     shift: -100       # shifted mode only
     extsize: 200      # shifted mode only
+  replicate:          # replicate-aware peak stage (v0.5; every key optional)
+    enabled: false    # per-replicate calling + IDR (narrow) / overlap consensus (broad);
+                      # needs the external `idr` tool for narrow groups (see software.yaml paths)
+    qvalue: 0.01      # relaxed per-replicate narrow cutoff feeding IDR (ENCODE)
+    idr_threshold: 0.05
+    idr_rank: "p.value"   # narrowPeak rank column: p.value | signal.value
+    consensus_min_replicates: 2   # support cutoff (broad consensus, >2-replicate IDR unions)
+    frip_on: "pooled"    # FRiP basis: pooled | consensus (consensus requires enabled: true)
+
+# ---------- Artifact-region blacklist (optional) ----------
+# blacklist: "/path/to/blacklist.bed"   # empty/unset = disabled; filtered peak copies
+#                                       # land in results/4.peak/blacklist_filtered/
 
 # ---------- Annotation and signal windows ----------
 region_flank: 3000   # peak-annotation flank and deeptools window length (bp)
@@ -57,3 +69,7 @@ qc:
   nsc_rsc: false
   frip: true
   deeptools: true
+  tss: false          # TSS enrichment for atac/faire treats (uses the deeptools suite)
+  organelle: false    # organelle (chloroplast/mitochondrion) read fraction from idxstats
+  # organelle_patterns: [chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]
+  #   contig-name patterns; <= 3 chars match exactly (case-insensitive), longer as substrings

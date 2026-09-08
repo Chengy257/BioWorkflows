@@ -56,6 +56,19 @@ peak:
                          # shifted = classic Tn5 offset recipe (-f BAM --nomodel --shift -100 --extsize 200)
     shift: -100          # effective in shifted mode only
     extsize: 200         # effective in shifted mode only
+  replicate:             # replicate-aware peak stage (v0.5; off by default)
+    enabled: false       # per-replicate calling + IDR (narrow) / overlap consensus (broad)
+    qvalue: 0.01         # relaxed per-replicate narrow cutoff feeding IDR (ENCODE)
+    idr_threshold: 0.05  # global IDR cutoff
+    idr_rank: "p.value"  # narrowPeak rank column: p.value | signal.value
+    consensus_min_replicates: 2   # support cutoff for broad consensus and >2-replicate IDR unions
+    frip_on: "pooled"    # peak set FRiP is computed against: pooled | consensus
+
+# ---------- Artifact-region blacklist (optional; empty = disabled) ----------
+# BED of known artifact regions; filtered copies of the final peak sets are
+# written to results/4.peak/blacklist_filtered/ and feed FRiP/annotation.
+# No ENCODE blacklist exists for rice — supply your own if needed.
+blacklist: ""
 
 # ---------- Annotation and signal windows ----------
 region_flank: 3000   # peak-annotation flank and deeptools signal window up/downstream (bp)
@@ -65,5 +78,10 @@ qc:
   nsc_rsc: false     # SPP cross-correlation NSC/RSC (slow; needs phantompeakqualtools)
   frip: true         # FRiP (fraction of reads in peaks, an ENCODE metric)
   deeptools: true    # correlation/PCA/fingerprints/fragment sizes/gene-region profiles
+  tss: false         # TSS enrichment for atac/faire treat samples (needs the deeptools suite)
+  organelle: false   # chloroplast/mitochondrial read fraction from idxstats
+  organelle_patterns: [chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]
+                     # contig-name patterns; <= 3 chars match exactly (case-insensitive),
+                     # longer ones as substrings
 
 # Scheduler resources (per rule) now live in config/resources.yaml.

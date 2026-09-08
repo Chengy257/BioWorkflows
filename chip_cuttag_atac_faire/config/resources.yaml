@@ -39,3 +39,16 @@ resources:
   deeptools_profile:           {threads: 2,  mem_mb: 8192,  runtime_min: 120}
   spp_crosscorr:               {threads: 2,  mem_mb: 8192,  runtime_min: 180}
   spp_summary:                 {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  callpeak_narrow_replicate:   {threads: 1,  mem_mb: 8192,  runtime_min: 180}
+  callpeak_broad_replicate:    {threads: 1,  mem_mb: 8192,  runtime_min: 180}
+  idr_pair:                    {threads: 1,  mem_mb: 4096,  runtime_min: 60}
+  idr_final:                   {threads: 1,  mem_mb: 2048,  runtime_min: 15}
+  broad_consensus:             {threads: 1,  mem_mb: 2048,  runtime_min: 15}
+  replicate_summary:           {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  blacklist_filter:            {threads: 1,  mem_mb: 2048,  runtime_min: 15}
+  blacklist_summary:           {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  tss_bed:                     {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  tss_matrix:                  {threads: 2,  mem_mb: 8192,  runtime_min: 120}
+  tss_summary:                 {threads: 1,  mem_mb: 1024,  runtime_min: 10}
+  organelle_idxstats:          {threads: 1,  mem_mb: 2048,  runtime_min: 30}
+  organelle_summary:           {threads: 1,  mem_mb: 1024,  runtime_min: 10}

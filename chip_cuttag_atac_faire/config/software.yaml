@@ -28,6 +28,12 @@ tools:
   deeptools: "bamCoverage"     # the deeptools suite is represented by the bamCoverage binary (the package ships no "deeptools" executable)
   spp: "run_spp.R"              # phantompeakqualtools' R entry point (command name inside the bioconda package)
 
-paths: {}
+paths:
+  # idr (irreproducible discovery rate) is a python2 tool deliberately kept
+  # OUT of the conda template; needed only when peak.replicate.enabled is
+  # true. Install separately, e.g.:
+  #   conda create -n idr -c bioconda idr=2.0.4
+  # then point this entry at the binary (absolute path) or put `idr` on PATH.
+  idr: "idr"
 
 databases: {}

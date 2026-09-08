@@ -53,6 +53,10 @@ rule all:
         BAM_TARGETS,
         PEAK_TARGETS,
         BW_TARGETS,
+        REPLICATE_TARGETS,
+        BLACKLIST_TARGETS,
+        TSS_TARGETS,
+        ORGANELLE_TARGETS,
         R("4.peak/anno_result/Peakanno_PeakDistributions.pdf"),
         VERSION_TARGETS,
 
@@ -63,13 +67,21 @@ rule all:
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "dedup.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
+if REPLICATE["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "callpeak_replicate.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "annotation.smk")
+if BLACKLIST:
+    include: os.path.join(WORKFLOW_DIR, "rules", "blacklist.smk")
 if config["qc"]["nsc_rsc"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "spp_qc.smk")
 if config["qc"]["frip"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "frip.smk")
 if config["qc"]["deeptools"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "qc_deeptools.smk")
+if QC_TSS and TSS_SAMPLES:
+    include: os.path.join(WORKFLOW_DIR, "rules", "tss_qc.smk")
+if QC_ORGANELLE:
+    include: os.path.join(WORKFLOW_DIR, "rules", "organelle_qc.smk")
 
 # Run metadata (software-version record), placed after all modules
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")

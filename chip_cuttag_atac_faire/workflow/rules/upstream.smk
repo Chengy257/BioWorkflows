@@ -68,6 +68,12 @@ rule multiqc:
                              if config["qc"]["frip"] else []),
         spp_mqc=lambda wc: ([R("5.QC/spp/NSC_RSC_mqc.tsv")]
                             if config["qc"]["nsc_rsc"] else []),
+        replicate_mqc=lambda wc: ([R("5.QC/replicate_peaks/Replicate_summary_mqc.tsv")]
+                                  if REPLICATE["enabled"] else []),
+        tss_mqc=lambda wc: ([R("5.QC/tss/TSSE_summary_mqc.tsv")]
+                            if (QC_TSS and TSS_SAMPLES) else []),
+        organelle_mqc=lambda wc: ([R("5.QC/organelle/Organelle_summary_mqc.tsv")]
+                                  if QC_ORGANELLE else []),
     output:
         R("2.cleandata/fastqc/multiqc/multiqc_report.html"),
     params:

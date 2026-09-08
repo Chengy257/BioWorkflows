@@ -171,6 +171,47 @@ def validate_config(cfg):
                     errors.append(f"peak.{key} must be in (0, 1], got {p[key]!r}")
             except (TypeError, ValueError):
                 errors.append(f"peak.{key} must be numeric, got {p[key]!r}")
+        # Replicate-aware peak stage (optional; defaults to disabled)
+        rep = p.get("replicate")
+        if rep is not None:
+            if not isinstance(rep, dict):
+                errors.append(f"peak.replicate must be a mapping, got {rep!r}")
+            else:
+                if not isinstance(rep.get("enabled", False), bool):
+                    errors.append(f"peak.replicate.enabled must be true/false, got {rep.get('enabled')!r}")
+                for key in ("qvalue", "idr_threshold"):
+                    try:
+                        if not 0 < float(rep[key]) <= 1:
+                            errors.append(f"peak.replicate.{key} must be in (0, 1], got {rep[key]!r}")
+                    except (TypeError, ValueError):
+                        errors.append(f"peak.replicate.{key} must be numeric, got {rep[key]!r}")
+                if rep.get("idr_rank", "p.value") not in ("p.value", "signal.value"):
+                    errors.append(
+                        "peak.replicate.idr_rank must be p.value or signal.value, got "
+                        f"{rep.get('idr_rank')!r}")
+                mr = rep.get("consensus_min_replicates", 2)
+                if isinstance(mr, bool) or not isinstance(mr, int) or mr < 2:
+                    errors.append(
+                        f"peak.replicate.consensus_min_replicates must be an integer >= 2, got {mr!r}")
+                if rep.get("frip_on", "pooled") not in ("pooled", "consensus"):
+                    errors.append(
+                        "peak.replicate.frip_on must be pooled or consensus, got "
+                        f"{rep.get('frip_on')!r}")
+                if (rep.get("frip_on", "pooled") == "consensus"
+                        and not rep.get("enabled", False)):
+                    errors.append(
+                        "peak.replicate.frip_on=consensus requires peak.replicate.enabled=true")
+    bl = cfg.get("blacklist", "")
+    if not isinstance(bl, str):
+        errors.append(f"blacklist must be a string path (or empty to disable), got {bl!r}")
+    if isinstance(cfg.get("qc"), dict):
+        for key in ("tss", "organelle"):
+            if key in cfg["qc"] and not isinstance(cfg["qc"][key], bool):
+                errors.append(f"qc.{key} must be true/false, got {cfg['qc'][key]!r}")
+        pats = cfg["qc"].get("organelle_patterns")
+        if pats is not None and (not isinstance(pats, list)
+                                 or not all(isinstance(x, str) and x for x in pats)):
+            errors.append(f"qc.organelle_patterns must be a list of non-empty strings, got {pats!r}")
     if isinstance(cfg.get("trim"), dict):
         t = cfg["trim"]
         for key, lo in (("quality", 0), ("stringency", 1)):
@@ -195,11 +236,118 @@ def validate_config(cfg):
             p = os.path.join(BASE_DIR, p)
         if not os.path.exists(p):
             warnings.append(f"reference file does not exist (verify before running): {key} = {cfg[key]}")
+    bl = str(cfg.get("blacklist") or "").strip()
+    if bl and not os.path.exists(bl):
+        warnings.append(f"blacklist file does not exist (verify before running): {bl}")
     for w in warnings:
         print(f"[config warning] {w}")
 
 
 validate_config(config)
+
+
+# ---------------------------------------------------------------------
+# Pure helpers for the replicate-aware peak stage and the extended QC
+# (no config/GROUPS access; unit-tested via tests/run_tests.py extraction)
+# ---------------------------------------------------------------------
+
+def _unordered_pairs(items):
+    """All unordered pairs of a list, in order (the replicate pairs IDR runs on)."""
+    return [(items[i], items[j])
+            for i in range(len(items)) for j in range(i + 1, len(items))]
+
+
+def idr_pair_slug(a, b):
+    """Filesystem token for one IDR comparison. Sample names cannot contain
+    '__' (table validation), so the slug splits back unambiguously."""
+    return f"{a}__vs__{b}"
+
+
+def parse_idr_pair_slug(slug):
+    a, b = slug.split("__vs__")
+    return a, b
+
+
+def _group_calls_narrow(v):
+    """Whether a group's peaks are narrow: atac/faire always are (their
+    peak_type is fixed to none by the table validation), chip/cuttag by
+    peak_type. Decides IDR (narrow) vs overlap consensus (broad)."""
+    return v["seqtype"] in ("atac", "faire") or v["peak_type"] == "narrow"
+
+
+def _is_organelle_contig(name, patterns):
+    """Classify a reference contig as organelle (chloroplast/mitochondrion).
+    Short patterns (<= 3 chars, e.g. pt/mt/chrc/chrm) must equal the contig
+    name case-insensitively — substring matching would swallow names like
+    human ALT contigs; longer patterns (chloroplast, mitochondr...) match as
+    substrings."""
+    lowered = name.lower()
+    for pattern in patterns:
+        p = str(pattern).lower()
+        if len(p) <= 3:
+            if lowered == p:
+                return True
+        elif p in lowered:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------
+# Replicate-aware peak analysis and extended QC (v0.5). Every switch
+# defaults to off, so existing project configs and the default dry-run
+# baseline keep working unchanged.
+# ---------------------------------------------------------------------
+REPLICATE_DEFAULTS = {
+    "enabled": False,
+    "qvalue": 0.01,              # relaxed per-replicate narrow cutoff feeding IDR (ENCODE)
+    "idr_threshold": 0.05,
+    "idr_rank": "p.value",       # narrowPeak rank column: p.value | signal.value
+    "consensus_min_replicates": 2,
+    "frip_on": "pooled",         # peak set FRiP is computed against
+}
+REPLICATE = dict(REPLICATE_DEFAULTS)
+REPLICATE.update(((config.get("peak") or {}).get("replicate") or {}))
+
+BLACKLIST = str(config.get("blacklist") or "").strip()
+QC_TSS = bool((config.get("qc") or {}).get("tss", False))
+QC_ORGANELLE = bool((config.get("qc") or {}).get("organelle", False))
+ORGANELLE_PATTERNS = list((config.get("qc") or {}).get("organelle_patterns")
+                          or ["chrc", "chrm", "pt", "mt", "pltd",
+                              "chloroplast", "mitochondr", "plastid"])
+
+# Replicate-stage group enumeration. Every group calls peaks, so every treat
+# sample gets a per-replicate peak file; IDR (narrow) / overlap consensus
+# (broad) are only built for groups with >= 2 treats.
+NARROW_REP_GROUPS = [g for g, v in GROUPS.items() if _group_calls_narrow(v)]
+BROAD_REP_GROUPS = [g for g, v in GROUPS.items() if not _group_calls_narrow(v)]
+IDR_GROUPS = [g for g in NARROW_REP_GROUPS if len(GROUPS[g]["treat"]) >= 2]
+BROAD_CONSENSUS_GROUPS = [g for g in BROAD_REP_GROUPS if len(GROUPS[g]["treat"]) >= 2]
+IDR_PAIRS = {g: _unordered_pairs(GROUPS[g]["treat"]) for g in IDR_GROUPS}
+REPLICATE_TREATS = {g: list(v["treat"]) for g, v in GROUPS.items()}
+
+# TSS enrichment covers the treat samples of the open-chromatin assays
+# (controls carry no TSS signal worth plotting).
+TSS_SAMPLES = []
+for _g, _v in GROUPS.items():
+    if _v["seqtype"] in ("atac", "faire"):
+        for _s in _v["treat"]:
+            if _s not in TSS_SAMPLES:
+                TSS_SAMPLES.append(_s)
+
+if REPLICATE["enabled"]:
+    _single = [g for g in GROUPS if len(GROUPS[g]["treat"]) < 2]
+    if _single:
+        print(f"[replicate notice] single-treat groups fall back to the pooled "
+              f"peak set (no IDR/consensus exists for them): {_single}")
+    _few = [g for g in IDR_GROUPS + BROAD_CONSENSUS_GROUPS
+            if len(GROUPS[g]["treat"]) < REPLICATE["consensus_min_replicates"]]
+    if _few:
+        print(f"[config warning] groups with fewer treats than "
+              f"peak.replicate.consensus_min_replicates={REPLICATE['consensus_min_replicates']} "
+              f"produce an empty consensus: {_few}")
+if QC_TSS and not TSS_SAMPLES:
+    print("[config warning] qc.tss is enabled but the table has no atac/faire "
+          "treat sample; the TSS stage is skipped")
 
 # ---------------------------------------------------------------------
 # Output redirection (aligned with rna-seq): raw inputs (1.rawdata/) stay
@@ -220,6 +368,16 @@ def R(path=""):
 # bare `Rscript`, which on cluster nodes would resolve to whatever R happens
 # to be on PATH and bypass the configured R runtime/libraries.
 RSCRIPT = os.environ.get("CHIP_RSCRIPT", "Rscript")
+
+# idr resolves like the R channel: run.sh exports CHIP_IDR from the
+# software.yaml paths: section (the classic idr tool is python2-based and
+# deliberately stays OUT of the main conda environment; only needed when
+# peak.replicate.enabled is true).
+IDR_BIN = os.environ.get("CHIP_IDR", "idr")
+
+# Python interpreter for the workflow's own scripts (run.sh exports CHIP_PYTHON
+# from the runtime resolution; python3 is the sane fallback).
+PYTHON_BIN = os.environ.get("CHIP_PYTHON", "python3")
 
 
 # ---------------------------------------------------------------------
@@ -283,6 +441,95 @@ def group_peak_file(group):
     return f"{RD}4.peak/{group}_peaks.narrowPeak"
 
 
+# ----- Replicate stage / blacklist path helpers -----
+
+def replicate_peak_file(group, sample):
+    """Per-replicate peak file for one treat sample (replicate stage)."""
+    suffix = "narrowPeak" if _group_calls_narrow(GROUPS[group]) else "broadPeak"
+    return f"{RD}4.peak/replicates/{group}/{sample}_peaks.{suffix}"
+
+
+def idr_pair_file(group, a, b):
+    """One pairwise IDR comparison of two treat replicates."""
+    return f"{RD}4.peak/idr/{group}/{idr_pair_slug(a, b)}.narrowPeak"
+
+
+def group_idr_file(group):
+    """Final reproducible narrow peak set (IDR) for a >=2-treat group."""
+    return f"{RD}4.peak/{group}_IDR_peaks.narrowPeak"
+
+
+def group_idr_support_file(group):
+    """Per-peak replicate-support BED alongside the IDR peak set."""
+    return f"{RD}4.peak/{group}_IDR_support.bed"
+
+
+def group_consensus_file(group):
+    """Final reproducible broad peak set (overlap consensus)."""
+    return f"{RD}4.peak/{group}_consensus_peaks.broadPeak"
+
+
+def group_consensus_support_file(group):
+    """Per-peak replicate-support BED alongside the broad consensus."""
+    return f"{RD}4.peak/{group}_consensus_support.bed"
+
+
+def _blacklist_variant(path):
+    """Blacklist-filtered copy path for a peak file (same basename, dedicated
+    directory; only produced when a blacklist is configured)."""
+    return f"{RD}4.peak/blacklist_filtered/{os.path.basename(path)}"
+
+
+def group_final_peak_file(group):
+    """The group's reproducible peak set when the replicate stage is enabled
+    (IDR for narrow, overlap consensus for broad); the pooled set otherwise.
+    Single-treat groups have no consensus and always fall back to pooled."""
+    if REPLICATE["enabled"]:
+        if group in IDR_GROUPS:
+            return group_idr_file(group)
+        if group in BROAD_CONSENSUS_GROUPS:
+            return group_consensus_file(group)
+    return group_peak_file(group)
+
+
+def frip_peak_file(group):
+    """Peak set the FRiP metric is computed against (frip_on switch), in its
+    blacklist-filtered variant when a blacklist is configured."""
+    peak = (group_final_peak_file(group) if REPLICATE["frip_on"] == "consensus"
+            else group_peak_file(group))
+    return _blacklist_variant(peak) if BLACKLIST else peak
+
+
+def final_peak_files():
+    """Final reproducible peak set per group (pooled when the replicate stage
+    is off), BEFORE any blacklist filtering. The unfiltered sources the
+    blacklist stage reads from."""
+    return [group_final_peak_file(g) for g in GROUPS]
+
+
+def annot_peak_files():
+    """Peak sets the ChIPseeker annotation covers: the final reproducible set
+    per group, blacklist-filtered copies when a blacklist is configured."""
+    files = final_peak_files()
+    if BLACKLIST:
+        files = [_blacklist_variant(f) for f in files]
+    return files
+
+
+def blacklist_sources():
+    """Ordered {basename: source path} map for the blacklist stage (basenames
+    are unique: pooled/IDR/consensus files carry distinct suffixes). Sources
+    are the UNFILTERED final reproducible peak files per group, plus the
+    pooled set whenever it differs — FRiP reads the pooled set under
+    frip_on=pooled and must get its filtered copy too."""
+    files = list(final_peak_files())
+    for g in GROUPS:
+        pooled = group_peak_file(g)
+        if pooled not in files:
+            files.append(pooled)
+    return {os.path.basename(f): f for f in files}
+
+
 def _groups_of(assay, peak_type=None):
     return [g for g, v in GROUPS.items()
             if v["seqtype"] == assay and (peak_type is None or v["peak_type"] == peak_type)]
@@ -325,6 +572,19 @@ RESOURCE_DEFAULTS = {
     "deeptools_profile": {"threads": 2, "mem_mb": 8192, "runtime_min": 120},
     "spp_crosscorr": {"threads": 2, "mem_mb": 8192, "runtime_min": 180},
     "spp_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "callpeak_narrow_replicate": {"threads": 1, "mem_mb": 8192, "runtime_min": 180},
+    "callpeak_broad_replicate": {"threads": 1, "mem_mb": 8192, "runtime_min": 180},
+    "idr_pair": {"threads": 1, "mem_mb": 4096, "runtime_min": 60},
+    "idr_final": {"threads": 1, "mem_mb": 2048, "runtime_min": 15},
+    "broad_consensus": {"threads": 1, "mem_mb": 2048, "runtime_min": 15},
+    "replicate_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "blacklist_filter": {"threads": 1, "mem_mb": 2048, "runtime_min": 15},
+    "blacklist_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "tss_bed": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "tss_matrix": {"threads": 2, "mem_mb": 8192, "runtime_min": 120},
+    "tss_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
+    "organelle_idxstats": {"threads": 1, "mem_mb": 2048, "runtime_min": 30},
+    "organelle_summary": {"threads": 1, "mem_mb": 1024, "runtime_min": 10},
 }
 
 
@@ -385,6 +645,44 @@ if config["qc"]["deeptools"]:
         R("5.QC/deeptools/fragmentsize.png"),
         R("5.QC/deeptools/profile_scaled.png"),
     ]
+
+# Replicate stage targets (only aggregated when the stage is enabled).
+REPLICATE_TARGETS = []
+if REPLICATE["enabled"]:
+    REPLICATE_TARGETS += [
+        R("5.QC/replicate_peaks/Replicate_summary.tsv"),
+        R("5.QC/replicate_peaks/Replicate_summary_mqc.tsv"),
+    ]
+    REPLICATE_TARGETS += [replicate_peak_file(g, s)
+                          for g, treats in REPLICATE_TREATS.items() for s in treats]
+    REPLICATE_TARGETS += [idr_pair_file(g, a, b)
+                          for g in IDR_GROUPS for a, b in IDR_PAIRS[g]]
+    REPLICATE_TARGETS += [group_idr_file(g) for g in IDR_GROUPS]
+    REPLICATE_TARGETS += [group_idr_support_file(g) for g in IDR_GROUPS]
+    REPLICATE_TARGETS += [group_consensus_file(g) for g in BROAD_CONSENSUS_GROUPS]
+    REPLICATE_TARGETS += [group_consensus_support_file(g) for g in BROAD_CONSENSUS_GROUPS]
+
+# Blacklist-filtered copies of the final peak sets (empty when no blacklist).
+BLACKLIST_TARGETS = []
+if BLACKLIST:
+    BLACKLIST_TARGETS += [R("5.QC/blacklist/blacklist_summary.tsv")]
+    BLACKLIST_TARGETS += [R(f"4.peak/blacklist_filtered/{b}")
+                          for b in blacklist_sources()]
+
+# TSS enrichment / organelle fraction targets.
+TSS_TARGETS = []
+if QC_TSS and TSS_SAMPLES:
+    TSS_TARGETS += [R("5.QC/tss/tss.bed")]
+    TSS_TARGETS += [R(f"5.QC/tss/{s}_matrix.gz") for s in TSS_SAMPLES]
+    TSS_TARGETS += [R(f"5.QC/tss/{s}_tss_profile.png") for s in TSS_SAMPLES]
+    TSS_TARGETS += [R(f"5.QC/tss/{s}_TSSE.txt") for s in TSS_SAMPLES]
+    TSS_TARGETS += [R("5.QC/tss/TSSE_summary.tsv"), R("5.QC/tss/TSSE_summary_mqc.tsv")]
+
+ORGANELLE_TARGETS = []
+if QC_ORGANELLE:
+    ORGANELLE_TARGETS += [R(f"5.QC/organelle/{s}_idxstats.tsv") for s in SAMPLES]
+    ORGANELLE_TARGETS += [R("5.QC/organelle/Organelle_summary.tsv"),
+                          R("5.QC/organelle/Organelle_summary_mqc.tsv")]
 
 # Software-version record: generated by the software_versions rule in
 # meta.smk (no input dependency, scheduled freely within the DAG); always

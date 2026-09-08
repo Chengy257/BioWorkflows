@@ -11,7 +11,7 @@ FRIP_TSVS = [R(f"5.QC/frip/{g}__{s}.frip.tsv")
 rule frip:
     input:
         bam=lambda wc: sample_bam(wc.sample),
-        peaks=lambda wc: group_peak_file(wc.group),
+        peaks=lambda wc: frip_peak_file(wc.group),
     output:
         R("5.QC/frip/{group}__{sample}.frip.tsv"),
     wildcard_constraints:
