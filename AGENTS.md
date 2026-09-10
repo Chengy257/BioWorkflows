@@ -85,7 +85,8 @@ pbs, sge, slurm}}`, `tests/{lint.sh, make_testdata.py, run_test.sh}`,
   asserts declared outputs exist (needs the full analysis environment). DAG svg
   regeneration is best-effort and never fails the test.
 - Dry-run job-count baselines — re-verify after refactors: chip 47 (replicate
-  79 / qc-full 60 / motif 49 / diffbind 69 / all-on 134; counted as
+  79 / qc-full 60 / motif 49 / diffbind 69 / all-on 134 / gates 53 /
+  spike-in 54 / seacr 50 / footprint 50; counted as
   rule/localrule blocks in the run_test.sh INFO line), rna-seq deg 25,
   seclip-seq 23 (consensus 28 / input-control 45), srna-seq 27 (deg 28 /
   novel-mirna 29), bs-seq 20 (dmr 35).

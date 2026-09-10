@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 # Differential binding analysis for chip_cuttag_atac_faire (DiffBind, v0.5).
 # Reads one DiffBind sample sheet built by scripts/diffbind_sheet.py
-# (SampleID/Condition/Replicate/bamReads/bamControl/PeakFile/Batch), counts
+# (SampleID/Condition/Replicate/bamReads/bamControl/Peaks/PeakCaller/Batch), counts
 # reads over the consensus peak set (summit-recentered when summit_flank > 0),
 # fits the contrast with DESeq2 or edgeR (optionally blocked on the Batch
 # column), and writes into the sheet's directory:
@@ -47,26 +47,29 @@ if (use_block && !has_batch) {
           "absent or has fewer than two levels; running without blocking")
 }
 
-# Peak format is conveyed by the file suffix (narrowPeak / broadPeak); the
-# score column follows the DiffBind convention for both formats.
-sheet$PeakCaller <- "bed"
-sheet$PeakFormat <- ifelse(grepl("broadPeak$", sheet$PeakFile), "broadPeak", "narrowPeak")
-sheet$ScoreCol <- 7
-sheet$LowerBetter <- FALSE
+# Peak files and their caller (narrowpeak|broadpeak, encoding the score
+# column convention) arrive in the sheet's Peaks/PeakCaller columns —
+# DiffBind's own sample-sheet names (WSL real-run finding 2026-09-10: the
+# PeakFormat/ScoreCol overrides were vignette-era and a wrong column name
+# silently yields an empty peak set).
 
 dba <- dba(sampleSheet = sheet)
 message("[diffbind] consensus peak set: ", dba$numTotal, " regions in ",
         nrow(sheet), " samples")
 
-count_args <- list(dba = dba, bUseSummarizeOverlaps = FALSE)
+count_args <- list(DBA = dba, bUseSummarizeOverlaps = FALSE)
 if (summit_flank > 0) count_args$summits <- summit_flank
 dba <- do.call(dba.count, count_args)
 
 conds <- as.character(unique(sheet$Condition))
-dba <- dba.contrast(dba, reorderDBA = FALSE,
+# dba.contrast's block argument takes a DBA_ attribute constant or a logical
+# vector aligned with the sample sheet (a character vector of batch labels is
+# the old API); block on the first batch level = the classic paired design
+block_mask <- if (has_batch) sheet$Batch == batch_levels[1] else NULL
+dba <- dba.contrast(dba,
                     group1 = dba$masks[[conds[1]]],
                     group2 = dba$masks[[conds[2]]],
-                    block = if (has_batch) sheet$Batch else NULL)
+                    block = block_mask)
 dba <- dba.analyze(dba, method = method)
 
 res <- dba.report(dba, method = method, contrast = 1,

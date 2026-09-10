@@ -7,35 +7,43 @@
 > 2026-09-08 (runtime_config.py migrated onto the shared WorkflowSpec framework);
 > all five items are now resolved at the repository level.
 
-## 0. v0.5 implemented stages and deferred extensions — OPEN (2026-09-08)
+## 0. v0.6 implemented stages and deferred extensions — OPEN (2026-09-10)
 
-- **Implemented (v0.5, branch feature/chip-replicate-idr; every switch default-off)**:
-  per-replicate peak calling + pairwise IDR + broad overlap consensus
-  (`peak.replicate`), TSS enrichment (`qc.tss`), organelle read fraction
-  (`qc.organelle`), peak-level blacklist filtering (`blacklist`), differential
-  binding via DiffBind (`diffbind` + optional condition/batch sample-table
-  columns), per-sample normalized bigWigs (`bigwig.per_sample`) + FE/logFE
-  group-track measure (`peak.bigwig_measure`), and HOMER motif enrichment
-  (`motif`, external install via the software.yaml `paths:` mechanism). The
-  review and phased design live outside the repository
-  (`D:\BioWorkflows_archive\plans\2026-09-08-chip-replicate-idr-plan.md`);
-  dry-run job-count baselines: default 47 (unchanged), replicate 79, qc-full
-  60, motif 49, diffbind 69, all-on 134.
-- **Deferred (see the plan's registry)**:
-  1. Spike-in normalization for CUT&Tag quantitative comparisons — note
-     `bowtie2_mapping` already emits `{sample}_unmapped.fq.gz` as an
-     undeclared side artifact that a second-pass spike alignment could
-     consume; declaring it as an output is part of that work.
-  2. SEACR alternative peak caller (`peak.caller`), TOBIAS footprinting,
-     QC PASS/WARN gate table, SE input support.
-- **Validation debt**: the replicate / diffbind / motif stages have dry-run +
-  unit coverage only. A real-run round on the server should confirm (a) the
-  idr output-column contract (the rules trim idr's extra columns back to the
-  10-column narrowPeak) and empty-consensus behavior on sparse broad marks;
-  (b) run_diffbind.R against a live DiffBind (the dba.contrast blocking form
-  and the PeakFormat/ScoreCol sheet columns were written from the vignette,
-  not executed); (c) findMotifsGenome.pl invocation + a configured genome for
-  the production assembly.
+- **Implemented (v0.6, branch feature/chip-v06-deferred; every switch default-off)**:
+  QC gate summary (`qc.gates`), spike-in normalization (`spike_in`;
+  `bowtie2_mapping` now declares the unmapped pair artifacts
+  `{sample}_unmapped.fq.{1,2}.gz` — the `--un-conc-gz` naming verified on
+  bowtie2 2.5.1), SEACR alternative pooled caller (`peak.caller`), and TOBIAS
+  footprinting for the atac/faire groups (`footprint`), on top of the v0.5
+  stage set (peak.replicate IDR/consensus, qc.tss, qc.organelle, blacklist,
+  diffbind, bigwig per-sample/measure, motif). Dry-run baselines: default 47
+  (unchanged), replicate 79, qc-full 60, motif 49, diffbind 69, gates 53,
+  spike-in 54, seacr 50, footprint 50, all-on 134.
+- **Validation (WSL real-run rounds on synthetic data, 2026-09-09/10)**:
+  - idr: `--replicate --real-run` GREEN — the pairwise-IDR 10-column trim
+    contract and broad consensus verified on real idr 2.0.4 output.
+  - HOMER: `--motif --real-run` GREEN against a custom preparseGenome genome
+    (the bare-name-helper PATH trap is fixed in motif.smk; full de-novo +
+    known enrichment verified on real output).
+  - DiffBind: `--diffbind --real-run` GREEN against live DiffBind/DESeq2 —
+    sheet columns (Peaks/PeakCaller) and the dba.count/contrast/analyze/
+    report call chain verified; three vignette-era API fixes folded back
+    (see CHANGELOG 0.6.0 Fixed).
+  - TOBIAS: ATACorrect + ScoreBigwig verified live against the 0.8.0 CLI
+    (full corrected/bias/expected tracks + footprint-score bigWig); BINDetect
+    validates at invocation/motif-parse level but exits on a sklearn NaN with
+    degenerate synthetic signal — re-validate on real data on the server.
+- **Deferred registry (needs explicit go-ahead)**: SE input support
+  (`seqmode`); BINDetect real-data validation; shared-layer preflight gap —
+  `shared/python/bioworkflows_runtime.py`'s R package check runs Rscript
+  WITHOUT the configured `r.lib_paths` (preflight environment != job
+  environment; fixing it touches all five workflows, so it needs a deliberate
+  decision).
+- **Server deployment notes**: idr (python2), HOMER, SEACR, and TOBIAS are
+  external installs resolved via the software.yaml `paths:` section
+  (CHIP_IDR / CHIP_HOMER_FINDMOTIFS / CHIP_SEACR / CHIP_TOBIAS);
+  findMotifsGenome.pl needs the HOMER bin directory on PATH inside the job
+  (handled by the rule since the 2026-09-09 fix).
 
 ## 1. FASTQ naming-variant support — DONE
 

@@ -1044,9 +1044,9 @@ _r = _run_py("diffbind_sheet.py",
 _sheet = open(_db_sheet, encoding="utf-8").read().splitlines() if os.path.exists(_db_sheet) else []
 check("diffbind_sheet: conditions, replicates, per-replicate peaks, batches",
       _r.returncode == 0 and len(_sheet) == 5
-      and _sheet[0] == "SampleID\tCondition\tReplicate\tbamReads\tbamControl\tPeakFile\tBatch"
+      and _sheet[0] == "SampleID\tCondition\tReplicate\tbamReads\tbamControl\tPeaks\tPeakCaller\tBatch"
       and _sheet[1].startswith("a\tWT\t1\t") and "replicates/g1/a_peaks.narrowPeak" in _sheet[1]
-      and _sheet[1].endswith("\tb1") and _sheet[4].startswith("d\tmut\t2\t"),
+      and _sheet[1].endswith("\tnarrowpeak\tb1") and _sheet[4].startswith("d\tmut\t2\t"),
       f"rc={_r.returncode} rows={_sheet[:3]}")
 _r = _run_py("diffbind_sheet.py",
              ["--samples", _db_samples, "--results-dir",

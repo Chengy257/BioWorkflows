@@ -6,7 +6,13 @@ peak files from the results layout (replicate calls when --replicates is
 passed, pooled group peaks otherwise — keep in sync with common.smk), and
 writes the TSV DiffBind's dba(sampleSheet=...) expects:
 
-    SampleID, Condition, Replicate, bamReads, bamControl, PeakFile, Batch
+    SampleID, Condition, Replicate, bamReads, bamControl, Peaks,
+    PeakCaller, Batch
+
+(Peaks/PeaKCaller are DiffBind's own sample-sheet column names; PeakCaller
+is narrowpeak|broadpeak per file suffix and encodes the score-column
+convention — WSL real-run finding 2026-09-10: a PeakFile column is silently
+ignored by dba(sampleSheet=...), yielding an empty peak set)
 
 Condition comes from the optional `condition` column (falling back to the
 group name); the optional `batch` column becomes the blocking factor. With
@@ -85,16 +91,17 @@ def main():
                                      f"{sid}_peaks.{suffix}")
             else:
                 peaks = os.path.join(rd, "4.peak", f"{grp}_peaks.{suffix}")
+            caller = "broadpeak" if peaks.endswith(".broadPeak") else "narrowpeak"
             out_rows.append([
                 sid, condition, str(rep),
                 os.path.join(rd, "3.align", "bowtie2", f"{sid}_rmdup.bam")
                 if os.path.exists(os.path.join(rd, "3.align", "bowtie2", f"{sid}_rmdup.bam"))
                 else os.path.join(rd, "3.align", "bowtie2", f"{sid}_sorted.bam"),
-                control, peaks, entry["batch"],
+                control, peaks, caller, entry["batch"],
             ])
 
     header = ["SampleID", "Condition", "Replicate", "bamReads",
-              "bamControl", "PeakFile", "Batch"]
+              "bamControl", "Peaks", "PeakCaller", "Batch"]
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", newline="\n", encoding="utf-8") as fh:
         fh.write("\t".join(header) + "\n")

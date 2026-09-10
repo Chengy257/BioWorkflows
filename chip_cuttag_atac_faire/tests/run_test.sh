@@ -167,9 +167,10 @@ echo "[test] 5/5 Assertions"
 FAIL=0
 if [[ "$REAL_RUN" == 1 ]]; then
     # ---------- real-run output existence assertions ----------
-    # default: 5 samples; --replicate adds the 3-sample broad group g3
+    # default: 5 samples; --replicate adds the 3-sample broad group g3;
+    # --diffbind adds the 3-sample narrow group g4 (both land at 8 BAMs)
     N_EXPECTED=5
-    [[ "$REPLICATE" == 1 ]] && N_EXPECTED=8
+    [[ "$REPLICATE" == 1 || "$DIFFBIND" == 1 ]] && N_EXPECTED=8
     shopt -s nullglob
     bams=("$WORK_DIR"/results/3.align/bowtie2/*_sorted.bam)
     shopt -u nullglob
