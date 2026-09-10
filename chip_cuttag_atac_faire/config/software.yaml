@@ -42,10 +42,12 @@ paths:
   homer_findmotifs: "findMotifsGenome.pl"
   # SEACR alternative pooled peak caller (needed only when peak.caller is
   # seacr): an external bash script deliberately kept OUT of the conda
-  # template. Download from https://github.com/yeolab/SEACR (needs bash +
-  # awk + sort), then point this entry at the script (absolute path, e.g.
-  # /opt/tools/SEACR_1.3.sh) or put it on PATH; exported to the rules as
-  # CHIP_SEACR and invoked as `bash {CHIP_SEACR} ...`.
+  # template. Download BOTH SEACR_1.3.sh and its companion SEACR_1.3.R from
+  # https://github.com/FredHutch/SEACR into the same directory (the script
+  # derives the R companion's path from its own location; needs bash + awk +
+  # sort + Rscript), then point this entry at the script (absolute path,
+  # e.g. /opt/tools/SEACR_1.3.sh) or put it on PATH; exported to the rules
+  # as CHIP_SEACR and invoked as `bash {CHIP_SEACR} ...`.
   seacr: "SEACR_1.3.sh"
   # TOBIAS footprinting (needed only when footprint.enabled is true): a
   # heavyweight tool with a dependency set of its own, deliberately kept OUT

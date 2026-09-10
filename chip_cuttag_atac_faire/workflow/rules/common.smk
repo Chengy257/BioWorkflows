@@ -378,6 +378,12 @@ def validate_config(cfg):
             if not isinstance(sp.get("scale_bigwigs", False), bool):
                 errors.append(
                     f"spike_in.scale_bigwigs must be true/false, got {sp.get('scale_bigwigs')!r}")
+            elif sp.get("scale_bigwigs", False) and not sp.get("enabled", False):
+                # fail at parse time instead of a cryptic MissingInputException
+                # on the spike flagstats when the DAG builds (final-review
+                # finding 2026-09-10)
+                errors.append(
+                    "spike_in.scale_bigwigs requires spike_in.enabled to be true")
             fasta = sp.get("fasta", "")
             if not isinstance(fasta, str):
                 errors.append(f"spike_in.fasta must be a string path, got {fasta!r}")

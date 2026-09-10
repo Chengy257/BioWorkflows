@@ -1,7 +1,7 @@
 # SEACR pooled peak calling (peak.caller=seacr; included only when the switch
 # selects it): the pooled MACS2 narrow/broad/atac group calls are replaced by
 # SEACR (Sparse Enrichment Analysis for CUT&RUN, Yo et al. 2021,
-# https://github.com/yeolab/SEACR), the common CUT&RUN/CUT&Tag alternative
+# https://github.com/FredHutch/SEACR), the common CUT&RUN/CUT&Tag alternative
 # caller. Per group:
 #   1. raw-depth bedGraph coverage of the pooled treat BAMs (samtools merge of
 #      the same analysis BAMs the MACS2 rules use, then bamCoverage with
@@ -58,9 +58,11 @@ rule seacr_bedgraph_treat:
     shell:
         """
         samtools merge -f -@ {threads} {params.tmp_bam} {input.bams} > {log} 2>&1
+        # bamCoverage requires an indexed BAM (WSL real-run finding 2026-09-10)
+        samtools index -@ {threads} {params.tmp_bam}
         bamCoverage -b {params.tmp_bam} --outFileFormat bedgraph --normalizeUsing None \
             --binSize 1 -p {threads} -o {output} >> {log} 2>&1
-        rm -f {params.tmp_bam}
+        rm -f {params.tmp_bam} {params.tmp_bam}.bai
         """
 
 
@@ -84,9 +86,11 @@ rule seacr_bedgraph_control:
     shell:
         """
         samtools merge -f -@ {threads} {params.tmp_bam} {input.bams} > {log} 2>&1
+        # bamCoverage requires an indexed BAM (WSL real-run finding 2026-09-10)
+        samtools index -@ {threads} {params.tmp_bam}
         bamCoverage -b {params.tmp_bam} --outFileFormat bedgraph --normalizeUsing None \
             --binSize 1 -p {threads} -o {output} >> {log} 2>&1
-        rm -f {params.tmp_bam}
+        rm -f {params.tmp_bam} {params.tmp_bam}.bai
         """
 
 
@@ -128,9 +132,13 @@ rule seacr_callpeak:
         """
         bash {params.seacr} {input.treat} {params.control_arg} {params.normalize} \
             {params.mode} {params.prefix} > {log} 2>&1
-        {params.python} {params.script} {params.prefix}.auc.threshold.merge.bed \
+        # SEACR_1.3.sh renames its merged intermediate to the mode-named bed
+        # (stringent/relaxed) and deletes the merge file — the usage text still
+        # names the merge file, the code is authoritative (final-review finding
+        # 2026-09-10)
+        {params.python} {params.script} {params.prefix}.{params.mode}.bed \
             {output.peaks} {params.name} >> {log} 2>&1
-        rm -f {params.prefix}.auc.threshold.bed {params.prefix}.auc.threshold.merge.bed
+        rm -f {params.prefix}.auc.threshold.bed {params.prefix}.{params.mode}.bed
         """
 
 

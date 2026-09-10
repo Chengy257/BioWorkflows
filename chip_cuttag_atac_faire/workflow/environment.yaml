@@ -50,5 +50,6 @@ dependencies:
 #
 # Deliberately NOT in this template (external installs, see config/software.yaml
 # paths:): idr (python2; peak.replicate stage), HOMER (motif stage; its genome
-# data installs via configureHomer), and TOBIAS (footprint stage; separate
-# environment, e.g. conda create -n chip-tobias -c bioconda tobias).
+# data installs via configureHomer), TOBIAS (footprint stage; separate
+# environment, e.g. conda create -n chip-tobias -c bioconda tobias), and SEACR
+# (alternative pooled caller; a bash script from https://github.com/FredHutch/SEACR).

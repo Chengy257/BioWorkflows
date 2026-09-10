@@ -355,7 +355,7 @@ replaces those group calls with **SEACR** (Sparse Enrichment Analysis for CUT&RU
 
 Requirements and limitations:
 
-- SEACR is an external bash script deliberately kept out of the conda template: download it from `https://github.com/yeolab/SEACR` (needs bash/awk/sort) and either put it on PATH or point the software.yaml `paths: seacr` entry at the script (exported to the rules as `CHIP_SEACR`; the rules invoke it as `bash $CHIP_SEACR ...`).
+- SEACR is an external bash script deliberately kept out of the conda template: download it from `https://github.com/FredHutch/SEACR` (needs bash/awk/sort) and either put it on PATH or point the software.yaml `paths: seacr` entry at the script (exported to the rules as `CHIP_SEACR`; the rules invoke it as `bash $CHIP_SEACR ...`).
 - **The replicate/IDR stage stays MACS2-based**: `peak.caller: seacr` together with `peak.replicate.enabled: true` is a parse-time validation error — pick one route per project.
 - `bigwig.per_sample` rides the MACS2 callpeak module and has no rule under SEACR mode (a parse-time warning points this out); per-sample tracks require `peak.caller: macs2`.
 - peak.qvalue/peak.broad_cutoff/peak.keepdup are MACS2 knobs and have no effect on SEACR; tune `peak.seacr.*` instead.

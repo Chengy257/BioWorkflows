@@ -389,6 +389,11 @@ vc_case("non-boolean spike_in.scale_bigwigs reported",
 vc_case("spike_in enabled without fasta reported",
         lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": ""}),
         ["spike_in.fasta is required"])
+vc_case("scale_bigwigs without spike_in.enabled reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": False,
+                                             "fasta": "/nonexistent/spike.fa",
+                                             "scale_bigwigs": True}),
+        ["spike_in.scale_bigwigs requires spike_in.enabled"])
 vc_case("spike_in empty name reported",
         lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": "spike.fa",
                                              "name": "  "}),
