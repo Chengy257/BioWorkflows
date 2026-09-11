@@ -22,11 +22,13 @@ Outputs (written to the --outdir directory; paths follow the data working-direct
 
 Samples: chip_treat_rep1/rep2 + chip_control (narrow group g1),
          atac_treat_rep1/rep2 (atac group g2).
-Enrichment design: three 2kb peak regions pre-seeded on chr1; treat samples draw
+Enrichment design: twenty-four 2kb peak regions pre-seeded on chr1; treat samples draw
 70% of fragments from peak regions, control samples sample uniformly genome-wide.
 
 Usage:
     python tests/make_testdata.py --outdir <dir> [--reads 50000] [--seed 42]
+        [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--seacr]
+        [--footprint]
 """
 import argparse
 import gzip
@@ -40,19 +42,23 @@ import random
 # ---------------------------------------------------------------------
 CHROM_LEN = 100000        # per-chromosome length (bp)
 N_CHROM = 2               # number of chromosomes (chr1/chr2)
+SPIKE_CONTIGS = 2         # spike-in contigs (--spike-in scenario)
+SPIKE_CONTIG_LEN = 3000   # spike-in per-contig length (bp)
 GENES_PER_CHROM = 30      # genes per chromosome
 READ_LEN = 50             # read length
 FRAG_MIN, FRAG_MAX = 150, 300   # fragment length range (bp)
 GENE_START = 1000         # first gene start (0-based)
 GENE_SPACING = 3000       # gene spacing
 GENE_LEN = 2000           # gene span
-PEAK_REGIONS = [(20000, 22000), (50000, 52000), (80000, 82000)]  # chr1 enrichment peaks (0-based half-open)
+# 24 seeded regions clear idr's 20-peaks-post-merge minimum so --replicate
+# --real-run exercises the real idr binary end to end
+PEAK_REGIONS = [(2000 + i * 4000, 2000 + i * 4000 + 2000) for i in range(24)]  # chr1 enrichment peaks (0-based half-open)
 PEAK_PROB = 0.7           # probability a treat fragment comes from a peak region (control samples uniformly)
 ERROR_RATE = 0.005        # substitution-type sequencing error rate (a few errors avoid pathological exact duplicates)
 SEED = 42                 # default random seed
 
 # Sample set: (sample_id, role, group, seqtype, peak_type)
-# Names and group names all satisfy the workflow's _NAME_RE (alphanumeric plus
+# Names and group names all satisfy the workflow's _NAME_RE (alphanumerics plus
 # . _ - , no consecutive underscores __)
 SAMPLES = [
     ("chip_treat_rep1", "treat",   "g1", "chip", "narrow"),
@@ -61,6 +67,126 @@ SAMPLES = [
     ("atac_treat_rep1", "treat",   "g2", "atac", "none"),
     ("atac_treat_rep2", "treat",   "g2", "atac", "none"),
 ]
+
+# Extra group for the --replicate scenario: a broad chip group with two
+# treats (exercises callpeak_broad_replicate + multiinter consensus on top
+# of the narrow IDR already covered by g1/g2 being two-treat groups).
+BROAD_SAMPLES = [
+    ("hist_treat_rep1", "treat",   "g3", "chip", "broad"),
+    ("hist_treat_rep2", "treat",   "g3", "chip", "broad"),
+    ("hist_control",    "control", "g3", "chip", "broad"),
+]
+
+# Extra group for the --diffbind scenario: a second two-treat narrow chip
+# group so one contrast ([g1, g4]) exists with replicate structure on both
+# arms; carries the optional condition/batch columns.
+DIFFBIND_SAMPLES = [
+    ("db_treat_rep1", "treat",   "g4", "chip", "narrow", "mutant", "b1"),
+    ("db_treat_rep2", "treat",   "g4", "chip", "narrow", "mutant", "b2"),
+    ("db_control",    "control", "g4", "chip", "narrow", "",       ""),
+]
+
+# Sample-table header variants: the base 6 columns, and the extended schema
+# with the optional condition/batch columns (written only when the
+# --diffbind group set is present).
+BASE_HEADER = "sample_id,role,group,seqtype,layout,peak_type"
+EXT_HEADER = BASE_HEADER + ",condition,batch"
+
+# Config insertions for the scenario flags (see write_config): valid YAML
+# sub-blocks spliced into the base CONFIG_YAML (YAML forbids duplicate
+# top-level keys, so the blocks are inserted under peak:/qc: instead of
+# redefining them).
+PEAK_REPLICATE_TAIL = """\
+  replicate:
+    enabled: true
+    qvalue: 0.01
+    idr_threshold: 0.05
+    idr_rank: "p.value"
+    consensus_min_replicates: 2
+    frip_on: "pooled"
+"""
+
+QC_FULL_TAIL = """\
+  tss: true
+  organelle: true
+  organelle_patterns: [chrc, chrm]
+"""
+
+QC_FULL_BLACKLIST = '\n# ---------- Extended QC (--qc-full scenario) ----------\nblacklist: "ref/blacklist.bed"\n'
+
+GATES_TAIL = """\
+  gates:
+    enabled: true
+    thresholds:
+      mapping_rate_min: 0.70
+      dup_rate_max: 0.50
+      frip_min: 0.01
+      nsc_min: 1.05
+      rsc_min: 0.8
+      tss_min: 6.0
+      organelle_max: 0.20
+"""
+
+MOTIF_CONFIG_BLOCK = """
+# ---------- Motif enrichment (--motif scenario) ----------
+motif:
+  enabled: true
+  homer_genome: "test_genome"
+  size: "given"
+  background: ""
+  extra: ""
+"""
+
+DIFFBIND_CONFIG_BLOCK = """
+# ---------- Differential binding (--diffbind scenario) ----------
+diffbind:
+  enabled: true
+  contrasts: [["g1", "g4"]]
+  analysis: "DESeq2"
+  summit_flank: 250
+  use_controls: false
+  fdr: 0.05
+  foldchange: 1.0
+  batch_correction: true
+"""
+
+SPIKE_CONFIG_BLOCK = """
+# ---------- Spike-in normalization (--spike-in scenario) ----------
+spike_in:
+  enabled: true
+  fasta: "ref/spike.fa"
+  name: "lambda"
+  scale_bigwigs: true
+"""
+
+FOOTPRINT_CONFIG_BLOCK = """
+# ---------- TOBIAS footprinting (--footprint scenario) ----------
+footprint:
+  enabled: true
+  motifs: "ref/motifs.pfm"
+  bindetect: true
+  motif_pvalue: 1e-4
+"""
+
+# JASPAR-style PFM layout: one "> <name>\\t<tf>" header per motif followed by
+# four count rows (A/C/G/T) of the motif width.
+MOTIF_WIDTHS = [10, 12]   # one width per synthetic motif (--footprint scenario)
+MOTIF_COUNT_MAX = 15      # per-cell PFM count ceiling (deterministic, seeded)
+
+# Spliced under peak: for the --seacr scenario (no extra samples; the base
+# g1 chip-narrow group with a control exercises the control-bedGraph norm
+# route, the control-less g2 atac group the FDR-threshold route).
+SEACR_TAIL = """\
+  caller: seacr        # --seacr scenario: SEACR replaces the pooled MACS2 calls
+  seacr:
+    mode: stringent
+    normalize: norm
+    fdr_threshold: 0.01
+"""
+
+# Synthetic blacklist for --qc-full: overlaps the first pre-seeded peak
+# region so a real run can observe peaks being removed.
+BLACKLIST_BED = "chr1\t19800\t20600\n"
 
 BASES = "ACGT"
 _COMP = str.maketrans("ACGT", "TGCA")
@@ -227,7 +353,7 @@ def sample_fragment(chroms, rng, role):
     return chroms[chrom][start:start + frag_len]
 
 
-def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
+def write_fastqs(outdir, chroms, genes, reads_per_sample, seed, samples):
     """Generate PE reads per sample (1.rawdata/{sample}_1.fq.gz and _2.fq.gz).
 
     Each sample uses its own rng (seed + sample index), decoupled from sample
@@ -237,7 +363,7 @@ def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
     raw_dir = os.path.join(outdir, "1.rawdata")
     os.makedirs(raw_dir, exist_ok=True)
 
-    for k, (sid, role, _grp, _seqtype, _pt) in enumerate(SAMPLES):
+    for k, (sid, role, *_rest) in enumerate(samples):
         rng = random.Random(seed + k)
         fq1 = gzip_text(os.path.join(raw_dir, f"{sid}_1.fq.gz"))
         fq2 = gzip_text(os.path.join(raw_dir, f"{sid}_2.fq.gz"))
@@ -254,20 +380,103 @@ def write_fastqs(outdir, chroms, genes, reads_per_sample, seed):
             fq2.close()
 
 
-def write_samples(outdir):
-    """Write the 6-column sample table samples.csv (header matches the workflow's REQUIRED_COLUMNS)."""
+def _normalize(rows):
+    """Extend 5-tuples to the 7-field form (condition/batch default empty)."""
+    out = []
+    for row in rows:
+        sid, role, grp, seqtype, pt = row[:5]
+        cond = row[5] if len(row) > 5 else ""
+        bat = row[6] if len(row) > 6 else ""
+        out.append((sid, role, grp, seqtype, pt, cond, bat))
+    return out
+
+
+def write_samples(outdir, samples, extended):
+    """Write the sample table samples.csv: the base 6 columns, plus the
+    optional condition/batch columns when the diffbind group set is present
+    (header matches the workflow's REQUIRED_COLUMNS + optional columns)."""
     path = os.path.join(outdir, "samples.csv")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("sample_id,role,group,seqtype,layout,peak_type\n")
-        for sid, role, grp, seqtype, pt in SAMPLES:
-            fh.write(f"{sid},{role},{grp},{seqtype},PE,{pt}\n")
+        fh.write((EXT_HEADER if extended else BASE_HEADER) + "\n")
+        for sid, role, grp, seqtype, pt, cond, bat in samples:
+            if extended:
+                fh.write(f"{sid},{role},{grp},{seqtype},PE,{pt},{cond},{bat}\n")
+            else:
+                fh.write(f"{sid},{role},{grp},{seqtype},PE,{pt}\n")
 
 
-def write_config(outdir):
-    """Write the test config.yaml (relative paths, consumed via run.sh -c)."""
+def write_blacklist(outdir):
+    """Write the --qc-full synthetic blacklist (overlaps the first peak region)."""
+    path = os.path.join(outdir, "ref", "blacklist.bed")
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        fh.write(BLACKLIST_BED)
+
+
+def write_spike_reference(outdir, seed):
+    """Write the --spike-in synthetic spike-in genome ref/spike.fa (2 x 3kb
+    contigs, generated from its own seeded rng so the sequences are distinct
+    from the main reference)."""
+    rng = random.Random(seed + 101)
+    path = os.path.join(outdir, "ref", "spike.fa")
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        for i in range(SPIKE_CONTIGS):
+            fh.write(f">spike_ctg{i + 1}\n")
+            s = "".join(rng.choices(BASES, k=SPIKE_CONTIG_LEN))
+            for j in range(0, len(s), 60):
+                fh.write(s[j:j + 60] + "\n")
+
+
+def write_motif_pfms(outdir, seed):
+    """Write the --footprint synthetic motif PFM file ref/motifs.pfm
+    (JASPAR-style: "> motif_i\\ttf_i" header + A/C/G/T count rows with
+    SPACE-separated counts — TOBIAS's JASPAR parser rejects the
+    bracket+comma download form, WSL real-run finding 2026-09-09;
+    deterministic from its own seeded rng, widths per MOTIF_WIDTHS)."""
+    rng = random.Random(seed + 202)
+    path = os.path.join(outdir, "ref", "motifs.pfm")
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        for i, width in enumerate(MOTIF_WIDTHS):
+            fh.write(f">motif{i + 1}\ttf{i + 1}\n")
+            for base in "ACGT":
+                counts = [rng.randint(1, MOTIF_COUNT_MAX) for _ in range(width)]
+                cells = " ".join(str(c) for c in counts)
+                fh.write(f"{base}  {cells}\n")
+
+
+def write_config(outdir, replicate=False, qc_full=False, motif=False, diffbind=False,
+                 gates=False, spike=False, seacr=False, footprint=False):
+    """Write the test config.yaml (relative paths, consumed via run.sh -c).
+
+    Scenario flags splice the matching sub-blocks into the base config."""
+    text = CONFIG_YAML
+    if replicate:
+        anchor = "    extsize: 200\n"
+        assert anchor in text, "base config anchor for the replicate block moved"
+        text = text.replace(anchor, anchor + PEAK_REPLICATE_TAIL, 1)
+    if seacr:
+        anchor = "    extsize: 200\n"
+        assert anchor in text, "base config anchor for the seacr block moved"
+        text = text.replace(anchor, anchor + SEACR_TAIL, 1)
+    if qc_full:
+        anchor = "  deeptools: true\n"
+        assert anchor in text, "base config anchor for the qc-full block moved"
+        text = text.replace(anchor, anchor + QC_FULL_TAIL, 1)
+        text += QC_FULL_BLACKLIST
+    if gates:
+        anchor = "  deeptools: true\n"
+        assert anchor in text, "base config anchor for the gates block moved"
+        text = text.replace(anchor, anchor + GATES_TAIL, 1)
+    if motif:
+        text += MOTIF_CONFIG_BLOCK
+    if diffbind:
+        text += DIFFBIND_CONFIG_BLOCK
+    if spike:
+        text += SPIKE_CONFIG_BLOCK
+    if footprint:
+        text += FOOTPRINT_CONFIG_BLOCK
     path = os.path.join(outdir, "config.yaml")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(CONFIG_YAML)
+        fh.write(text)
 
 
 def main():
@@ -280,19 +489,67 @@ def main():
                     help="PE read pairs per sample (default 50000; CI regression uses 2000)")
     ap.add_argument("--seed", type=int, default=SEED,
                     help=f"random seed (default {SEED}, for reproducibility)")
+    ap.add_argument("--replicate", action="store_true",
+                    help="add a 2-treat broad chip group (g3) and enable the "
+                         "replicate-aware peak stage (IDR + consensus scenario)")
+    ap.add_argument("--qc-full", action="store_true", dest="qc_full",
+                    help="enable tss/organelle QC and the synthetic blacklist "
+                         "(extended QC scenario)")
+    ap.add_argument("--motif", action="store_true",
+                    help="enable the HOMER motif stage with a dummy genome tag "
+                         "(dry-run only executes the DAG)")
+    ap.add_argument("--diffbind", action="store_true",
+                    help="add a 2-treat narrow chip group (g4) with condition/"
+                         "batch columns and enable one DiffBind contrast")
+    ap.add_argument("--gates", action="store_true",
+                    help="enable the QC gate summary stage (qc.gates) with the "
+                         "default thresholds")
+    ap.add_argument("--spike-in", action="store_true", dest="spike_in",
+                    help="write a synthetic spike-in reference (ref/spike.fa) and "
+                         "enable the spike_in stage with scaled bigWigs")
+    ap.add_argument("--seacr", action="store_true",
+                    help="switch the pooled peak caller to SEACR (peak.caller=seacr; "
+                         "no extra samples: g1 exercises the control-norm route, "
+                         "control-less g2 the FDR-threshold route)")
+    ap.add_argument("--footprint", action="store_true",
+                    help="enable the TOBIAS footprinting stage (footprint) with a "
+                         "synthetic 2-motif JASPAR-style PFM (ref/motifs.pfm); the "
+                         "rules schedule for the atac group g2 only")
     args = ap.parse_args()
     if args.reads < 1:
         ap.error("--reads must be a positive integer")
 
+    samples = _normalize(SAMPLES)
+    if args.replicate:
+        samples += _normalize(BROAD_SAMPLES)
+    if args.diffbind:
+        samples += _normalize(DIFFBIND_SAMPLES)
     os.makedirs(args.outdir, exist_ok=True)
     chroms, genes = build_reference(args.seed)
     write_reference(args.outdir, chroms, genes)
-    write_fastqs(args.outdir, chroms, genes, args.reads, args.seed)
-    write_samples(args.outdir)
-    write_config(args.outdir)
+    write_fastqs(args.outdir, chroms, genes, args.reads, args.seed, samples)
+    write_samples(args.outdir, samples, extended=args.diffbind)
+    write_config(args.outdir, replicate=args.replicate, qc_full=args.qc_full,
+                 motif=args.motif, diffbind=args.diffbind, gates=args.gates,
+                 spike=args.spike_in, seacr=args.seacr, footprint=args.footprint)
+    if args.qc_full:
+        write_blacklist(args.outdir)
+    if args.spike_in:
+        write_spike_reference(args.outdir, args.seed)
+    if args.footprint:
+        write_motif_pfms(args.outdir, args.seed)
 
+    tags = [t for t, on in (("+replicate", args.replicate),
+                            ("+qc-full", args.qc_full),
+                            ("+motif", args.motif),
+                            ("+diffbind", args.diffbind),
+                            ("+gates", args.gates),
+                            ("+spike-in", args.spike_in),
+                            ("+seacr", args.seacr),
+                            ("+footprint", args.footprint)) if on]
     print(f"[make_testdata] chromosomes {N_CHROM} x {CHROM_LEN}bp, {len(genes)} genes, "
-          f"{len(SAMPLES)} samples x {args.reads} PE read pairs (seed={args.seed})")
+          f"{len(samples)} samples x {args.reads} PE read pairs (seed={args.seed}"
+          + (", " + ", ".join(tags) if tags else "") + ")")
     print(f"[make_testdata] output root: {os.path.abspath(args.outdir)}")
 
 

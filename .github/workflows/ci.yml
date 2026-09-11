@@ -68,6 +68,22 @@ jobs:
         run: bash tests/lint.sh
       - name: Dry-run regression (synthetic data)
         run: bash tests/run_test.sh --reads 2000
+      - name: Replicate/IDR scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --replicate
+      - name: Extended QC scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --qc-full
+      - name: Motif scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --motif
+      - name: DiffBind scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --diffbind
+      - name: QC gates scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --gates
+      - name: Spike-in scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --spike-in
+      - name: SEACR caller scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --seacr
+      - name: Footprint scenario dry-run
+        run: bash tests/run_test.sh --reads 2000 --footprint
 
   seclip-seq:
     name: seclip-seq (unit tests + lint + dry-run regression)

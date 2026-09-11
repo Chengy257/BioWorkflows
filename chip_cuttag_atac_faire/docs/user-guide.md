@@ -1,6 +1,6 @@
 # ChIP/CUT&Tag/ATAC/FAIRE workflow user guide
 
-> Updated: 2026-09-04 (matches the current `results/` output consolidation; environment + run.sh ops CLI as of v0.4.0)
+> Updated: 2026-09-08 (v0.5: replicate-aware peak stage with IDR/consensus, TSS enrichment, organelle fraction, blacklist filtering — all default-off; environment + run.sh ops CLI as of v0.4.0)
 > Intended audience: analysts running this workflow on their cluster/server
 > Since v0.4.0 the workflow no longer creates per-rule Conda environments: the runtime environment is created from `workflow/environment.yaml`, or reuses the server's existing environment and R libraries via `config/software.yaml`; cluster scheduling resources are declared per rule in `config/resources.yaml` and support project-level overrides. All derived outputs are consolidated under the project's `results/` directory (`results_dir` in config).
 
@@ -170,6 +170,8 @@ Input_faire,control,faire_root_vs_Input,faire,PE,none
 | `seqtype` | `chip` / `cuttag` / `atac` / `faire` | assay type; mixing rows is what makes a mixed-assay project |
 | `layout` | `PE` | only paired-end is supported in this version |
 | `peak_type` | `narrow` / `broad` / `none` | treat rows of chip/cuttag must be `narrow` or `broad`; atac/faire are fixed to `none` (the peak type is decided by the workflow) |
+| `condition` | optional free label | differential binding (§5.6): labels the contrast factor; a group's treats must share one value; falls back to the group name when absent |
+| `batch` | optional free label | differential blocking factor (sequencing batch); ignored unless `diffbind.batch_correction` is on and it has ≥ 2 levels |
 
 ### 3.2 Validation rules (row by row at parse time, errors carry line numbers)
 
@@ -229,9 +231,44 @@ Scheduler resources are layered separately: see §4.3 for `config/resources.yaml
 | `peak.keepdup` | `all` | MACS2 keeps all duplicates (deduplication is decided upstream) |
 | `peak.qvalue` | `0.05` | narrow peak q-value cutoff |
 | `peak.broad_cutoff` | `0.05` | broad peak cutoff |
+| `peak.caller` | `macs2` | pooled peak caller: `macs2` (default) or `seacr` (the CUT&RUN/CUT&Tag alternative, §5.1.1); `seacr` is mutually exclusive with `peak.replicate.enabled` |
+| `peak.seacr.mode` | `"stringent"` | SEACR peak mode: `stringent` or `relaxed` |
+| `peak.seacr.normalize` | `"norm"` | SEACR control normalization (`norm` scales the control to the target library depth; `non` skips it), used for groups that have a control |
+| `peak.seacr.fdr_threshold` | `0.01` | numeric FDR threshold in (0, 1) SEACR falls back to for groups **without** a control |
+| `peak.replicate.enabled` | `false` | replicate-aware peak stage: per-replicate calling + IDR (narrow) / overlap consensus (broad); see §5.3 |
+| `peak.replicate.qvalue` | `0.01` | relaxed per-replicate narrow cutoff feeding IDR (ENCODE style) |
+| `peak.replicate.idr_threshold` | `0.05` | global IDR cutoff |
+| `peak.replicate.idr_rank` | `"p.value"` | narrowPeak rank column handed to idr: `p.value` or `signal.value` |
+| `peak.replicate.consensus_min_replicates` | `2` | support cutoff (broad consensus and >2-replicate IDR unions) |
+| `peak.replicate.frip_on` | `"pooled"` | peak set FRiP is computed against: `pooled` or `consensus` (requires the stage enabled) |
 | `peak.atac.mode` | `bampe` | `bampe` = ENCODE ATAC v2 recipe (pile up real fragment lengths); `shifted` = classic Tn5 offset recipe (`--nomodel --shift -100 --extsize 200`) |
 | `peak.atac.shift` / `peak.atac.extsize` | `-100` / `200` | effective in `shifted` mode only |
+| `peak.bigwig_measure` | `"FE"` | group signal-track measure: `FE` (fold enrichment) or `logFE`; the filename stays `{group}_FE.bw` |
+| `bigwig.per_sample` | `false` | per-sample normalized coverage bigWigs under `results/4.peak/samples/` (browser-level replicate comparison) |
+| `bigwig.normalize` / `bigwig.bin` | `"RPGC"` / `25` | bamCoverage normalization (RPGC uses `genome_size`) and bin size |
+| `spike_in.enabled` | `false` | spike-in normalization stage: second-pass alignment of the unmapped reads against `spike_in.fasta` + per-sample scale factors + QC table (§5.2.2) |
+| `spike_in.fasta` | `""` | required when enabled: spike-in genome FASTA path (a missing file warns only, like the other references) |
+| `spike_in.name` | `"spike"` | spike-in label used in the summary tables and the MultiQC section title |
+| `spike_in.scale_bigwigs` | `false` | multiply the bigWig signal tracks by the per-sample spike-in scale factors (§5.2.2) |
+| `motif.enabled` | `false` | HOMER motif enrichment on the final peak sets (§5.5); needs an external HOMER install |
+| `motif.homer_genome` | `""` | required when the stage is on: HOMER genome tag (`hg38`, `mm10`, …) or `custom:/path/to/genome` |
+| `motif.size` / `motif.background` / `motif.extra` | `"given"` / `""` / `""` | `-size`, optional `-bg` BED, extra findMotifsGenome.pl arguments |
+| `footprint.enabled` | `false` | TOBIAS footprinting on the ATAC/FAIRE groups: ATACorrect bias correction → ScoreBigwig footprint scores → optional BINDetect (§5.5.1); needs an external TOBIAS install |
+| `footprint.motifs` | `""` | required when the stage is on: motif PFM file in JASPAR/HOMER/MEME format (one file, many motifs) |
+| `footprint.bindetect` | `true` | also run the TOBIAS BINDetect binding-detection step |
+| `footprint.motif_pvalue` | `1e-4` | BINDetect motif significance cutoff in (0, 1] (empty/null = tool default) |
+| `diffbind.enabled` | `false` | DiffBind differential binding between sample-table groups (§5.6) |
+| `diffbind.contrasts` | `[]` | list of `[groupA, groupB]` pairs; each arm needs ≥ 2 treats |
+| `diffbind.analysis` | `"DESeq2"` | backend: `DESeq2` or `edgeR` |
+| `diffbind.summit_flank` | `250` | count regions = summit ± this many bp (`0` = full peak regions) |
+| `diffbind.use_controls` / `fdr` / `foldchange` / `batch_correction` | `false` / `0.05` / `1.0` / `true` | attach single controls as background; significant-table cutoffs; blocking on the optional `batch` column |
+| `blacklist` | `""` | optional BED of artifact regions; empty disables. Filtered peak copies feed FRiP/annotation (§5.4) |
 | `region_flank` | `3000` | peak-annotation flank distance and deeptools signal window up/downstream length (bp); one key controls both |
+| `qc.tss` | `false` | TSS enrichment for atac/faire treat samples (per-sample CPM coverage ±2kb around TSS; §5.2) |
+| `qc.organelle` | `false` | organelle (chloroplast/mitochondrion) mapped-read fraction from idxstats (§5.2) |
+| `qc.organelle_patterns` | `[chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]` | contig-name patterns; ≤3-char patterns match contig names exactly (case-insensitive), longer ones as substrings |
+| `qc.gates.enabled` | `false` | per-sample QC gate summary table (`results/5.QC/gates/gate_summary.tsv`, injected into MultiQC; §5.2.1) |
+| `qc.gates.thresholds.*` | see §5.2.1 | informational gate thresholds (`mapping_rate_min` 0.70, `dup_rate_max` 0.50, `frip_min` 0.01, `nsc_min` 1.05, `rsc_min` 0.8, `tss_min` 6.0, `organelle_max` 0.20); validated as numbers in [0, 1] except `nsc_min`/`rsc_min`/`tss_min` (any positive number) |
 
 Reference keys (`genome_fa`/`gtf`/`bed`/`chromsize`/`genome_size`) that the project config leaves unset fall back to the selected species preset; an explicit key in the project config wins over the preset.
 
@@ -298,21 +335,141 @@ The four assays are driven by the sample table's `seqtype` column; one project c
 | `atac` | picard deduplication (on by default) | `callpeak_atac` (`peak.atac.mode` = bampe/shifted) | narrowPeak |
 | `faire` | picard deduplication (on by default) | `callpeak_atac` (same rule as atac) | narrowPeak |
 
-Peak calling runs in parallel per `group`; a group without a control automatically omits MACS2 `-c` (falling back to local lambda estimation). Each group's signal track `{group}_FE.bw` is produced by bdgcmp → bedClip → bedtools sort -g → bedGraphToBigWig (chromosome order consistent with chrom.sizes).
+Peak calling runs in parallel per `group`; a group without a control automatically omits MACS2 `-c` (falling back to local lambda estimation). Each group's signal track `{group}_FE.bw` is produced by bdgcmp → bedClip → bedtools sort -g → bedGraphToBigWig (chromosome order consistent with chrom.sizes). The pooled caller itself is switchable: see §5.1.1 for the SEACR alternative.
 
-### 5.2 The three QC switches
+### 5.1.1 Alternative pooled peak caller (v0.6, `peak.caller`)
 
-The `qc:` section of config.yaml controls three optional modules (their rule sets are conditionally included by the Snakefile; when off they stay out of the DAG):
+By default every group's pooled peaks come from MACS2 (`callpeak_narrow` / `callpeak_broad` / `callpeak_atac`). Setting:
+
+```yaml
+peak:
+  caller: seacr
+```
+
+replaces those group calls with **SEACR** (Sparse Enrichment Analysis for CUT&RUN, Yo et al. 2021) — the common CUT&RUN/CUT&Tag alternative caller — per group:
+
+1. the group's pooled treat BAMs (the same analysis BAMs MACS2 uses) are `samtools merge`d and converted to a **raw-depth bedGraph** (`bamCoverage --normalizeUsing None --binSize 1`, zero-coverage bins omitted as SEACR requires) at `results/4.peak/seacr/{group}_treat.bg`;
+2. when the group has controls, the pooled control BAMs get the same treatment (`{group}_control.bg`); SEACR then runs in control mode with `peak.seacr.normalize` (`norm`/`non`). Groups without a control skip step 2 and SEACR falls back to the numeric FDR threshold `peak.seacr.fdr_threshold`;
+3. SEACR writes one 6-column peak set per group (`chr, start, end, AUC, max_signal, max_signal_region`); the workflow converts it to the standard 10-column narrowPeak/broadPeak contract (score = AUC capped at 1000, p/q = 0 — SEACR emits no per-peak p/q values) at the **same** `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}` paths MACS2 would write — FRiP, annotation, blacklist, motif, and DiffBind all consume the peaks unchanged;
+4. the group coverage track `{group}_FE.bw` is produced from the treat bedGraph via bedClip → sort → bedGraphToBigWig. Because the MACS2 `bdgcmp` fold-enrichment route needs MACS2's pileup/lambda bedGraphs (not produced here), **the track carries the pooled raw-depth coverage in SEACR mode**, not FE.
+
+Requirements and limitations:
+
+- SEACR is an external bash script deliberately kept out of the conda template: download it from `https://github.com/FredHutch/SEACR` (needs bash/awk/sort) and either put it on PATH or point the software.yaml `paths: seacr` entry at the script (exported to the rules as `CHIP_SEACR`; the rules invoke it as `bash $CHIP_SEACR ...`).
+- **The replicate/IDR stage stays MACS2-based**: `peak.caller: seacr` together with `peak.replicate.enabled: true` is a parse-time validation error — pick one route per project.
+- `bigwig.per_sample` rides the MACS2 callpeak module and has no rule under SEACR mode (a parse-time warning points this out); per-sample tracks require `peak.caller: macs2`.
+- peak.qvalue/peak.broad_cutoff/peak.keepdup are MACS2 knobs and have no effect on SEACR; tune `peak.seacr.*` instead.
+
+### 5.2 The QC switches
+
+The `qc:` section of config.yaml controls the optional QC modules (their rule sets are conditionally included by the Snakefile; when off they stay out of the DAG):
 
 | Switch | Default | Outputs |
 |---|---|---|
 | `qc.frip` | `true` | `results/5.QC/frip/FRiP_summary.tsv` (also injected into the MultiQC report) |
 | `qc.deeptools` | `true` | `results/5.QC/deeptools/`: correlation heatmaps, PCA, fingerprint plots, fragment-size distribution, gene-region signal profiles |
 | `qc.nsc_rsc` | `false` | `results/5.QC/spp/NSC_RSC_mqc.tsv` (SPP cross-correlation, slow; also injected into MultiQC) |
+| `qc.tss` | `false` | `results/5.QC/tss/`: per atac/faire treat sample a TSS profile plot + enrichment score (`{sample}_TSSE.txt`), plus `TSSE_summary.tsv` (injected into MultiQC). The score is the max of the ±2kb profile normalized by the outer-flank baseline (ENCODE-flavored definition on CPM coverage) — healthy ATAC libraries show a clear TSS spike |
+| `qc.organelle` | `false` | `results/5.QC/organelle/Organelle_summary.tsv` (injected into MultiQC): per-sample chloroplast/mitochondrial mapped-read fraction from `samtools idxstats`. Plant ATAC libraries frequently lose a large fraction of reads to the chloroplast; the number is diagnostic for library quality and for whether the reference should be nuclear-only |
+| `qc.gates` | `false` | `results/5.QC/gates/gate_summary.tsv` (+ MultiQC table): one PASS/WARN/FAIL row per sample aggregating the metrics above against configurable thresholds (§5.2.1) |
 
 Regardless of the switches, `results/5.QC/software_versions.yaml` (record of the tool versions actually used, including the Snakemake version) and the MultiQC summary report are always generated; FastQC, bowtie2 alignment stats, and picard dedup metrics are pulled into MultiQC automatically.
 
-### 5.3 Checks and dry-run
+### 5.2.1 QC gate summary (v0.6, `qc.gates`)
+
+With `qc.gates.enabled: true` the workflow writes one PASS/WARN/FAIL row per sample into `results/5.QC/gates/gate_summary.tsv` (also injected into the MultiQC report), aggregating the metrics it already computes. Each sample additionally gets a raw `samtools flagstat` report at `results/5.QC/gates/{sample}_flagstat.txt` (the mapping-rate source):
+
+| Metric | Source stage | Gate | Default threshold |
+|---|---|---|---|
+| `mapping_rate` | always (`samtools flagstat` mapped/total of the analysis BAM) | value ≥ `mapping_rate_min` | 0.70 |
+| `dup_rate` | `dedup.<assay>: true` (picard `PERCENT_DUPLICATION`) | value ≤ `dup_rate_max` | 0.50 |
+| `frip` | `qc.frip: true` (always on by default) | value ≥ `frip_min` | 0.01 |
+| `nsc` / `rsc` | `qc.nsc_rsc: true` (SPP cross-correlation) | value ≥ `nsc_min` / `rsc_min` | 1.05 / 0.8 |
+| `tss_enrichment` | `qc.tss: true` (TSS enrichment score) | value ≥ `tss_min` | 6.0 |
+| `organelle_fraction` | `qc.organelle: true` (organelle read fraction) | value ≤ `organelle_max` | 0.20 |
+
+Semantics: a metric whose source stage is off (or whose file is missing) renders `NA` and does not gate; every other metric PASSes or FAILs against its threshold. The per-sample `gate` column is **FAIL** when any metric fails, **WARN** when nothing fails but at least one metric is NA, and **PASS** otherwise; the `failed`/`na` columns name the offending metrics. Thresholds are user-tunable numbers under `qc.gates.thresholds` (each is validated as a number in [0, 1], except `nsc_min`/`rsc_min`/`tss_min`, which accept any positive value) and are strictly informational — **the pipeline never hard-fails on a gate**.
+
+### 5.2.2 Spike-in normalization (v0.6, `spike_in`)
+
+Quantitative CUT&Tag comparisons need an exogenous standard: a spike-in genome (e.g. E. coli DNA added to the sample before shearing/tagmentation) lets read depths be normalized between samples. With:
+
+```yaml
+spike_in:
+  enabled: true
+  fasta: "/path/to/spikein_genome.fasta"   # required when enabled
+  name: "lambda"                           # label for the summary tables
+  scale_bigwigs: false                     # also scale the bigWig tracks
+```
+
+the workflow re-aligns the read pairs that failed the primary alignment (the `--un-conc-gz` pairs of the main bowtie2 step, kept at `results/3.align/bowtie2/{sample}_unmapped.fq.1.gz` / `.2.gz`) against the spike-in genome (index under `results/0.index/spike_bt2.*`): `results/3.align/spike_in/{sample}_sorted.bam(.bai)`, per-sample `samtools idxstats`/`flagstat` reports under `results/5.QC/spike_in/`, and a project-wide `results/5.QC/spike_in/Spikein_summary.tsv` (injected into the MultiQC report under the `spike_in.name` label) with columns:
+
+| Column | Meaning |
+|---|---|
+| `spike_total` | reads in total in the spike-in alignment (`flagstat`) |
+| `spike_mapped` | reads mapped to the spike-in genome (`flagstat`) |
+| `spike_rate` | `spike_mapped / spike_total` (how much of the non-aligning fraction is spike-in) |
+| `scale_factor` | `1e6 / max(spike_mapped, 1)` — the per-sample normalization factor |
+
+With `spike_in.scale_bigwigs: true` the bigWig signal tracks are additionally multiplied by the scale factors: per-sample tracks (`bigwig.per_sample`) use their own factor, and the group FE tracks (`results/4.peak/{group}_FE.bw`) use the **mean over the group's treat samples** — `mean(1e6 / spike_mapped_i)` across the group's treats. The spike-in alignment itself runs with plain bowtie2 defaults (the primary recipe's `bowtie2_extra`/`min_mapq` tuning stays untouched), and a sample with a missing flagstat renders an all-NA summary row.
+
+### 5.3 Replicate-aware peak stage (v0.5, `peak.replicate`)
+
+By default the workflow calls peaks once per group on the pooled replicates (`-t treat1,treat2`). With `peak.replicate.enabled: true` the replicate structure is additionally analyzed:
+
+- **Per-replicate calling**: every treat sample gets its own MACS2 call (`results/4.peak/replicates/{group}/{sample}_peaks.*`) at the relaxed narrow cutoff `peak.replicate.qvalue` (default 0.01), always against the group's pooled control. Broad groups use the same `broad_cutoff` as the pooled call.
+- **IDR (narrow groups, ≥2 treats)**: all replicate pairs run through the classic `idr` tool (`--rank p.value --idr-threshold 0.05` by default; both configurable). A group with exactly 2 treats uses the single pair result as its final reproducible peak set (`results/4.peak/{group}_IDR_peaks.narrowPeak`). With >2 treats the union of all pairwise IDR results is kept where the pairwise support ≥ `consensus_min_replicates` — a deliberate simplification of ENCODE's rescue/self-consistency scheme, chosen for interpretability; the per-peak support is in `{group}_IDR_support.bed`.
+- **Overlap consensus (broad groups, ≥2 treats)**: IDR is not applicable to broad peaks; the per-replicate broadPeak files go through `bedtools multiinter` and intervals carried by ≥ `consensus_min_replicates` replicates form `results/4.peak/{group}_consensus_peaks.broadPeak` (+ support bed).
+- **Summary**: `results/5.QC/replicate_peaks/Replicate_summary.tsv` lists per group the replicate peak counts, the final (IDR/consensus) count, and the retained fraction; it is injected into MultiQC.
+- **Downstream wiring**: `peak.replicate.frip_on: consensus` computes FRiP against the reproducible set (default `pooled` keeps today's semantics; single-treat groups always fall back to pooled), and the ChIPseeker annotation covers the final reproducible set. The pooled peak files keep their names and remain in `results/4.peak/`.
+
+**Environment note**: the `idr` tool (Liu et al., 2.0.4.x) is python2-based and deliberately not part of the conda template. Install it separately (e.g. `conda create -n idr -c bioconda idr=2.0.4`) and either put `idr` on PATH or point the software.yaml `paths:` entry at the binary (exported to the rules as `CHIP_IDR`). It is only required when the stage is enabled and narrow groups with ≥2 treats exist; dry-runs never execute it.
+
+### 5.4 Blacklist filtering (v0.5, `blacklist`)
+
+Set the top-level `blacklist` key to a BED file of known artifact regions and the workflow writes filtered copies (bedtools `intersect -v`) of the pooled and final peak sets into `results/4.peak/blacklist_filtered/`, with a before/after count table in `results/5.QC/blacklist/blacklist_summary.tsv`. FRiP and peak annotation read the filtered copies automatically. Filtering happens at the peak level only (BAMs are untouched). No ENCODE blacklist exists for rice — build or borrow one appropriate for your genome, or leave the key empty (default).
+
+### 5.5 HOMER motif enrichment (v0.5, `motif`)
+
+With `motif.enabled: true`, every group's final peak set (the same deliverable annotation uses — IDR/consensus when the replicate stage is on, blacklist-filtered when a blacklist is set) goes through `findMotifsGenome.pl`; results land in `results/6.motif/{group}/` (de novo + known motif tables and logos). Requirements and knobs:
+
+- `motif.homer_genome` is mandatory: a HOMER genome tag installed via `configureHomer`, or a `custom:/path/to/genome` directory. Rice has no stock HOMER genome — configure one for your assembly.
+- HOMER is an external distribution (not in the conda template): the `findMotifsGenome.pl` entry point resolves via the software.yaml `paths:` section (`homer_findmotifs` → `CHIP_HOMER_FINDMOTIFS`) or from PATH.
+- `motif.size` (`given` = peak widths), an optional matched `motif.background` BED, and free-form `motif.extra` (e.g. `"-len 8,10,12 -nmotifs 12"`) cover the common recipes.
+- De novo discovery is slow (hours on large peak sets); tune the `motif_enrichment` entry in `config/resources.yaml` before queueing.
+
+### 5.5.1 Footprinting (TOBIAS, v0.6, `footprint`)
+
+With `footprint.enabled: true` the ATAC/FAIRE groups (open-chromatin assays only — chip/cuttag enrichment data carries no footprint signal) go through TOBIAS footprinting into `results/7.footprint/{group}/`:
+
+1. **ATACorrect** (`results/7.footprint/{group}/ataccorrect/`): the group's treat analysis BAMs are pooled (the same `samtools merge` recipe the SEACR bedGraph rules use) and Tn5-bias-corrected against the reference genome over the group's final peak set (`group_final_peak_file()`: IDR/consensus when `peak.replicate.enabled`, pooled otherwise) — `{group}_corrected.bw` plus the bias/QC plots TOBIAS writes;
+2. **ScoreBigwig** (`results/7.footprint/{group}/scorebigwig/`): footprint scores over the group's peak regions from the corrected cutsite track (TOBIAS 0.8 API, `--signal/--regions/--output`) — one `{group}_footprint_scores.bw`; motif scanning is not part of this step;
+3. **BINDetect** (optional, `footprint.bindetect`, default on; `results/7.footprint/{group}/bindetect/`): per-TF binding detection over the same corrected track and peak set (Excel output skipped).
+
+Requirements and knobs:
+
+- `footprint.motifs` is mandatory when the stage is on: a motif PFM file in JASPAR pfm, HOMER, or MEME format (download JASPAR PFMs for your TFs of interest; one file may hold many motifs).
+- TOBIAS is an external install with a heavyweight dependency set of its own, deliberately not in the conda template: create a separate environment (`conda create -n chip-tobias -c bioconda tobias`) and either put `TOBIAS` on PATH or point the software.yaml `paths: tobias` entry at the env's `bin/TOBIAS` script (exported to the rules as `CHIP_TOBIAS`).
+- `footprint.motif_pvalue` (default `1e-4`) passes to BINDetect `--motif-pvalue`; set it empty/null to keep the tool default.
+- A table without any atac/faire group skips the stage with a parse-time warning.
+
+### 5.6 Differential binding (v0.5, `diffbind`)
+
+Differential enrichment between two conditions, DiffBind (DESeq2 or edgeR backend), driven by explicit contrasts:
+
+```yaml
+diffbind:
+  enabled: true
+  contrasts: [["H3K27ac_WT_vs_IgG", "H3K27ac_mut_vs_IgG"]]   # two sample-table groups
+```
+
+Each contrast arm must carry ≥ 2 treat replicates (parse-time error otherwise). The sample table's optional `condition` column labels the two factor levels (falling back to the group names); the optional `batch` column becomes a blocking factor when `diffbind.batch_correction` is on and has ≥ 2 levels. Per contrast, `results/6.diffbind/{A}__vs__{B}/` receives the generated sample sheet, `DB_results.tsv` (every consensus region with Fold/FDR/p), `DB_significant.tsv` (passing `fdr` and `|Fold| >= foldchange`), MA/volcano/PCA plots, and sessionInfo.
+
+Two design notes: DiffBind counts reads over the consensus peak set derived from the **per-sample peak files** — with `peak.replicate.enabled: true` those are the per-replicate calls (recommended); without it every sample of a group maps to the identical pooled set, which still runs but loses replicate-level peak structure. `diffbind.summit_flank: 250` recenters counting on summits (narrow peaks); set `0` to count full peak regions (usually better for broad marks). `diffbind.use_controls: true` attaches a group's exactly-one control as the DiffBind background sample.
+
+**Environment note**: `bioconductor-diffbind` is part of the conda template (pulls DESeq2/edgeR transitively). When reusing server R libraries instead, add DiffBind (e.g. `BiocManager::install("DiffBind")`) to the `r.lib_paths` libraries.
+
+### 5.7 Checks and dry-run
 
 ```bash
 bash run.sh -P . -n                    # dry-run: builds the DAG and prints the jobs it would run, without executing
@@ -323,7 +480,7 @@ bash run.sh -P . --check-r             # R-side preflight only
 
 The dry-run automatically skips the software preflight (no tools executed; needs only snakemake + python3/PyYAML, not the full analysis environment). Sample-table and config validation happen at parse time, so the dry-run and `--validate-only` catch the same errors listed in §3.2 / §4.4.
 
-### 5.4 Resuming and Snakemake passthrough
+### 5.8 Resuming and Snakemake passthrough
 
 - Resuming: Snakemake skips completed steps based on output timestamps; after an interruption, **simply rerun the same command**;
 - profiles pin `keep-going: true` and `rerun-incomplete: true`; `latency-wait` defaults to 90 (default/pbs) or 60 (sge/slurm), overridable via `--latency-wait SEC`;
@@ -424,15 +581,31 @@ workdir/
     ├── 0.index/             # bowtie2 index (bowtie2*.bt2; reusable across projects)
     ├── 2.cleandata/         # trimmed fastq: {sample}_1_val_1.fq.gz / {sample}_2_val_2.fq.gz
     │   └── fastqc/          # per-sample FastQC + multiqc/multiqc_report.html
-    ├── 3.align/bowtie2/     # {sample}_sorted.bam(.bai), {sample}_rmdup.bam(.bai), {sample}_dup_metrics.txt
+    ├── 3.align/bowtie2/     # {sample}_sorted.bam(.bai), {sample}_rmdup.bam(.bai), {sample}_dup_metrics.txt,
+    │                        #   {sample}_unmapped.fq.{1,2}.gz (pairs that failed the primary alignment)
+    ├── 3.align/spike_in/    # spike_in stage: {sample}_sorted.bam(.bai) (unmapped reads vs the spike-in genome)
     ├── 4.peak/              # {group}_peaks.{narrowPeak,broadPeak}, {group}_summits.bed, {group}_FE.bw
+    │   ├── seacr/           # peak.caller=seacr: {group}_treat.bg / _control.bg raw-depth bedGraphs
+    │   ├── replicates/      # peak.replicate stage: {group}/{sample}_peaks.{narrowPeak,broadPeak}
+    │   ├── idr/             # peak.replicate stage: {group}/{a}__vs__{b}.narrowPeak pairwise IDR
+    │   ├── blacklist_filtered/   # blacklist stage: filtered copies of the pooled/final peak sets
+    │   ├── samples/         # bigwig.per_sample stage: {sample}.bw normalized coverage tracks
     │   └── anno_result/     # {group}.Anno.xls, Peakanno_PeakDistributions.pdf
     ├── 5.QC/
     │   ├── frip/            # {group}__{sample}.frip.tsv, FRiP_summary.tsv
+    │   ├── replicate_peaks/ # peak.replicate stage: Replicate_summary.tsv (+ MultiQC table)
+    │   ├── gates/           # qc.gates stage: {sample}_flagstat.txt, gate_summary.tsv
+    │   ├── spike_in/        # spike_in stage: {sample}_idxstats.txt / _flagstat.txt, Spikein_summary.tsv
+    │   ├── tss/             # qc.tss stage: {sample}_TSSE.txt, profile plots, TSSE_summary.tsv
+    │   ├── organelle/       # qc.organelle stage: {sample}_idxstats.tsv, Organelle_summary.tsv
+    │   ├── blacklist/       # blacklist stage: blacklist_summary.tsv (before/after counts)
     │   ├── spp/             # optional: {sample}_NSC.txt / _RSC.txt / _fragment_len.txt, NSC_RSC_mqc.tsv
     │   ├── deeptools/       # correlation heatmap / PCA / fingerprint / fragment size / gene-region signal profile
     │   ├── software_versions.yaml   # tool versions actually resolved for this run (incl. Snakemake)
     │   └── logs/            # QC rule logs (e.g. software_versions.log.txt)
+    ├── 6.motif/             # motif stage: {group}/ HOMER results (known + de novo)
+    ├── 6.diffbind/          # diffbind stage: {A}__vs__{B}/ sample sheet, DB tables, plots
+    ├── 7.footprint/         # footprint stage: {group}/{ataccorrect,scorebigwig,bindetect}/ (TOBIAS)
     └── logs/                # per-rule logs (PBS .o job logs are collected here after success)
 ```
 
@@ -444,6 +617,19 @@ workdir/
 | Trimmed fastq | `results/2.cleandata/{sample}_1_val_1.fq.gz`, `{sample}_2_val_2.fq.gz` |
 | Aligned BAM / deduplicated BAM / dedup metrics | `results/3.align/bowtie2/{sample}_sorted.bam`, `{sample}_rmdup.bam`, `{sample}_dup_metrics.txt` |
 | Peak files / summits | `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}`, `results/4.peak/{group}_summits.bed` |
+| SEACR coverage bedGraphs (`peak.caller: seacr`) | `results/4.peak/seacr/{group}_treat.bg`, `{group}_control.bg` (controls only); the `{group}_peaks.*` files keep their standard paths/format (§5.1.1) |
+| Per-replicate peaks / pairwise IDR / final reproducible set (`peak.replicate.enabled`) | `results/4.peak/replicates/{group}/{sample}_peaks.*`, `results/4.peak/idr/{group}/{a}__vs__{b}.narrowPeak`, `results/4.peak/{group}_IDR_peaks.narrowPeak` or `{group}_consensus_peaks.broadPeak` (+ `_support.bed`) |
+| Replicate summary table | `results/5.QC/replicate_peaks/Replicate_summary.tsv` |
+| TSS enrichment (`qc.tss: true`) | `results/5.QC/tss/TSSE_summary.tsv` |
+| Organelle fraction (`qc.organelle: true`) | `results/5.QC/organelle/Organelle_summary.tsv` |
+| QC gate summary (`qc.gates: true`) | `results/5.QC/gates/gate_summary.tsv` (+ per-sample `{sample}_flagstat.txt`) |
+| Spike-in alignment BAMs (`spike_in.enabled`) | `results/3.align/spike_in/{sample}_sorted.bam(.bai)` |
+| Spike-in summary + scale factors (`spike_in.enabled`) | `results/5.QC/spike_in/Spikein_summary.tsv`; `scale_factor` = `1e6 / spike-in mapped reads` (bigWigs scaled by it when `spike_in.scale_bigwigs: true`; group FE tracks use the mean over the group's treat samples) |
+| Blacklist-filtered peaks / counts (`blacklist` set) | `results/4.peak/blacklist_filtered/`, `results/5.QC/blacklist/blacklist_summary.tsv` |
+| Per-sample normalized bigWigs (`bigwig.per_sample`) | `results/4.peak/samples/{sample}.bw` |
+| HOMER motif results (`motif.enabled`) | `results/6.motif/{group}/` |
+| TOBIAS footprinting (`footprint.enabled`, ATAC/FAIRE groups only) | `results/7.footprint/{group}/` — `ataccorrect/` (`{group}_corrected.bw` + QC plots), `scorebigwig/` (`{group}_footprint_scores.bw`), `bindetect/` (when `footprint.bindetect`) |
+| Differential binding tables/plots (`diffbind.enabled`) | `results/6.diffbind/{A}__vs__{B}/DB_results.tsv` (+ `DB_significant.tsv`, plots) |
 | Signal-track bigWig (fold enrichment) | `results/4.peak/{group}_FE.bw` |
 | Peak annotation tables and plots | `results/4.peak/anno_result/{group}.Anno.xls`, `Peakanno_PeakDistributions.pdf` |
 | bowtie2 index | `results/0.index/bowtie2*.bt2` |
@@ -503,9 +689,42 @@ Either set `species: "hsa"` (or another preset in `config/species.yaml`), or ove
 
 **Q12: How do I validate a new deployment or a workflow change?**
 ```bash
-make check                       # 62 unit tests + bash -n syntax checks (no snakemake needed)
+make check                       # unit tests + bash -n syntax checks (no snakemake needed)
 make lint                        # static suite (bash/shellcheck/py/R/yaml/snakemake --lint; missing tools skipped)
 bash tests/run_test.sh           # synthetic-data dry-run regression (needs snakemake + python3/PyYAML)
-bash tests/run_test.sh --real-run   # end-to-end run + output assertions (server validation; needs the full analysis environment)
+bash tests/run_test.sh --replicate   # replicate/IDR scenario dry-run (adds a 2-treat broad group)
+bash tests/run_test.sh --qc-full     # extended QC scenario dry-run (tss + organelle + blacklist)
+bash tests/run_test.sh --motif       # motif stage scenario dry-run (dummy genome tag)
+bash tests/run_test.sh --diffbind    # differential binding scenario dry-run (adds a contrast group)
+bash tests/run_test.sh --gates       # QC gate summary scenario dry-run (qc.gates)
+bash tests/run_test.sh --spike-in    # spike-in normalization scenario dry-run (spike_in)
+bash tests/run_test.sh --real-run    # end-to-end run + output assertions (server validation; needs the full analysis environment)
 ```
 Test data is generated by `tests/make_testdata.py` with a fixed seed (2 × 100kb chromosomes, 3 chip + 2 atac samples); the dry-run defaults to 50000 read pairs per sample (CI passes `--reads 2000`). Before changing workflow code, read the documentation-sync checklist in [CONTRIBUTING](../CONTRIBUTING.md).
+
+**Q13: How do I add IDR / replicate-aware peak analysis?**
+Set `peak.replicate.enabled: true` (§5.3). Everything else is automatic per the sample table's replicate structure (a group's treat rows are its replicates). You need the external `idr` tool installed (python2; e.g. `conda create -n idr -c bioconda idr=2.0.4`, see the environment note in §5.3). Single-replicate groups keep using their pooled peaks.
+
+**Q14: Where does the blacklist come from?**
+ENCODE maintains blacklists for human/mouse; for rice there is none, so the workflow leaves `blacklist` empty by default. If you have one (self-built from repeated-artifact evidence, or from a closely related assembly), point the key at the BED file and FRiP/annotation switch to the filtered peak copies (§5.4).
+
+**Q15: My ATAC library shows a huge organelle fraction — what do I do?**
+Enable `qc.organelle` and check `results/5.QC/organelle/Organelle_summary.tsv`. High chloroplast fractions (common in plant ATAC from green tissues) waste sequencing depth; aligning against a nuclear-only reference, or in silico removing organelle-mapped reads upstream, are the standard remedies. The metric is informational — the workflow never filters BAMs on it.
+
+**Q16: How do I run a differential binding comparison?**
+Give the two conditions their own sample-table groups (≥ 2 treat replicates each), optionally label them with the `condition` column (plus `batch` for sequencing-batch blocking), then set `diffbind.enabled: true` and `diffbind.contrasts: [["groupA", "groupB"]]` (§5.6). Best combined with `peak.replicate.enabled: true` so DiffBind counts over per-replicate peak sets.
+
+**Q17: Do I need HOMER for the motif stage?**
+Yes — HOMER (findMotifsGenome.pl + a configured genome) is an external distribution, deliberately not in the conda template. Point the software.yaml `paths: homer_findmotifs` entry at the binary, install a genome for your assembly via `configureHomer`, and set `motif.homer_genome` (§5.5).
+
+**Q18: A QC gate shows FAIL — did my run fail?**
+No. The `qc.gates` table (§5.2.1) is informational: it compares the existing QC metrics against configurable reference thresholds (`qc.gates.thresholds`) but never aborts the pipeline. A `FAIL` names the metrics worth a look (`failed` column); `NA` marks metrics whose source stage is off (e.g. `dup_rate` for CUT&Tag, where duplicates are kept, or `tss_enrichment` for chip-only projects) — NAs alone produce a `WARN`, not a failure.
+
+**Q19: How do I add spike-in normalization for quantitative CUT&Tag comparisons?**
+Point `spike_in.fasta` at the spike-in genome FASTA (e.g. E. coli lambda spiked in before tagmentation) and set `spike_in.enabled: true` (§5.2.2). The workflow re-aligns each sample's unmapped read pairs against the spike-in genome and writes per-sample scale factors (`1e6 / spike-in mapped reads`) plus a QC summary into `results/5.QC/spike_in/` (injected into MultiQC). Add `spike_in.scale_bigwigs: true` to also multiply the bigWig tracks by the factors — per-sample tracks by their own factor, group FE tracks by the mean over the group's treat samples.
+
+**Q20: How do I switch the pooled peak caller to SEACR?**
+Set `peak.caller: seacr` (§5.1.1) — the CUT&RUN/CUT&Tag alternative caller (Yo et al. 2021). Install the external SEACR bash script (download from the SEACR GitHub; not in the conda template) and point software.yaml `paths: seacr` at it or put it on PATH. The peaks still land at the standard `results/4.peak/{group}_peaks.{narrowPeak,broadPeak}` paths, so FRiP/annotation/blacklist/motif keep working untouched. Two limitations to know: the replicate/IDR stage is MACS2-based, so `peak.replicate.enabled` cannot be combined with SEACR (validation error); and the `{group}_FE.bw` track carries pooled raw depth in SEACR mode (the bdgcmp fold-enrichment route needs MACS2's pileup), while `bigwig.per_sample` needs MACS2 mode entirely.
+
+**Q21: How do I run TOBIAS footprinting, and why is nothing scheduled for my chip groups?**
+Footprinting only makes sense for open-chromatin assays: with `footprint.enabled: true` the workflow runs TOBIAS ATACorrect/ScoreBigwig/BINDetect on the ATAC/FAIRE groups only (§5.5.1) — chip/cuttag groups never receive footprint jobs. Install TOBIAS in its own environment (`conda create -n chip-tobias -c bioconda tobias`) and point software.yaml `paths: tobias` at its `bin/TOBIAS` (or put `TOBIAS` on PATH), point `footprint.motifs` at a JASPAR/HOMER/MEME PFM file for your TFs, then verify the DAG with a dry-run (`bash run.sh -P . -n`); `bash tests/run_test.sh --footprint` dry-runs the same stage on the synthetic data without needing TOBIAS.

@@ -51,6 +51,33 @@ _PIPELINE_TOOLS = [name for name in DEFAULT_TOOLS if name != "rscript"]
 # resolver.
 R_PACKAGES = {"default": ["GenomicFeatures", "ChIPseeker"]}
 
+
+def _extra_exports(rt):
+    """Optional external tools resolved from software.yaml paths: (not part
+    of DEFAULT_TOOLS, so the preflight never demands them). `idr` is the
+    classic python2 IDR tool needed only when peak.replicate.enabled is true
+    (install separately, e.g. `conda create -n idr -c bioconda idr=2.0.4`,
+    reaching the rules as CHIP_IDR). `homer_findmotifs` is HOMER's
+    findMotifsGenome.pl, needed only when motif.enabled is true (external
+    HOMER distribution via configureHomer -> CHIP_HOMER_FINDMOTIFS). `seacr`
+    is the SEACR bash script, needed only when peak.caller is seacr
+    (https://github.com/yeolab/SEACR -> CHIP_SEACR). `tobias` is the TOBIAS
+    entry point needed only when footprint.enabled is true (separate
+    environment, e.g. `conda create -n chip-tobias -c bioconda tobias` ->
+    CHIP_TOBIAS). All fall back to the bare command name on PATH."""
+    values = {}
+    paths = rt["paths"] or {}
+    if paths.get("idr"):
+        values["CHIP_IDR"] = paths["idr"]
+    if paths.get("homer_findmotifs"):
+        values["CHIP_HOMER_FINDMOTIFS"] = paths["homer_findmotifs"]
+    if paths.get("seacr"):
+        values["CHIP_SEACR"] = paths["seacr"]
+    if paths.get("tobias"):
+        values["CHIP_TOBIAS"] = paths["tobias"]
+    return values
+
+
 SPEC = WorkflowSpec(
     env_prefix="CHIP",
     default_tools=DEFAULT_TOOLS,
@@ -60,6 +87,7 @@ SPEC = WorkflowSpec(
     # No OrgDb: peak annotation is GTF-based (makeTxDbFromGFF in
     # annoPeak_batch.R), so there is nothing to add here.
     orgdb={},
+    extra_exports=_extra_exports,
 )
 
 if __name__ == "__main__":

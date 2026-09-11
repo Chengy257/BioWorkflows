@@ -28,6 +28,34 @@ tools:
   deeptools: "bamCoverage"     # the deeptools suite is represented by the bamCoverage binary (the package ships no "deeptools" executable)
   spp: "run_spp.R"              # phantompeakqualtools' R entry point (command name inside the bioconda package)
 
-paths: {}
+paths:
+  # idr (irreproducible discovery rate) is a python2 tool deliberately kept
+  # OUT of the conda template; needed only when peak.replicate.enabled is
+  # true. Install separately, e.g.:
+  #   conda create -n idr -c bioconda idr=2.0.4
+  # then point this entry at the binary (absolute path) or put `idr` on PATH.
+  idr: "idr"
+  # HOMER motif enrichment (needed only when motif.enabled is true): the
+  # findMotifsGenome.pl entry point of an external HOMER distribution
+  # (configureHomer); command name or absolute path. The HOMER genome data
+  # (motif.homer_genome) is installed separately via configureHomer.
+  homer_findmotifs: "findMotifsGenome.pl"
+  # SEACR alternative pooled peak caller (needed only when peak.caller is
+  # seacr): an external bash script deliberately kept OUT of the conda
+  # template. Download BOTH SEACR_1.3.sh and its companion SEACR_1.3.R from
+  # https://github.com/FredHutch/SEACR into the same directory (the script
+  # derives the R companion's path from its own location; needs bash + awk +
+  # sort + Rscript), then point this entry at the script (absolute path,
+  # e.g. /opt/tools/SEACR_1.3.sh) or put it on PATH; exported to the rules
+  # as CHIP_SEACR and invoked as `bash {CHIP_SEACR} ...`.
+  seacr: "SEACR_1.3.sh"
+  # TOBIAS footprinting (needed only when footprint.enabled is true): a
+  # heavyweight tool with a dependency set of its own, deliberately kept OUT
+  # of the conda template. Install into a separate environment, e.g.:
+  #   conda create -n chip-tobias -c bioconda tobias
+  # then point this entry at the env's bin/TOBIAS console script (absolute
+  # path; it works standalone via its shebang interpreter) or put `TOBIAS`
+  # on PATH; exported to the rules as CHIP_TOBIAS.
+  tobias: "TOBIAS"
 
 databases: {}

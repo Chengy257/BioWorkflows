@@ -44,10 +44,73 @@ peak:
   keepdup: all        # MACS2 keeps all duplicates (dedup is decided upstream)
   qvalue: 0.05        # narrow peak q-value
   broad_cutoff: 0.05  # broad peak cutoff
+  caller: macs2       # pooled peak caller: macs2 | seacr (CUT&RUN/CUT&Tag alternative;
+                      # external bash script via software.yaml paths: -> CHIP_SEACR;
+                      # mutually exclusive with peak.replicate.enabled)
+  seacr:              # SEACR knobs, effective when caller is seacr
+    mode: stringent   # stringent | relaxed
+    normalize: norm   # norm | non (control normalization when the group has a control)
+    fdr_threshold: 0.01  # FDR threshold (0 < x < 1) for groups without a control
+  bigwig_measure: "FE"   # group track measure: FE | logFE (filename stays {group}_FE.bw)
   atac:               # ATAC/FAIRE peak-calling mode
     mode: bampe       # bampe (ENCODE ATAC v2 default) | shifted (classic Tn5 offset recipe)
     shift: -100       # shifted mode only
     extsize: 200      # shifted mode only
+  replicate:          # replicate-aware peak stage (v0.5; every key optional)
+    enabled: false    # per-replicate calling + IDR (narrow) / overlap consensus (broad);
+                      # needs the external `idr` tool for narrow groups (see software.yaml paths)
+    qvalue: 0.01      # relaxed per-replicate narrow cutoff feeding IDR (ENCODE)
+    idr_threshold: 0.05
+    idr_rank: "p.value"   # narrowPeak rank column: p.value | signal.value
+    consensus_min_replicates: 2   # support cutoff (broad consensus, >2-replicate IDR unions)
+    frip_on: "pooled"    # FRiP basis: pooled | consensus (consensus requires enabled: true)
+
+# ---------- Artifact-region blacklist (optional) ----------
+# blacklist: "/path/to/blacklist.bed"   # empty/unset = disabled; filtered peak copies
+#                                       # land in results/4.peak/blacklist_filtered/
+
+# ---------- Signal tracks (optional) ----------
+# bigwig:
+#   per_sample: false   # per-sample normalized coverage tracks (results/4.peak/samples/)
+#   normalize: "RPGC"   # RPGC | CPM
+#   bin: 25
+
+# ---------- Spike-in normalization (optional; CUT&Tag quantitative comparison) ----------
+# spike_in:
+#   enabled: false      # re-aligns the unmapped reads against the spike-in genome;
+#                       # per-sample scale factors + QC table in results/5.QC/spike_in/
+#   fasta: "/path/to/spikein.fasta"   # required when enabled (e.g. E. coli lambda)
+#   name: "spike"       # label used in the summary tables / MultiQC section
+#   scale_bigwigs: false  # also multiply the bigWig tracks by the scale factors
+#                         # (group FE tracks: mean over the group's treat samples)
+
+# ---------- HOMER motif enrichment (optional) ----------
+# motif:
+#   enabled: false
+#   homer_genome: "hg38"   # required when enabled (HOMER tag or custom:/path/to/genome)
+#   size: "given"          # findMotifsGenome.pl -size
+#   background: ""         # optional -bg BED
+#   extra: ""              # extra findMotifsGenome.pl arguments
+
+# ---------- Differential binding (optional; DiffBind) ----------
+# diffbind:
+#   enabled: false
+#   contrasts: [["H3K27ac_WT_vs_IgG", "H3K27ac_mut_vs_IgG"]]   # pairs of groups, >= 2 treats each
+#   analysis: "DESeq2"     # DESeq2 | edgeR
+#   summit_flank: 250      # 0 = full peak regions
+#   use_controls: false
+#   fdr: 0.05
+#   foldchange: 1.0
+#   batch_correction: true # uses the optional sample-table batch column
+
+# ---------- TOBIAS footprinting (optional; ATAC/FAIRE groups only) ----------
+# footprint:
+#   enabled: false     # bias-corrected footprinting via TOBIAS on every atac/faire
+#                      # group (results/7.footprint/{group}/; external TOBIAS install
+#                      # via software.yaml paths: -> CHIP_TOBIAS)
+#   motifs: "/path/to/motifs.pfm"   # required when enabled (JASPAR/HOMER/MEME PFM file)
+#   bindetect: true    # also run the BINDetect binding-detection step
+#   motif_pvalue: 1e-4 # BINDetect motif significance cutoff (null = tool default)
 
 # ---------- Annotation and signal windows ----------
 region_flank: 3000   # peak-annotation flank and deeptools window length (bp)
@@ -57,3 +120,19 @@ qc:
   nsc_rsc: false
   frip: true
   deeptools: true
+  tss: false          # TSS enrichment for atac/faire treats (uses the deeptools suite)
+  organelle: false    # organelle (chloroplast/mitochondrion) read fraction from idxstats
+  # organelle_patterns: [chrc, chrm, pt, mt, pltd, chloroplast, mitochondr, plastid]
+  #   contig-name patterns; <= 3 chars match exactly (case-insensitive), longer as substrings
+  gates:              # QC gate summary (v0.6): one PASS/WARN/FAIL row per sample
+    enabled: false    # aggregating the QC metrics into results/5.QC/gates/gate_summary.tsv
+                      # (injected into MultiQC; informational only — the pipeline never
+                      # hard-fails on a gate)
+    thresholds:       # each metric gates only when its source stage is on (else NA)
+      mapping_rate_min: 0.70   # flagstat mapped/total of the analysis BAM
+      dup_rate_max: 0.50       # picard PERCENT_DUPLICATION (needs dedup.<assay>: true)
+      frip_min: 0.01           # FRiP floor (qc.frip)
+      nsc_min: 1.05            # SPP floors (qc.nsc_rsc)
+      rsc_min: 0.8
+      tss_min: 6.0             # TSS enrichment floor (qc.tss)
+      organelle_max: 0.20      # organelle fraction ceiling (qc.organelle)

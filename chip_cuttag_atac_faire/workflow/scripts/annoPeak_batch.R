@@ -56,7 +56,14 @@ pdf(file.path(outdir, "Peakanno_PeakDistributions.pdf"), height = 8, width = 8)
   plotAnnoBar(peakAnnoList)
   plotDistToTSS(peakAnnoList, title = "Distribution of binding loci relative to TSS")
   plotAvgProf(tagMatrixList, xlim = c(-flank, flank), conf = 0.95, resample = 500, facet = "row")
-  tagHeatmap(tagMatrixList, xlim = c(-flank, flank))
+  # tagHeatmap's xlim argument is required in ChIPseeker <= 1.36 but removed
+  # in 1.38+ (the tagMatrix attribute carries the range); pass it only when
+  # the installed signature accepts the argument
+  if ("xlim" %in% names(formals(tagHeatmap))) {
+    tagHeatmap(tagMatrixList, xlim = c(-flank, flank))
+  } else {
+    tagHeatmap(tagMatrixList)
+  }
 dev.off()
 
 message("Peak annotation done: ", outdir)

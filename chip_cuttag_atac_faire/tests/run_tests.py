@@ -52,10 +52,13 @@ def extract_workflow_functions():
     m = re.search(r"\n(?=def |# -|BAM_TARGETS)", block_b[len("def _group_regex("):])
     if m:
         block_b = block_b[: len("def _group_regex(") + m.start() + 1]
+    # Replicate/QC pure helpers (v0.5): from _unordered_pairs to the next divider
+    block_c = segment("def _unordered_pairs(", ["\n# -----"])
 
     ns = {"csv": csv, "os": os, "re": re, "WorkflowError": WorkflowError,
           "BASE_DIR": REPO}
-    exec(compile(block_a + "\n\n" + block_b, "common.smk(extracted)", "exec"), ns)
+    exec(compile(block_a + "\n\n" + block_b + "\n\n" + block_c,
+                 "common.smk(extracted)", "exec"), ns)
     return ns
 
 
@@ -63,6 +66,11 @@ WF = extract_workflow_functions()
 load_sample_table = WF["load_sample_table"]
 _resolve_sample_table = WF["_resolve_sample_table"]
 _group_regex = WF["_group_regex"]
+_unordered_pairs = WF["_unordered_pairs"]
+idr_pair_slug = WF["idr_pair_slug"]
+parse_idr_pair_slug = WF["parse_idr_pair_slug"]
+_group_calls_narrow = WF["_group_calls_narrow"]
+_is_organelle_contig = WF["_is_organelle_contig"]
 
 
 def write_csv(rows):
@@ -88,7 +96,7 @@ HEADER = ["sample_id", "role", "group", "seqtype", "layout", "peak_type"]
 
 # ---------------------------------------------------------------------
 print("== 1. Sample-table parsing (real example file) ==")
-samples, groups, seqtype_of = load_sample_table(
+samples, groups, seqtype_of, cond_of, batch_of = load_sample_table(
     os.path.join(REPO, "config", "samples.csv"))
 check("example: 8 samples, deduplicated, order preserved",
       samples == ["myc", "IgG", "H3K27me3_rep1", "IgG_cuta",
@@ -103,7 +111,7 @@ check("example: atac_leaf without control is valid",
       groups["atac_leaf"]["control"] == [] and groups["atac_leaf"]["seqtype"] == "atac")
 check("example: faire group seqtype mapping", seqtype_of["faire_root"] == "faire")
 
-s2, g2, st2 = load_sample_table(os.path.join(REPO, "example", "samples.csv"))
+s2, g2, st2, _c2, _b2 = load_sample_table(os.path.join(REPO, "example", "samples.csv"))
 check("example/samples.csv: real 2-sample table parses",
       s2 == ["myc", "IgG"] and g2["myc_vs_IgG"]["peak_type"] == "narrow")
 
@@ -125,6 +133,36 @@ expect_error("empty table rejected", [HEADER], "no data rows")
 expect_error("comma in sample name rejected", [HEADER, ["a,b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
 expect_error("double underscore in sample name rejected", [HEADER, ["a__b", "treat", "g", "chip", "PE", "narrow"]], "illegal characters")
 expect_error("space in group name rejected", [HEADER, ["a", "treat", "g 1", "chip", "PE", "narrow"]], "illegal characters")
+
+print("== 2b. Optional condition/batch columns (differential binding) ==")
+EXT = HEADER + ["condition", "batch"]
+_ext_path = write_csv([EXT,
+                       ["a", "treat", "g1", "chip", "PE", "narrow", "WT", "b1"],
+                       ["b", "treat", "g1", "chip", "PE", "narrow", "WT", "b2"],
+                       ["ctl", "control", "g1", "chip", "PE", "narrow", "", ""],
+                       ["c", "treat", "g2", "chip", "PE", "narrow", "mut", "b1"],
+                       ["d", "treat", "g2", "chip", "PE", "narrow", "mut", "b2"]])
+try:
+    _s, _g, _st, _cond, _batch = load_sample_table(_ext_path)
+    check("extended table parses; condition/batch captured for treats",
+          _cond == {"a": "WT", "b": "WT", "c": "mut", "d": "mut"}
+          and _batch["a"] == "b1" and _batch["d"] == "b2"
+          and _g["g1"]["condition"] == "WT")
+    check("extended table: legacy 6-column tables unaffected (empty maps)",
+          all(v == "" for v in load_sample_table(
+              os.path.join(REPO, "config", "samples.csv"))[3].values()))
+finally:
+    os.unlink(_ext_path)
+expect_error("inconsistent condition within group rejected",
+             [EXT, ["a", "treat", "g", "chip", "PE", "narrow", "WT", ""],
+              ["b", "treat", "g", "chip", "PE", "narrow", "mut", ""]],
+             "different condition values")
+expect_error("illegal condition value rejected",
+             [EXT, ["a", "treat", "g", "chip", "PE", "narrow", "W T", ""]],
+             "illegal characters")
+expect_error("illegal batch value rejected",
+             [EXT, ["a", "treat", "g", "chip", "PE", "narrow", "WT", "b;1"]],
+             "illegal characters")
 
 print("== 3. ATAC peak-calling mode whitelist ==")
 with open(os.path.join(REPO, "workflow", "rules", "common.smk"), encoding="utf-8") as fh:
@@ -170,8 +208,21 @@ GOOD_CFG = {
     "region_flank": 3000,
     "dedup": {"chip": True, "cuttag": False, "atac": True, "faire": True},
     "peak": {"keepdup": "all", "qvalue": 0.05, "broad_cutoff": 0.05,
-             "atac": {"mode": "bampe", "shift": -100, "extsize": 200}},
-    "qc": {"nsc_rsc": False, "frip": True, "deeptools": True},
+             "bigwig_measure": "FE",
+             "atac": {"mode": "bampe", "shift": -100, "extsize": 200},
+             "replicate": {"enabled": False, "qvalue": 0.01,
+                           "idr_threshold": 0.05, "idr_rank": "p.value",
+                           "consensus_min_replicates": 2, "frip_on": "pooled"}},
+    "blacklist": "",
+    "bigwig": {"per_sample": False, "normalize": "RPGC", "bin": 25},
+    "motif": {"enabled": False, "homer_genome": "", "size": "given",
+              "background": "", "extra": ""},
+    "diffbind": {"enabled": False, "contrasts": [], "analysis": "DESeq2",
+                 "summit_flank": 250, "use_controls": False,
+                 "fdr": 0.05, "foldchange": 1.0, "batch_correction": True},
+    "qc": {"nsc_rsc": False, "frip": True, "deeptools": True,
+           "tss": False, "organelle": False,
+           "organelle_patterns": ["chrc", "chrm"]},
     "trim": {"quality": 25, "stringency": 3, "error_rate": 0.1, "extra": ""},
 }
 
@@ -219,6 +270,231 @@ def _two_errors(c):
 vc_case("multiple errors aggregated in one report",
         _two_errors, ["2 issues", "gtf", "dedup.atac"])
 
+# --- v0.5 keys: peak.replicate / blacklist / qc.tss / qc.organelle ---
+vc_case("replicate block is optional (legacy configs stay valid)",
+        lambda c: c["peak"].pop("replicate"), [], expect_error=False)
+vc_case("bad idr_rank reported",
+        lambda c: c["peak"]["replicate"].__setitem__("idr_rank", "pvalue"),
+        ["idr_rank"])
+vc_case("idr_threshold out of range reported",
+        lambda c: c["peak"]["replicate"].__setitem__("idr_threshold", 5),
+        ["peak.replicate.idr_threshold"])
+vc_case("replicate qvalue non-numeric reported",
+        lambda c: c["peak"]["replicate"].__setitem__("qvalue", "x"),
+        ["peak.replicate.qvalue"])
+vc_case("consensus_min_replicates below 2 reported",
+        lambda c: c["peak"]["replicate"].__setitem__("consensus_min_replicates", 1),
+        ["consensus_min_replicates"])
+vc_case("bad frip_on reported",
+        lambda c: c["peak"]["replicate"].__setitem__("frip_on", "idr"),
+        ["frip_on"])
+vc_case("frip_on=consensus without enabled reported",
+        lambda c: c["peak"]["replicate"].__setitem__("frip_on", "consensus"),
+        ["frip_on=consensus requires peak.replicate.enabled"])
+vc_case("frip_on=consensus with enabled accepted",
+        lambda c: (c["peak"]["replicate"].__setitem__("enabled", True),
+                   c["peak"]["replicate"].__setitem__("frip_on", "consensus")),
+        [], expect_error=False)
+vc_case("replicate block of wrong type reported",
+        lambda c: c["peak"].__setitem__("replicate", "on"),
+        ["peak.replicate must be a mapping"])
+vc_case("non-boolean qc.tss reported",
+        lambda c: c["qc"].__setitem__("tss", "yes"), ["qc.tss"])
+vc_case("organelle_patterns of wrong shape reported",
+        lambda c: c["qc"].__setitem__("organelle_patterns", "chrc"),
+        ["organelle_patterns"])
+vc_case("non-string blacklist reported",
+        lambda c: c.__setitem__("blacklist", 3), ["blacklist must be a string"])
+# --- v0.5 phase 3/4/5 keys: bigwig / motif / diffbind ---
+vc_case("bigwig/motif/diffbind blocks are optional (legacy configs stay valid)",
+        lambda c: (c.pop("bigwig"), c.pop("motif"), c.pop("diffbind")),
+        [], expect_error=False)
+vc_case("bad bigwig.normalize reported",
+        lambda c: c["bigwig"].__setitem__("normalize", "RPKM"),
+        ["bigwig.normalize"])
+vc_case("non-positive bigwig.bin reported",
+        lambda c: c["bigwig"].__setitem__("bin", 0), ["bigwig.bin"])
+vc_case("non-boolean bigwig.per_sample reported",
+        lambda c: c["bigwig"].__setitem__("per_sample", "yes"), ["bigwig.per_sample"])
+vc_case("bad peak.bigwig_measure reported",
+        lambda c: c["peak"].__setitem__("bigwig_measure", "log2"),
+        ["peak.bigwig_measure"])
+vc_case("motif enabled without homer_genome reported",
+        lambda c: c["motif"].__setitem__("enabled", True),
+        ["motif.homer_genome is required"])
+vc_case("motif enabled with homer_genome accepted",
+        lambda c: (c["motif"].__setitem__("enabled", True),
+                   c["motif"].__setitem__("homer_genome", "hg38")),
+        [], expect_error=False)
+vc_case("bad diffbind.analysis reported",
+        lambda c: c["diffbind"].__setitem__("analysis", "deseq"),
+        ["diffbind.analysis"])
+vc_case("negative diffbind.summit_flank reported",
+        lambda c: c["diffbind"].__setitem__("summit_flank", -1),
+        ["diffbind.summit_flank"])
+vc_case("diffbind.fdr out of range reported",
+        lambda c: c["diffbind"].__setitem__("fdr", 2), ["diffbind.fdr"])
+vc_case("diffbind.foldchange below 1 reported",
+        lambda c: c["diffbind"].__setitem__("foldchange", 0.5), ["diffbind.foldchange"])
+vc_case("diffbind block of wrong type reported",
+        lambda c: c.__setitem__("diffbind", "on"), ["diffbind must be a mapping"])
+
+# --- v0.6 keys: qc.gates ---
+vc_case("valid qc.gates block accepted",
+        lambda c: c["qc"].__setitem__(
+            "gates", {"enabled": True,
+                      "thresholds": {"mapping_rate_min": 0.7, "dup_rate_max": 0.5,
+                                     "frip_min": 0.01, "nsc_min": 1.05, "rsc_min": 0.8,
+                                     "tss_min": 6.0, "organelle_max": 0.2}}),
+        [], expect_error=False)
+vc_case("qc.gates block is optional (legacy configs stay valid)",
+        lambda c: c["qc"].pop("gates", None), [], expect_error=False)
+vc_case("non-boolean qc.gates.enabled reported",
+        lambda c: c["qc"].__setitem__("gates", {"enabled": "yes"}), ["qc.gates.enabled"])
+vc_case("qc.gates of wrong type reported",
+        lambda c: c["qc"].__setitem__("gates", "on"), ["qc.gates must be a mapping"])
+vc_case("qc.gates.thresholds of wrong type reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": 3}),
+        ["qc.gates.thresholds must be a mapping"])
+vc_case("gates mapping_rate_min above 1 reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"mapping_rate_min": 1.5}}),
+        ["qc.gates.thresholds.mapping_rate_min"])
+vc_case("gates negative frip_min reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"frip_min": -0.1}}),
+        ["qc.gates.thresholds.frip_min"])
+vc_case("gates non-positive nsc_min reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"nsc_min": 0}}),
+        ["qc.gates.thresholds.nsc_min"])
+vc_case("gates fractional tss_min accepted",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"tss_min": 0.5}}),
+        [], expect_error=False)
+vc_case("gates non-numeric rsc_min reported",
+        lambda c: c["qc"].__setitem__("gates", {"thresholds": {"rsc_min": "high"}}),
+        ["qc.gates.thresholds.rsc_min"])
+
+# --- v0.6 keys: spike_in ---
+vc_case("valid spike_in block accepted (missing fasta file warns only)",
+        lambda c: c.update({"spike_in": {"enabled": True, "fasta": "/nonexistent/spike.fa",
+                                         "name": "lambda", "scale_bigwigs": True}}),
+        [], expect_error=False)
+vc_case("spike_in block is optional (legacy configs stay valid)",
+        lambda c: c.pop("spike_in", None), [], expect_error=False)
+vc_case("spike_in of wrong type reported",
+        lambda c: c.__setitem__("spike_in", "on"), ["spike_in must be a mapping"])
+vc_case("non-boolean spike_in.enabled reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": "yes"}), ["spike_in.enabled"])
+vc_case("non-boolean spike_in.scale_bigwigs reported",
+        lambda c: c.__setitem__("spike_in", {"scale_bigwigs": "yes"}),
+        ["spike_in.scale_bigwigs"])
+vc_case("spike_in enabled without fasta reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": ""}),
+        ["spike_in.fasta is required"])
+vc_case("scale_bigwigs without spike_in.enabled reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": False,
+                                             "fasta": "/nonexistent/spike.fa",
+                                             "scale_bigwigs": True}),
+        ["spike_in.scale_bigwigs requires spike_in.enabled"])
+vc_case("spike_in empty name reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": "spike.fa",
+                                             "name": "  "}),
+        ["spike_in.name"])
+vc_case("spike_in non-string fasta reported",
+        lambda c: c.__setitem__("spike_in", {"enabled": True, "fasta": 3}),
+        ["spike_in.fasta must be a string"])
+
+# Placeholder warning: a "/path/to/"-style fasta warns but never aborts.
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+
+def _vc_stdout(mutate):
+    cfg = copy.deepcopy(GOOD_CFG)
+    mutate(cfg)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        validate_config(cfg)
+    return buf.getvalue()
+
+
+_out = _vc_stdout(lambda c: c.update(
+    {"spike_in": {"enabled": True, "fasta": "/path/to/spike.fa", "name": "lambda",
+                  "scale_bigwigs": False}}))
+check("spike_in placeholder fasta warns but does not abort",
+      "[config warning]" in _out and "spike-in FASTA does not exist" in _out
+      and "/path/to/spike.fa" in _out, _out[:200])
+
+_out = _vc_stdout(lambda c: c.update(
+    {"footprint": {"enabled": True, "motifs": "/path/to/motifs.pfm", "bindetect": True,
+                   "motif_pvalue": 1e-4}}))
+check("footprint placeholder motif file warns but does not abort",
+      "[config warning]" in _out and "footprint motif file does not exist" in _out
+      and "/path/to/motifs.pfm" in _out, _out[:200])
+
+# --- v0.6 keys: peak.caller / peak.seacr (alternative pooled caller) ---
+vc_case("peak.caller/seacr blocks are optional (legacy configs stay valid)",
+        lambda c: (c["peak"].pop("caller", None), c["peak"].pop("seacr", None)),
+        [], expect_error=False)
+vc_case("peak.caller=macs2 accepted",
+        lambda c: c["peak"].__setitem__("caller", "macs2"), [], expect_error=False)
+vc_case("peak.caller=seacr accepted",
+        lambda c: c["peak"].__setitem__("caller", "seacr"), [], expect_error=False)
+vc_case("bad peak.caller reported",
+        lambda c: c["peak"].__setitem__("caller", "macs3"),
+        ["peak.caller must be macs2 or seacr"])
+vc_case("peak.seacr of wrong type reported",
+        lambda c: c["peak"].__setitem__("seacr", "on"),
+        ["peak.seacr must be a mapping"])
+vc_case("bad seacr.mode reported",
+        lambda c: c["peak"].__setitem__("seacr", {"mode": "strict"}),
+        ["peak.seacr.mode must be stringent or relaxed"])
+vc_case("bad seacr.normalize reported",
+        lambda c: c["peak"].__setitem__("seacr", {"normalize": "RPKM"}),
+        ["peak.seacr.normalize must be norm or non"])
+vc_case("seacr.fdr_threshold at the exclusive upper bound reported",
+        lambda c: c["peak"].__setitem__("seacr", {"fdr_threshold": 1}),
+        ["peak.seacr.fdr_threshold must be in (0, 1)"])
+vc_case("seacr.fdr_threshold non-numeric reported",
+        lambda c: c["peak"].__setitem__("seacr", {"fdr_threshold": "x"}),
+        ["peak.seacr.fdr_threshold must be numeric"])
+vc_case("caller=seacr with replicate enabled reported",
+        lambda c: (c["peak"].__setitem__("caller", "seacr"),
+                   c["peak"]["replicate"].__setitem__("enabled", True)),
+        ["peak.caller=seacr", "peak.replicate.enabled"])
+vc_case("caller=seacr guard tolerates a non-mapping replicate block (type error reported instead)",
+        lambda c: (c["peak"].__setitem__("caller", "seacr"),
+                   c["peak"].__setitem__("replicate", "on")),
+        ["peak.replicate must be a mapping"], expect_error=True)
+
+# --- v0.6 keys: footprint (TOBIAS footprinting) ---
+vc_case("valid footprint block accepted (missing motif file warns only)",
+        lambda c: c.update({"footprint": {"enabled": True, "motifs": "/nonexistent/motifs.pfm",
+                                          "bindetect": True, "motif_pvalue": 1e-4}}),
+        [], expect_error=False)
+vc_case("footprint block is optional (legacy configs stay valid)",
+        lambda c: c.pop("footprint", None), [], expect_error=False)
+vc_case("footprint of wrong type reported",
+        lambda c: c.__setitem__("footprint", "on"), ["footprint must be a mapping"])
+vc_case("non-boolean footprint.enabled reported",
+        lambda c: c.__setitem__("footprint", {"enabled": "yes"}), ["footprint.enabled"])
+vc_case("non-boolean footprint.bindetect reported",
+        lambda c: c.__setitem__("footprint", {"bindetect": "yes"}), ["footprint.bindetect"])
+vc_case("footprint enabled without motifs reported",
+        lambda c: c.__setitem__("footprint", {"enabled": True, "motifs": ""}),
+        ["footprint.motifs is required"])
+vc_case("footprint non-string motifs reported",
+        lambda c: c.__setitem__("footprint", {"enabled": True, "motifs": 3}),
+        ["footprint.motifs must be a string"])
+vc_case("footprint motif_pvalue out of range reported",
+        lambda c: c.__setitem__("footprint", {"motif_pvalue": 2}),
+        ["footprint.motif_pvalue must be in (0, 1]"])
+vc_case("footprint motif_pvalue non-numeric reported",
+        lambda c: c.__setitem__("footprint", {"motif_pvalue": "x"}),
+        ["footprint.motif_pvalue must be numeric"])
+vc_case("footprint motif_pvalue empty accepted (tool default)",
+        lambda c: c.update({"footprint": {"enabled": True, "motifs": "motifs.pfm",
+                                          "motif_pvalue": None}}),
+        [], expect_error=False)
+
 print("== 5. Wildcard constraint regex ==")
 rx = _group_regex(["myc_vs_IgG", "atac.leaf"])
 check("regex: exact match (with escaping)",
@@ -226,6 +502,30 @@ check("regex: exact match (with escaping)",
 check("regex: unlisted groups and variants do not match",
       not re.fullmatch(rx, "other") and not re.fullmatch(rx, "atacXleaf"))
 check("regex: empty list never matches", re.fullmatch(_group_regex([]), "anything") is None)
+
+print("== 5b. Replicate/QC helper functions (real source) ==")
+check("pairs: unordered pair enumeration order and count",
+      _unordered_pairs(["a", "b", "c"]) == [("a", "b"), ("a", "c"), ("b", "c")])
+check("pairs: empty and singleton lists yield no pair",
+      _unordered_pairs([]) == [] and _unordered_pairs(["a"]) == [])
+slug = idr_pair_slug("rep1", "rep2")
+check("idr slug: round-trips through the parser",
+      slug == "rep1__vs__rep2" and parse_idr_pair_slug(slug) == ("rep1", "rep2"))
+check("group routing: atac/faire always narrow",
+      _group_calls_narrow({"seqtype": "atac", "peak_type": "none"})
+      and _group_calls_narrow({"seqtype": "faire", "peak_type": "none"}))
+check("group routing: chip by peak_type",
+      _group_calls_narrow({"seqtype": "chip", "peak_type": "narrow"})
+      and not _group_calls_narrow({"seqtype": "chip", "peak_type": "broad"}))
+check("organelle: short patterns match exactly, not as substrings",
+      _is_organelle_contig("ChrC", ["chrc", "chrm"])
+      and _is_organelle_contig("chrM", ["chrc", "chrm"])
+      and not _is_organelle_contig("chrUn_ptg0001l", ["pt", "mt"]))
+check("organelle: long patterns match as substrings",
+      _is_organelle_contig("mitochondrion_genome", ["mitochondr"])
+      and _is_organelle_contig("Oschloroplast_fake", ["chloroplast"]))
+check("organelle: no match on plain chromosomes",
+      not _is_organelle_contig("chr1", ["chrc", "chrm", "pt", "mt"]))
 
 print("== 6. mqc shell rule bodies executed for real (snakemake-style format rendering + bash) ==")
 import subprocess  # noqa: E402
@@ -348,9 +648,41 @@ if HAS_YAML:
     check("config: dedup covers all four assays",
           set(cfg["dedup"]) == {"chip", "cuttag", "atac", "faire"})
     check("config: peak sub-keys present",
-          {"keepdup", "qvalue", "broad_cutoff", "atac"} <= set(cfg["peak"]))
+          {"keepdup", "qvalue", "broad_cutoff", "atac", "replicate"} <= set(cfg["peak"]))
+    check("config: replicate sub-keys present",
+          {"enabled", "qvalue", "idr_threshold", "idr_rank",
+           "consensus_min_replicates", "frip_on"} <= set(cfg["peak"]["replicate"]))
+    check("config: blacklist key present and defaults to disabled",
+          cfg.get("blacklist", None) == "")
     check("config: qc switches present",
-          {"nsc_rsc", "frip", "deeptools"} <= set(cfg["qc"]))
+          {"nsc_rsc", "frip", "deeptools", "tss", "organelle"} <= set(cfg["qc"]))
+    check("config: new QC switches default to off",
+          cfg["qc"]["tss"] is False and cfg["qc"]["organelle"] is False
+          and cfg["peak"]["replicate"]["enabled"] is False)
+    check("config: v0.5 phase 3/4/5 keys present and default to off",
+          cfg.get("bigwig", {}).get("per_sample") is False
+          and cfg.get("motif", {}).get("enabled") is False
+          and cfg.get("diffbind", {}).get("enabled") is False
+          and cfg["peak"].get("bigwig_measure", "FE") == "FE")
+    check("config: qc.gates block present, default-off, full threshold set",
+          cfg["qc"].get("gates", {}).get("enabled") is False
+          and {"mapping_rate_min", "dup_rate_max", "frip_min", "nsc_min",
+               "rsc_min", "tss_min", "organelle_max"}
+          <= set(cfg["qc"].get("gates", {}).get("thresholds", {})))
+    check("config: spike_in block present and default-off",
+          cfg.get("spike_in", {}).get("enabled") is False
+          and cfg.get("spike_in", {}).get("scale_bigwigs") is False
+          and isinstance(cfg.get("spike_in", {}).get("fasta"), str)
+          and isinstance(cfg.get("spike_in", {}).get("name"), str))
+    check("config: peak.caller defaults to macs2 with the full seacr block",
+          cfg["peak"].get("caller") == "macs2"
+          and cfg["peak"].get("seacr", {}).get("mode") == "stringent"
+          and cfg["peak"].get("seacr", {}).get("normalize") == "norm"
+          and cfg["peak"].get("seacr", {}).get("fdr_threshold") == 0.01)
+    check("config: footprint block present and default-off",
+          cfg.get("footprint", {}).get("enabled") is False
+          and isinstance(cfg.get("footprint", {}).get("motifs"), str)
+          and cfg.get("footprint", {}).get("bindetect") is True)
     # resources.yaml: every rule entry must be a known rule with valid fields.
     with open(os.path.join(REPO, "config", "resources.yaml"), encoding="utf-8") as fh:
         res_cfg = yaml.safe_load(fh) or {}
@@ -358,6 +690,17 @@ if HAS_YAML:
     _bad_res = [k for k, v in (res_cfg.get("resources") or {}).items()
                 if not isinstance(v, dict) or not {"threads", "mem_mb", "runtime_min"} <= set(v)]
     check("resources.yaml: every rule entry has threads/mem_mb/runtime_min", not _bad_res, str(_bad_res))
+    check("resources.yaml: gates rules declared",
+          {"gates_flagstat", "qc_gates"} <= set(res_cfg.get("resources") or {}))
+    check("resources.yaml: spike_in rules declared",
+          {"spike_bowtie2_index", "spike_align", "spike_summary"}
+          <= set(res_cfg.get("resources") or {}))
+    check("resources.yaml: seacr rules declared",
+          {"seacr_bedgraph_treat", "seacr_bedgraph_control", "seacr_callpeak",
+           "seacr_bigwig"} <= set(res_cfg.get("resources") or {}))
+    check("resources.yaml: footprint rules declared",
+          {"footprint_ataccorrect", "footprint_scorebigwig", "footprint_bindetect"}
+          <= set(res_cfg.get("resources") or {}))
 
 print("== 8. Per-rule resource declarations ==")
 # --- resource helpers: extract the real source from common.smk, inject config ---
@@ -485,11 +828,390 @@ try:
               f"rc2={_gen2.returncode} stderr2={_gen2.stderr[-200:]}")
     else:
         check("determinism: genome.fa md5 identical across two runs with the same args", False, "first generation failed; skipped")
+
+    # --spike-in scenario: synthetic spike-in reference + config splice
+    _gen_out3 = tempfile.mkdtemp(prefix="testdata_spike_")
+    try:
+        _gen3 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out3,
+                                "--reads", "200", "--spike-in"],
+                               capture_output=True, text=True, timeout=300)
+        _spike_fa = os.path.join(_gen_out3, "ref", "spike.fa")
+        _cfg_path3 = os.path.join(_gen_out3, "config.yaml")
+        _cfg_text = open(_cfg_path3, encoding="utf-8").read() if os.path.exists(_cfg_path3) else ""
+        _spike_hdrs = []
+        if os.path.exists(_spike_fa):
+            with open(_spike_fa, encoding="ascii") as fh:
+                _spike_hdrs = [line[1:].strip() for line in fh if line.startswith(">")]
+        check("generator --spike-in: ref/spike.fa written with 2 contigs and the config block spliced",
+              _gen3.returncode == 0 and _spike_hdrs == ["spike_ctg1", "spike_ctg2"]
+              and "spike_in:" in _cfg_text and '"ref/spike.fa"' in _cfg_text,
+              f"rc={_gen3.returncode} hdrs={_spike_hdrs} stderr={_gen3.stderr[-200:]}")
+    finally:
+        shutil.rmtree(_gen_out3, ignore_errors=True)
+
+    # --seacr scenario: config splice only (no extra samples or reference files)
+    _gen_out4 = tempfile.mkdtemp(prefix="testdata_seacr_")
+    try:
+        _gen4 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out4,
+                                "--reads", "200", "--seacr"],
+                               capture_output=True, text=True, timeout=300)
+        _cfg_text4 = ""
+        if os.path.exists(os.path.join(_gen_out4, "config.yaml")):
+            with open(os.path.join(_gen_out4, "config.yaml"), encoding="utf-8") as fh:
+                _cfg_text4 = fh.read()
+        check("generator --seacr: peak.caller=seacr config block spliced under peak:",
+              _gen4.returncode == 0 and "caller: seacr" in _cfg_text4
+              and "seacr:" in _cfg_text4 and "fdr_threshold: 0.01" in _cfg_text4,
+              f"rc={_gen4.returncode} stderr={_gen4.stderr[-200:]}")
+    finally:
+        shutil.rmtree(_gen_out4, ignore_errors=True)
+
+    # --footprint scenario: synthetic JASPAR-style PFM (2 motifs) + config splice
+    _gen_out5 = tempfile.mkdtemp(prefix="testdata_footprint_")
+    try:
+        _gen5 = subprocess.run([sys.executable, _gen_py, "--outdir", _gen_out5,
+                                "--reads", "200", "--footprint"],
+                               capture_output=True, text=True, timeout=300)
+        _pfm_path = os.path.join(_gen_out5, "ref", "motifs.pfm")
+        _pfm_motifs, _pfm_rows = [], 0
+        if os.path.exists(_pfm_path):
+            with open(_pfm_path, encoding="ascii") as fh:
+                for line in fh:
+                    if line.startswith(">"):
+                        _pfm_motifs.append(line[1:].split()[0])
+                    elif line[:1] in "ACGT":
+                        _pfm_rows += 1
+        _cfg_text5 = ""
+        if os.path.exists(os.path.join(_gen_out5, "config.yaml")):
+            with open(os.path.join(_gen_out5, "config.yaml"), encoding="utf-8") as fh:
+                _cfg_text5 = fh.read()
+        check("generator --footprint: ref/motifs.pfm with 2 JASPAR motifs (4 count rows each) "
+              "and the config block spliced",
+              _gen5.returncode == 0 and _pfm_motifs == ["motif1", "motif2"]
+              and _pfm_rows == 8
+              and "footprint:" in _cfg_text5 and '"ref/motifs.pfm"' in _cfg_text5,
+              f"rc={_gen5.returncode} motifs={_pfm_motifs} rows={_pfm_rows} "
+              f"stderr={_gen5.stderr[-200:]}")
+    finally:
+        shutil.rmtree(_gen_out5, ignore_errors=True)
 except Exception as exc:  # generator-group exceptions must not abort the remaining summary
     check("generator assertion group aborted abnormally", False, repr(exc))
 finally:
     shutil.rmtree(_gen_out1, ignore_errors=True)
     shutil.rmtree(_gen_out2, ignore_errors=True)
+
+print("== 10. v0.5 stage scripts (tss_from_bed / tss_score / organelle_summary / replicate_summary) ==")
+_stmp = tempfile.mkdtemp(prefix="v05_scripts_")
+
+
+def _run_py(script, args, cwd=None):
+    return subprocess.run([sys.executable, os.path.join(REPO, "workflow", "scripts", script)] + args,
+                          capture_output=True, text=True, timeout=60, cwd=cwd)
+
+
+# --- tss_from_bed.py: strand-aware derivation, comment skipping, BED4 error ---
+_bed = os.path.join(_stmp, "genes.bed")
+with open(_bed, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("# comment line skipped\n")
+    fh.write('track name="also skipped"\n')
+    fh.write("chr1\t1000\t2000\tgene1\t0\t+\n")
+    fh.write("chr2\t3000\t4000\tgene2\t0\t-\n")
+_tss = os.path.join(_stmp, "tss.bed")
+_r = _run_py("tss_from_bed.py", [_bed, _tss])
+_tss_lines = open(_tss, encoding="utf-8").read().splitlines() if os.path.exists(_tss) else []
+check("tss_from_bed: exits 0, skips comments, 1-bp TSS per strand",
+      _r.returncode == 0
+      and _tss_lines == ["chr1\t1000\t1001", "chr2\t3999\t4000"],
+      f"rc={_r.returncode} lines={_tss_lines}")
+_bed4 = os.path.join(_stmp, "bed4.bed")
+with open(_bed4, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("chr1\t1000\t2000\tgene1\n")
+_r = _run_py("tss_from_bed.py", [_bed4, os.path.join(_stmp, "x.bed")])
+check("tss_from_bed: BED4 input rejected with a clear error",
+      _r.returncode != 0 and "BED6 required" in _r.stderr, f"rc={_r.returncode}")
+
+# --- tss_score.py: profile aggregation, baseline normalization, max = TSSE ---
+# 40 bins: outer 10 bins on each side are the baseline (all 1.0); the bin at
+# index 20 spikes to 5.0 (bin 19 stays 1.0) -> TSSE = 5.0, center = mean(1,5) = 3.0
+_vals = [1.0] * 40
+_vals[20] = 5.0
+_mat = os.path.join(_stmp, "matrix.txt")
+with open(_mat, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("@" + '{"upstream": [2000], "downstream": [2000]}\n')
+    for _ in range(2):  # two identical TSS rows aggregate to the same profile
+        fh.write("chr1\t100\t101\tg\t0\t+\t" + "\t".join(str(v) for v in _vals) + "\n")
+_sc = os.path.join(_stmp, "score.tsv")
+_r = _run_py("tss_score.py", [_mat, "sampleA", _sc])
+_sc_line = open(_sc, encoding="utf-8").read().strip() if os.path.exists(_sc) else ""
+check("tss_score: TSSE is the normalized profile max, center the TSS bins",
+      _r.returncode == 0 and _sc_line == "sampleA\t5.0000\t3.0000\t1.000000\t2",
+      f"rc={_r.returncode} line={_sc_line!r}")
+_zeromat = os.path.join(_stmp, "zero.txt")
+with open(_zeromat, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("@{}\n")
+    fh.write("chr1\t100\t101\tg\t0\t+\t" + "\t".join("0" for _ in range(40)) + "\n")
+_r = _run_py("tss_score.py", [_zeromat, "sampleB", _sc])
+check("tss_score: zero baseline yields NA instead of a division by zero",
+      _r.returncode == 0 and open(_sc, encoding="utf-8").read().startswith("sampleB\tNA\tNA\t"),
+      f"rc={_r.returncode}")
+
+# --- organelle_summary.py: fractions, '*' row ignored, pattern matching ---
+for _s, _rows in [("s1", [("chr1", 100000, 800, 5), ("ChrC", 120000, 150, 1),
+                          ("ChrM", 90000, 50, 0), ("*", 0, 0, 40)]),
+                  ("s2", [("chr1", 100000, 900, 4), ("chr2", 100000, 100, 2)])]:
+    with open(os.path.join(_stmp, f"{_s}_idxstats.tsv"), "w",
+              newline="\n", encoding="utf-8") as fh:
+        for row in _rows:
+            fh.write("\t".join(str(x) for x in row) + "\n")
+_os = os.path.join(_stmp, "org.tsv")
+_om = os.path.join(_stmp, "org_mqc.tsv")
+_r = _run_py("organelle_summary.py",
+             ["--patterns", "chrc,chrm", "--out", _os, "--mqc", _om,
+              os.path.join(_stmp, "s1_idxstats.tsv"),
+              os.path.join(_stmp, "s2_idxstats.tsv")])
+_org = open(_os, encoding="utf-8").read().splitlines() if os.path.exists(_os) else []
+check("organelle: fractions over mapped reads, '*' ignored, per-contig detail",
+      _r.returncode == 0 and len(_org) == 3
+      and _org[1].startswith("s1\t1000\t200\t0.2000\t")
+      and "ChrC:150" in _org[1] and "ChrM:50" in _org[1]
+      and _org[2].startswith("s2\t1000\t0\t0.0000\t-"),
+      f"rc={_r.returncode} rows={_org}")
+check("organelle: mqc wrapper carries the MultiQC header",
+      os.path.exists(_om) and "# id: 'organelle_table'" in open(_om, encoding="utf-8").read())
+
+# --- replicate_summary.py: modes, counts, retained fraction ---
+for _rel in ("4.peak/replicates/g1", "4.peak"):
+    os.makedirs(os.path.join(_stmp, "results", _rel), exist_ok=True)
+
+
+def _w(path, n):
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        fh.writelines(f"chr1\t{i}\t{i + 10}\n" for i in range(n))
+
+
+_w(os.path.join(_stmp, "results", "4.peak", "replicates", "g1", "a_peaks.narrowPeak"), 10)
+_w(os.path.join(_stmp, "results", "4.peak", "replicates", "g1", "b_peaks.narrowPeak"), 20)
+_w(os.path.join(_stmp, "results", "4.peak", "g1_IDR_peaks.narrowPeak"), 5)
+os.makedirs(os.path.join(_stmp, "results", "4.peak", "replicates", "g2"), exist_ok=True)
+_w(os.path.join(_stmp, "results", "4.peak", "replicates", "g2", "h_peaks.broadPeak"), 8)
+_w(os.path.join(_stmp, "results", "4.peak", "g2_peaks.broadPeak"), 8)
+_rep_samples = os.path.join(_stmp, "samples.csv")
+with open(_rep_samples, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("sample_id,role,group,seqtype,layout,peak_type\n")
+    fh.write("a,treat,g1,chip,PE,narrow\n")
+    fh.write("b,treat,g1,chip,PE,narrow\n")
+    fh.write("ctl,control,g1,chip,PE,narrow\n")
+    fh.write("h,treat,g2,chip,PE,broad\n")
+_rs = os.path.join(_stmp, "rep.tsv")
+_rm = os.path.join(_stmp, "rep_mqc.tsv")
+_r = _run_py("replicate_summary.py",
+             ["--samples", _rep_samples, "--results-dir", os.path.join(_stmp, "results"),
+              "--out", _rs, "--mqc", _rm])
+_rep = open(_rs, encoding="utf-8").read().splitlines() if os.path.exists(_rs) else []
+check("replicate_summary: idr mode rows with counts and retained fraction",
+      _r.returncode == 0 and len(_rep) == 3
+      and _rep[1] == "g1\tchip\tnarrow\t2\tidr\ta=10;b=20\t5\t0.3333"
+      and _rep[2] == "g2\tchip\tbroad\t1\tpooled\th=8\t8\t1.0000",
+      f"rc={_r.returncode} rows={_rep}")
+check("replicate_summary: mqc wrapper carries the MultiQC header",
+      os.path.exists(_rm) and "# id: 'replicate_summary_table'" in open(_rm, encoding="utf-8").read())
+
+# --- diffbind_sheet.py: sheet layout from the extended sample table ---
+_dbtmp = os.path.join(_stmp, "db")
+os.makedirs(os.path.join(_dbtmp, "results", "4.peak", "replicates", "g1"), exist_ok=True)
+os.makedirs(os.path.join(_dbtmp, "results", "4.peak", "replicates", "g4"), exist_ok=True)
+for _rel in ("results/3.align/bowtie2",):
+    os.makedirs(os.path.join(_dbtmp, _rel), exist_ok=True)
+
+
+def _touch(path, line="chr1\t1\t10\n"):
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        fh.write(line)
+
+
+for _s in ("a", "b", "c", "d"):
+    _touch(os.path.join(_dbtmp, "results", "3.align", "bowtie2", f"{_s}_sorted.bam"), "")
+    _touch(os.path.join(_dbtmp, "results", "4.peak", "replicates", "g1" if _s in ("a", "b") else "g4",
+                        f"{_s}_peaks.narrowPeak"))
+_db_samples = os.path.join(_dbtmp, "samples.csv")
+with open(_db_samples, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("sample_id,role,group,seqtype,layout,peak_type,condition,batch\n")
+    fh.write("a,treat,g1,chip,PE,narrow,WT,b1\n")
+    fh.write("b,treat,g1,chip,PE,narrow,WT,b2\n")
+    fh.write("ctl,control,g1,chip,PE,narrow,,\n")
+    fh.write("c,treat,g4,chip,PE,narrow,mut,b1\n")
+    fh.write("d,treat,g4,chip,PE,narrow,mut,b2\n")
+_db_sheet = os.path.join(_dbtmp, "sheet.tsv")
+_r = _run_py("diffbind_sheet.py",
+             ["--samples", _db_samples, "--results-dir",
+              os.path.join(_dbtmp, "results"), "--groups", "g1", "g4",
+              "--replicates", "--out", _db_sheet])
+_sheet = open(_db_sheet, encoding="utf-8").read().splitlines() if os.path.exists(_db_sheet) else []
+check("diffbind_sheet: conditions, replicates, per-replicate peaks, batches",
+      _r.returncode == 0 and len(_sheet) == 5
+      and _sheet[0] == "SampleID\tCondition\tReplicate\tbamReads\tbamControl\tPeaks\tPeakCaller\tBatch"
+      and _sheet[1].startswith("a\tWT\t1\t") and "replicates/g1/a_peaks.narrowPeak" in _sheet[1]
+      and _sheet[1].endswith("\tnarrowpeak\tb1") and _sheet[4].startswith("d\tmut\t2\t"),
+      f"rc={_r.returncode} rows={_sheet[:3]}")
+_r = _run_py("diffbind_sheet.py",
+             ["--samples", _db_samples, "--results-dir",
+              os.path.join(_dbtmp, "results"), "--groups", "nope", "g1",
+              "--out", _db_sheet])
+check("diffbind_sheet: unknown contrast group fails with a clear error",
+      _r.returncode != 0 and "not found" in _r.stderr, f"rc={_r.returncode}")
+
+# --- gates_summary.py: PASS/WARN/FAIL aggregation over the canonical QC sources ---
+_gd = os.path.join(_stmp, "results")
+for _rel in ("3.align/bowtie2", "5.QC/frip", "5.QC/spp", "5.QC/tss",
+             "5.QC/organelle", "5.QC/gates"):
+    os.makedirs(os.path.join(_gd, _rel), exist_ok=True)
+
+
+def _wtext(path, text):
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _flagstat(total, mapped):
+    """samtools 1.17-style flagstat excerpt, byte-format as emitted by the
+    pinned samtools (trailing "(x% : N/A)" after the counts; percentage
+    + mate-mapped lines must not confuse the count-line parser)."""
+    pct = 100.0 * mapped / total
+    return (f"{total} + 0 in total (QC-passed reads + QC-failed reads)\n"
+            "0 + 0 secondary\n"
+            "0 + 0 supplementary\n"
+            "0 + 0 duplicates\n"
+            "0 + 0 primary duplicates\n"
+            f"{total} + 0 primary\n"
+            f"{mapped} + 0 mapped ({pct:.2f}% : N/A)\n"
+            f"{total} + 0 primary mapped ({pct:.2f}% : N/A)\n"
+            f"{pct:.2f}% + 0.00% mapped\n"
+            f"{total} + 0 paired in sequencing\n"
+            "900 + 0 with itself and mate mapped\n"
+            "0 + 0 singletons\n"
+            "0.00% + 0.00% with mate mapped to a different chr\n")
+
+
+def _picard_metrics(percent):
+    return ("## htsjdk.samtools.metrics.StringHeader\n"
+            "# MarkDuplicates INPUT=[x_sorted.bam] OUTPUT=[x_rmdup.bam]\n"
+            "## METRICS CLASS\tpicard.sam.DuplicationMetrics\n"
+            "LIBRARY\tUNPAIRED_READS_EXAMINED\tREAD_PAIRS_EXAMINED\t"
+            "SECONDARY_OR_SUPPLEMENTARY_RDS\tUNMAPPED_READS\t"
+            "UNPAIRED_READ_DUPLICATES\tREAD_PAIR_DUPLICATES\t"
+            "READ_PAIR_OPTICAL_DUPLICATES\tPERCENT_DUPLICATION\t"
+            "ESTIMATED_LIBRARY_SIZE\n"
+            f"lib\t0\t1000\t0\t0\t0\t100\t0\t{percent}\t9090\n\n"
+            "## HISTOGRAM\tjava.lang.Double\n")
+
+
+for _s, _total, _mapped in (("a", 1000, 900), ("b", 1000, 850),
+                            ("c", 1000, 500), ("d", 1000, 900)):
+    _wtext(os.path.join(_gd, "5.QC/gates", f"{_s}_flagstat.txt"),
+           _flagstat(_total, _mapped))
+_wtext(os.path.join(_gd, "3.align/bowtie2", "a_dup_metrics.txt"), _picard_metrics("0.100000"))
+_wtext(os.path.join(_gd, "3.align/bowtie2", "b_dup_metrics.txt"), _picard_metrics("0.800000"))
+_FRIP_HDR = "sample\tgroup\ttotal_reads\treads_in_peaks\tFRiP\n"
+_wtext(os.path.join(_gd, "5.QC/frip/g1__a.frip.tsv"), _FRIP_HDR + "a\tg1\t1000\t50\t0.0500\n")
+_wtext(os.path.join(_gd, "5.QC/frip/g1__b.frip.tsv"), _FRIP_HDR + "b\tg1\t1000\t20\t0.0200\n")
+_wtext(os.path.join(_gd, "5.QC/frip/g2__d.frip.tsv"), _FRIP_HDR + "d\tg2\t1000\t30\t0.0300\n")
+_wtext(os.path.join(_gd, "5.QC/spp/a_NSC.txt"), "1.15\n")
+_wtext(os.path.join(_gd, "5.QC/spp/a_RSC.txt"), "0.95\n")
+_wtext(os.path.join(_gd, "5.QC/tss/a_TSSE.txt"), "a\t7.2000\t3.0000\t1.000000\t2\n")
+_wtext(os.path.join(_gd, "5.QC/organelle/Organelle_summary.tsv"),
+       "sample\tmapped_reads\torganelle_reads\torganelle_fraction\tmatched_contigs\n"
+       "a\t900\t90\t0.1000\tChrC:90\n"
+       "b\t850\t765\t0.9000\tChrC:765\n")
+
+_gs_out = os.path.join(_stmp, "gate.tsv")
+_gs_mqc = os.path.join(_stmp, "gate_mqc.tsv")
+_r = _run_py("gates_summary.py",
+             ["--samples", "a=g1", "b=g1", "c=g2", "d=g2",
+              "--align-dir", os.path.join(_gd, "3.align", "bowtie2"),
+              "--qc-dir", os.path.join(_gd, "5.QC"),
+              "--gates-dir", os.path.join(_gd, "5.QC", "gates"),
+              "--out", _gs_out, "--mqc", _gs_mqc])
+_gs = open(_gs_out, encoding="utf-8").read().splitlines() if os.path.exists(_gs_out) else []
+check("gates_summary: PASS/FAIL/WARN rows over the canonical sources",
+      _r.returncode == 0 and len(_gs) == 5
+      and _gs[0] == "sample\tgroup\tmapping_rate\tdup_rate\tfrip\tnsc\trsc\t"
+                    "tss_enrichment\torganelle_fraction\tfailed\tna\tgate"
+      and _gs[1] == "a\tg1\t0.9000\t0.1000\t0.0500\t1.1500\t0.9500\t7.2000\t"
+                    "0.1000\t-\t-\tPASS"
+      and _gs[2] == "b\tg1\t0.8500\t0.8000\t0.0200\tNA\tNA\tNA\t0.9000\t"
+                    "dup_rate,organelle_fraction\tnsc,rsc,tss_enrichment\tFAIL"
+      and _gs[3] == "c\tg2\t0.5000\tNA\tNA\tNA\tNA\tNA\tNA\tmapping_rate\t"
+                    "dup_rate,frip,nsc,rsc,tss_enrichment,organelle_fraction\tFAIL"
+      and _gs[4] == "d\tg2\t0.9000\tNA\t0.0300\tNA\tNA\tNA\tNA\t-\t"
+                    "dup_rate,nsc,rsc,tss_enrichment,organelle_fraction\tWARN",
+      f"rc={_r.returncode} rows={_gs}")
+check("gates_summary: mqc wrapper carries the MultiQC header",
+      os.path.exists(_gs_mqc)
+      and "# id: 'gate_summary_table'" in open(_gs_mqc, encoding="utf-8").read())
+
+_gs_out2 = os.path.join(_stmp, "gate_loose.tsv")
+_r2 = _run_py("gates_summary.py",
+              ["--samples", "a=g1", "c=g2",
+               "--align-dir", os.path.join(_gd, "3.align", "bowtie2"),
+               "--qc-dir", os.path.join(_gd, "5.QC"),
+               "--gates-dir", os.path.join(_gd, "5.QC", "gates"),
+               "--out", _gs_out2, "--mqc", os.path.join(_stmp, "gate_loose_mqc.tsv"),
+               "--thresholds", "mapping_rate_min=0.4"])
+_gs2 = open(_gs_out2, encoding="utf-8").read().splitlines() if os.path.exists(_gs_out2) else []
+check("gates_summary: --thresholds overrides flip a FAIL into a WARN",
+      _r2.returncode == 0 and len(_gs2) == 3
+      and _gs2[2] == "c\tg2\t0.5000\tNA\tNA\tNA\tNA\tNA\tNA\t-\t"
+                     "dup_rate,frip,nsc,rsc,tss_enrichment,organelle_fraction\tWARN",
+      f"rc={_r2.returncode} rows={_gs2}")
+
+# --- spikein_summary.py: flagstat math, NA rows for missing files, mqc header ---
+_spd = os.path.join(_stmp, "spike_in")
+os.makedirs(_spd, exist_ok=True)
+_wtext(os.path.join(_spd, "s1_flagstat.txt"), _flagstat(1000, 400))
+_wtext(os.path.join(_spd, "s2_flagstat.txt"), _flagstat(800, 0))
+_sp_out = os.path.join(_stmp, "spike.tsv")
+_sp_mqc = os.path.join(_stmp, "spike_mqc.tsv")
+_r = _run_py("spikein_summary.py",
+             ["--samples", "s1", "s2", "s3", "--spike-dir", _spd,
+              "--name", "lambda", "--out", _sp_out, "--mqc", _sp_mqc])
+_sp = open(_sp_out, encoding="utf-8").read().splitlines() if os.path.exists(_sp_out) else []
+check("spikein_summary: rate/scale-factor math and NA rows for missing flagstats",
+      _r.returncode == 0 and len(_sp) == 4
+      and _sp[0] == "sample\tspike_total\tspike_mapped\tspike_rate\tscale_factor"
+      and _sp[1] == "s1\t1000\t400\t0.4000\t2500.0000"
+      and _sp[2] == "s2\t800\t0\t0.0000\t1000000.0000"
+      and _sp[3] == "s3\tNA\tNA\tNA\tNA",
+      f"rc={_r.returncode} rows={_sp}")
+_sp_mqc_text = open(_sp_mqc, encoding="utf-8").read() if os.path.exists(_sp_mqc) else ""
+check("spikein_summary: mqc wrapper carries the configured spike name",
+      "# id: 'spikein_summary_table'" in _sp_mqc_text
+      and "Spike-in normalization (lambda)" in _sp_mqc_text,
+      f"mqc={_sp_mqc_text[:200]}")
+
+# --- seacr_to_narrowpeak.py: column contract, score cap, name prefix, errors ---
+_seacr_bed = os.path.join(_stmp, "g1.seacr.bed")
+with open(_seacr_bed, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("# SEACR_1.3.sh g1 ... (comment lines must be skipped)\n")
+    fh.write("chr1\t20000\t22000\t123456.78\t45.2\t20100\n")
+    fh.write("chr1\t50000\t52000\t3.6\t2.1\t50100\n")
+_seacr_np = os.path.join(_stmp, "g1_peaks.narrowPeak")
+_r = _run_py("seacr_to_narrowpeak.py", [_seacr_bed, _seacr_np, "g1"])
+_np_lines = open(_seacr_np, encoding="utf-8").read().splitlines() if os.path.exists(_seacr_np) else []
+check("seacr_to_narrowpeak: 10-column contract, AUC signalValue, capped/rounded score, name prefix",
+      _r.returncode == 0 and len(_np_lines) == 2
+      and _np_lines[0] == "chr1\t20000\t22000\tg1_1\t1000\t.\t123456.78\t0\t0\t0"
+      and _np_lines[1] == "chr1\t50000\t52000\tg1_2\t4\t.\t3.6\t0\t0\t0",
+      f"rc={_r.returncode} lines={_np_lines}")
+_bad = os.path.join(_stmp, "bad.seacr.bed")
+with open(_bad, "w", newline="\n", encoding="utf-8") as fh:
+    fh.write("chr1\t20000\t22000\n")
+_r = _run_py("seacr_to_narrowpeak.py", [_bad, os.path.join(_stmp, "x.narrowPeak"), "g1"])
+check("seacr_to_narrowpeak: malformed input rejected with a clear error",
+      _r.returncode != 0 and "expected >= 4 columns" in _r.stderr, f"rc={_r.returncode}")
+_r = _run_py("seacr_to_narrowpeak.py", [_seacr_bed, os.path.join(_stmp, "y.narrowPeak"), ""])
+check("seacr_to_narrowpeak: empty name prefix rejected",
+      _r.returncode != 0 and "invalid name prefix" in _r.stderr, f"rc={_r.returncode}")
+shutil.rmtree(_stmp, ignore_errors=True)
 
 print()
 if FAILED:

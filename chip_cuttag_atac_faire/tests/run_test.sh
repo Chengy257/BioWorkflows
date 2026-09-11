@@ -6,13 +6,21 @@
 #   -> dry-run (default) or --real-run end-to-end -> assert -> clean up
 #
 # Usage:
-#   bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
+#   bash tests/run_test.sh [--reads N] [--keep] [--real-run] \
+#       [--replicate] [--qc-full] [--motif] [--diffbind] [--gates] [--spike-in] [--seacr] [--footprint] [--help]
 #     --reads     PE read pairs per sample, default 50000 (CI passes 2000)
 #     --keep      keep tests/data and tests/work (cleaned up by default)
 #     --real-run  run end-to-end and assert that outputs exist (default is
 #                 a dry-run that only validates DAG integrity; a real run
 #                 needs a full analysis environment with bowtie2/fastqc/
 #                 trim_galore/macs2/R etc.; used for server-side validation)
+#     --replicate scenario: add a 2-treat broad group and enable the
+#                 replicate-aware peak stage (IDR + consensus)
+#     --qc-full   scenario: enable tss/organelle QC and the synthetic
+#                 blacklist (extended QC)
+#     --seacr     scenario: switch the pooled peak caller to SEACR
+#                 (peak.caller=seacr; a real run additionally needs the
+#                 external SEACR script)
 # Requires: dry-run only needs snakemake + python3(+pyyaml); --real-run
 # needs a full analysis environment.
 #########################################################################
@@ -29,28 +37,55 @@ One-command regression test: synthetic data -> assemble working directory
 -> dry-run (default) / --real-run end-to-end -> assertions
 
 Usage:
-  bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--help]
+  bash tests/run_test.sh [--reads N] [--keep] [--real-run] [--replicate] [--qc-full] [--help]
     --reads     PE read pairs per sample, default 50000 (CI passes 2000)
     --keep      keep tests/data and tests/work (cleaned up by default)
     --real-run  run end-to-end and assert that outputs exist (default only
                 dry-runs to validate DAG integrity; a real run needs a full
                 analysis environment; used for server-side validation)
+    --replicate scenario: 2-treat broad group + replicate-aware peak stage
+                (per-replicate calling, IDR, consensus)
+    --qc-full   scenario: tss/organelle QC + synthetic blacklist
+    --motif     scenario: enable the HOMER motif stage (dummy genome tag;
+                dry-run only — a real run needs an external HOMER install)
+    --diffbind  scenario: 2-treat narrow group (condition/batch columns) +
+                one DiffBind contrast (dry-run; a real run needs DiffBind)
+    --gates     scenario: enable the QC gate summary stage (qc.gates;
+                per-sample flagstat + PASS/WARN/FAIL gate table)
+    --spike-in  scenario: enable the spike-in normalization stage (spike_in;
+                synthetic spike-in reference + second-pass alignment)
+    --seacr     scenario: pooled peak caller = SEACR (peak.caller=seacr;
+                the pooled MACS2 caller rules are replaced and must be
+                absent from the DAG; FRiP still consumes the peaks)
+    --footprint scenario: enable the TOBIAS footprinting stage (footprint;
+                schedules for the atac group g2 only; dry-run only — a real
+                run additionally needs an external TOBIAS install)
     -h, --help  show this help
 
 Requires:
   dry-run only needs snakemake + python3(+pyyaml); --real-run needs a full
   analysis environment (bowtie2/fastqc/trim_galore/macs2/deeptools/R etc.,
-  see workflow/environment.yaml).
+  see workflow/environment.yaml; --replicate additionally needs the external
+  idr tool, --motif an external HOMER, --diffbind the DiffBind R package,
+  --seacr the external SEACR script, --footprint an external TOBIAS install).
 EOF
 }
 
 # ---------------------------------------------------------------------
 # Argument parsing: dry-run by default; --real-run enables the end-to-end
-# branch
+# branch; --replicate / --qc-full select scenario data/config
 # ---------------------------------------------------------------------
 READS=50000
 KEEP=0
 REAL_RUN=0
+REPLICATE=0
+QC_FULL=0
+MOTIF=0
+DIFFBIND=0
+GATES=0
+SPIKE=0
+SEACR=0
+FOOTPRINT=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --reads)
@@ -59,21 +94,43 @@ while [[ $# -gt 0 ]]; do
             READS="$2"; shift 2 ;;
         --keep)     KEEP=1; shift ;;
         --real-run) REAL_RUN=1; shift ;;
+        --replicate) REPLICATE=1; shift ;;
+        --qc-full)   QC_FULL=1; shift ;;
+        --motif)     MOTIF=1; shift ;;
+        --diffbind)  DIFFBIND=1; shift ;;
+        --gates)     GATES=1; shift ;;
+        --spike-in)  SPIKE=1; shift ;;
+        --seacr)     SEACR=1; shift ;;
+        --footprint) FOOTPRINT=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) echo "[ERROR] Unknown argument: $1 (see --help for usage)" >&2; exit 1 ;;
     esac
 done
 MODE="dry-run"
 [[ "$REAL_RUN" == 1 ]] && MODE="real-run"
+SCENARIO_ARGS=()
+[[ "$REPLICATE" == 1 ]] && SCENARIO_ARGS+=(--replicate)
+[[ "$QC_FULL" == 1 ]] && SCENARIO_ARGS+=(--qc-full)
+[[ "$MOTIF" == 1 ]] && SCENARIO_ARGS+=(--motif)
+[[ "$DIFFBIND" == 1 ]] && SCENARIO_ARGS+=(--diffbind)
+[[ "$GATES" == 1 ]] && SCENARIO_ARGS+=(--gates)
+[[ "$SPIKE" == 1 ]] && SCENARIO_ARGS+=(--spike-in)
+[[ "$SEACR" == 1 ]] && SCENARIO_ARGS+=(--seacr)
+[[ "$FOOTPRINT" == 1 ]] && SCENARIO_ARGS+=(--footprint)
+if [[ "$REPLICATE" == 1 && "$SEACR" == 1 ]]; then
+    echo "[ERROR] --replicate and --seacr are mutually exclusive (peak.caller=seacr" \
+         "rejects peak.replicate.enabled at parse time)" >&2
+    exit 1
+fi
 
-echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS)"
+echo "[test] 1/5 Checking dependencies (mode=$MODE, reads=$READS, scenario_args=${SCENARIO_ARGS[*]:-none})"
 command -v snakemake >/dev/null || { echo "[ERROR] snakemake not found" >&2; exit 1; }
 command -v python3   >/dev/null || { echo "[ERROR] python3 not found" >&2; exit 1; }
 # run.sh needs pyyaml to resolve software.yaml at runtime; fail early with a clear message
 python3 -c 'import yaml' >/dev/null 2>&1 || { echo "[ERROR] python3 is missing pyyaml" >&2; exit 1; }
 
 echo "[test] 2/5 Generating synthetic test data (reads=$READS, fixed seed)"
-python3 "$TESTS_DIR/make_testdata.py" --outdir "$DATA_DIR" --reads "$READS"
+python3 "$TESTS_DIR/make_testdata.py" --outdir "$DATA_DIR" --reads "$READS" "${SCENARIO_ARGS[@]}"
 
 echo "[test] 3/5 Assembling test project tests/work"
 rm -rf "$WORK_DIR"
@@ -109,14 +166,18 @@ fi
 echo "[test] 5/5 Assertions"
 FAIL=0
 if [[ "$REAL_RUN" == 1 ]]; then
-    # ---------- real-run output existence assertions (5 samples: 3 chip + 2 atac) ----------
+    # ---------- real-run output existence assertions ----------
+    # default: 5 samples; --replicate adds the 3-sample broad group g3;
+    # --diffbind adds the 3-sample narrow group g4 (both land at 8 BAMs)
+    N_EXPECTED=5
+    [[ "$REPLICATE" == 1 || "$DIFFBIND" == 1 ]] && N_EXPECTED=8
     shopt -s nullglob
     bams=("$WORK_DIR"/results/3.align/bowtie2/*_sorted.bam)
     shopt -u nullglob
-    if [[ ${#bams[@]} -eq 5 ]]; then
-        echo "  PASS  results/3.align/bowtie2/*_sorted.bam count ${#bams[@]} (expected 5)"
+    if [[ ${#bams[@]} -eq $N_EXPECTED ]]; then
+        echo "  PASS  results/3.align/bowtie2/*_sorted.bam count ${#bams[@]} (expected $N_EXPECTED)"
     else
-        echo "  FAIL  results/3.align/bowtie2/*_sorted.bam count ${#bams[@]} (expected 5)"; FAIL=1
+        echo "  FAIL  results/3.align/bowtie2/*_sorted.bam count ${#bams[@]} (expected $N_EXPECTED)"; FAIL=1
     fi
     EXPECTED=(
         "results/4.peak/g1_peaks.narrowPeak"
@@ -125,6 +186,59 @@ if [[ "$REAL_RUN" == 1 ]]; then
         "results/2.cleandata/fastqc/multiqc/multiqc_report.html"
         "results/5.QC/software_versions.yaml"
     )
+    if [[ "$REPLICATE" == 1 ]]; then
+        EXPECTED+=(
+            "results/4.peak/g3_peaks.broadPeak"
+            "results/4.peak/g1_IDR_peaks.narrowPeak"
+            "results/4.peak/g2_IDR_peaks.narrowPeak"
+            "results/4.peak/g3_consensus_peaks.broadPeak"
+            "results/5.QC/replicate_peaks/Replicate_summary.tsv"
+        )
+    fi
+    if [[ "$QC_FULL" == 1 ]]; then
+        EXPECTED+=(
+            "results/5.QC/tss/TSSE_summary.tsv"
+            "results/5.QC/organelle/Organelle_summary.tsv"
+            "results/5.QC/blacklist/blacklist_summary.tsv"
+            "results/4.peak/blacklist_filtered/g1_peaks.narrowPeak"
+        )
+    fi
+    if [[ "$MOTIF" == 1 ]]; then
+        EXPECTED+=("results/6.motif/g1")
+    fi
+    if [[ "$DIFFBIND" == 1 ]]; then
+        EXPECTED+=(
+            "results/6.diffbind/g1__vs__g4/samplesheet.tsv"
+            "results/6.diffbind/g1__vs__g4/DB_results.tsv"
+        )
+    fi
+    if [[ "$GATES" == 1 ]]; then
+        EXPECTED+=(
+            "results/5.QC/gates/gate_summary.tsv"
+            "results/5.QC/gates/gate_summary_mqc.tsv"
+        )
+    fi
+    if [[ "$SPIKE" == 1 ]]; then
+        EXPECTED+=(
+            "results/3.align/spike_in/chip_treat_rep1_sorted.bam"
+            "results/5.QC/spike_in/Spikein_summary.tsv"
+            "results/5.QC/spike_in/Spikein_summary_mqc.tsv"
+        )
+    fi
+    if [[ "$SEACR" == 1 ]]; then
+        EXPECTED+=(
+            "results/4.peak/seacr/g1_treat.bg"
+            "results/4.peak/seacr/g1_control.bg"
+            "results/4.peak/seacr/g2_treat.bg"
+        )
+    fi
+    if [[ "$FOOTPRINT" == 1 ]]; then
+        EXPECTED+=(
+            "results/7.footprint/g2/ataccorrect/g2_corrected.bw"
+            "results/7.footprint/g2/scorebigwig/g2_footprint_scores.bw"
+            "results/7.footprint/g2/bindetect"
+        )
+    fi
     for rel in "${EXPECTED[@]}"; do
         if [[ -s "$WORK_DIR/$rel" ]]; then
             echo "  PASS  $rel"
@@ -133,15 +247,96 @@ if [[ "$REAL_RUN" == 1 ]]; then
         fi
     done
 else
-    # ---------- dry-run DAG assertions: exit code 0 (checked above) and three key rule names present ----------
+    # ---------- dry-run DAG assertions: exit code 0 (checked above) and key rule names present ----------
     SNAKE_LOG="$WORK_DIR/snakemake.logs.txt"   # run.sh default log (stdout is tee'd to disk)
-    for rule in bowtie2_mapping callpeak_narrow callpeak_atac; do
+    # the pooled caller rules differ per scenario: MACS2 (default) or SEACR
+    DAG_RULES=(bowtie2_mapping)
+    if [[ "$SEACR" == 1 ]]; then
+        DAG_RULES+=(seacr_bedgraph_treat seacr_bedgraph_control seacr_callpeak seacr_bigwig)
+    else
+        DAG_RULES+=(callpeak_narrow callpeak_atac)
+    fi
+    if [[ "$REPLICATE" == 1 ]]; then
+        DAG_RULES+=(callpeak_narrow_replicate callpeak_broad_replicate idr_pair idr_final broad_consensus replicate_summary)
+    fi
+    if [[ "$QC_FULL" == 1 ]]; then
+        DAG_RULES+=(tss_matrix tss_summary organelle_idxstats organelle_summary blacklist_filter blacklist_summary)
+    fi
+    if [[ "$MOTIF" == 1 ]]; then
+        DAG_RULES+=(motif_enrichment)
+    fi
+    if [[ "$DIFFBIND" == 1 ]]; then
+        DAG_RULES+=(diffbind_sheet diffbind_report)
+    fi
+    if [[ "$GATES" == 1 ]]; then
+        DAG_RULES+=(gates_flagstat qc_gates)
+    fi
+    if [[ "$SPIKE" == 1 ]]; then
+        DAG_RULES+=(spike_bowtie2_index spike_align spike_summary)
+    fi
+    if [[ "$FOOTPRINT" == 1 ]]; then
+        DAG_RULES+=(footprint_ataccorrect footprint_scorebigwig footprint_bindetect)
+    fi
+    for rule in "${DAG_RULES[@]}"; do
         if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
             echo "  PASS  DAG contains rule $rule"
         else
             echo "  FAIL  DAG does not contain rule $rule"; FAIL=1
         fi
     done
+    # Exact job-header patterns: the bare "frip" token would also match FRiP
+    # file paths in other rules' input listings, and "bigwig" is a substring of
+    # seacr_bigwig — match the "rule X:"/"localrule X:" headers instead.
+    PRESENT_HEADER_PATTERNS=()
+    ABSENT_HEADER_PATTERNS=()
+    if [[ "$SEACR" == 1 ]]; then
+        PRESENT_HEADER_PATTERNS=("rule frip:")
+        # the pooled MACS2 caller rules (and the MACS2 bigwig rule, replaced by
+        # seacr_bigwig) must be absent from the SEACR-mode DAG
+        ABSENT_HEADER_PATTERNS=("rule bigwig:")
+    fi
+    for pattern in "${PRESENT_HEADER_PATTERNS[@]}"; do
+        if grep -q "$pattern" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  PASS  DAG contains a $pattern job"
+        else
+            echo "  FAIL  DAG does not contain a $pattern job"; FAIL=1
+        fi
+    done
+    ABSENT_RULES=()
+    if [[ "$SEACR" == 1 ]]; then
+        ABSENT_RULES+=(callpeak_narrow callpeak_broad callpeak_atac)
+    fi
+    for rule in "${ABSENT_RULES[@]}"; do
+        if grep -q "$rule" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  FAIL  DAG must not contain rule $rule under the SEACR caller"; FAIL=1
+        else
+            echo "  PASS  DAG does not contain rule $rule"
+        fi
+    done
+    for pattern in "${ABSENT_HEADER_PATTERNS[@]}"; do
+        if grep -q "$pattern" "$CAPTURE_LOG" "$SNAKE_LOG" 2>/dev/null; then
+            echo "  FAIL  DAG must not contain a $pattern job under the SEACR caller"; FAIL=1
+        else
+            echo "  PASS  DAG does not contain a $pattern job"
+        fi
+    done
+    # Footprinting schedules for the ATAC/FAIRE groups only: the test data has
+    # exactly one such group (atac g2), so the three footprint rules must show
+    # exactly three job headers in the dry-run plan (no chip-group instances).
+    if [[ "$FOOTPRINT" == 1 ]]; then
+        N_FP_JOBS=$(grep -cE "^(local)?rule footprint_" "$SNAKE_LOG" 2>/dev/null || true)
+        if [[ "$N_FP_JOBS" == "3" ]]; then
+            echo "  PASS  footprint jobs scheduled for the atac group only (3 job headers: g2)"
+        else
+            echo "  FAIL  expected exactly 3 footprint job headers (atac group g2), found ${N_FP_JOBS:-0}"; FAIL=1
+        fi
+    fi
+    # Job count (informational baseline; printed for the CHANGELOG/AGENTS
+    # record). Snakemake 7 dry-runs print one rule/localrule block per planned
+    # job (printshellcmds is pinned on in every profile); counting both keeps
+    # the historical baseline convention (chip default = 47, including `all`).
+    N_JOBS=$(grep -cE "^(local)?rule " "$SNAKE_LOG" 2>/dev/null || true)
+    echo "  INFO  dry-run planned jobs: ${N_JOBS:-0} (scenario: ${SCENARIO_ARGS[*]:-default})"
 fi
 if [[ "$FAIL" != "0" ]]; then
     echo "[ERROR] Assertions failed; keeping workspace for debugging: $WORK_DIR" >&2

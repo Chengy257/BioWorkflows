@@ -53,6 +53,15 @@ rule all:
         BAM_TARGETS,
         PEAK_TARGETS,
         BW_TARGETS,
+        REPLICATE_TARGETS,
+        BLACKLIST_TARGETS,
+        TSS_TARGETS,
+        ORGANELLE_TARGETS,
+        GATES_TARGETS,
+        SPIKEIN_TARGETS,
+        MOTIF_TARGETS,
+        DIFFBIND_TARGETS,
+        FOOTPRINT_TARGETS,
         R("4.peak/anno_result/Peakanno_PeakDistributions.pdf"),
         VERSION_TARGETS,
 
@@ -62,14 +71,41 @@ rule all:
 # ---------------------------------------------------------------------
 include: os.path.join(WORKFLOW_DIR, "rules", "upstream.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "dedup.smk")
-include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
+# Pooled peak caller routing (v0.6): MACS2 (default) or SEACR. Both modules
+# claim the same pooled peak outputs ({group}_peaks.*), so exactly one of them
+# may be included per parse.
+if PEAK_CALLER["caller"] == "seacr":
+    include: os.path.join(WORKFLOW_DIR, "rules", "seacr.smk")
+else:
+    include: os.path.join(WORKFLOW_DIR, "rules", "callpeak.smk")
+if REPLICATE["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "callpeak_replicate.smk")
 include: os.path.join(WORKFLOW_DIR, "rules", "annotation.smk")
+if BLACKLIST:
+    include: os.path.join(WORKFLOW_DIR, "rules", "blacklist.smk")
 if config["qc"]["nsc_rsc"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "spp_qc.smk")
 if config["qc"]["frip"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "frip.smk")
 if config["qc"]["deeptools"]:
     include: os.path.join(WORKFLOW_DIR, "rules", "qc_deeptools.smk")
+if QC_TSS and TSS_SAMPLES:
+    include: os.path.join(WORKFLOW_DIR, "rules", "tss_qc.smk")
+if QC_ORGANELLE:
+    include: os.path.join(WORKFLOW_DIR, "rules", "organelle_qc.smk")
+if GATES["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "qc_gates.smk")
+if SPIKE_IN["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "spikein.smk")
+if MOTIF["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "motif.smk")
+if DIFFBIND["enabled"]:
+    include: os.path.join(WORKFLOW_DIR, "rules", "diffbind.smk")
+if FOOTPRINT["enabled"]:
+    # TOBIAS footprinting on the atac/faire groups only; with the stage on but
+    # no atac/faire group in the table the rules simply have no instances
+    # (a parse-time warning says so, see common.smk).
+    include: os.path.join(WORKFLOW_DIR, "rules", "footprint.smk")
 
 # Run metadata (software-version record), placed after all modules
 include: os.path.join(WORKFLOW_DIR, "rules", "meta.smk")
