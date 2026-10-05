@@ -1,115 +1,137 @@
-# BioWorkflows: nf-core-first Nextflow Migration Mainline
+# BioWorkflows: Scientific-First nf-core-Based Nextflow Rebaseline
 
 - Date: 2026-10-05
-- Status: mainline design revision; implementation NOT started
-- Scope: migration of the current Snakemake workflows to a simpler
-  nf-core-first Nextflow workflow suite
+- Status: FROZEN after independent mainline review
+- Scope: scientific and architectural rebaseline of the current Snakemake
+  workflows into a simpler nf-core-based Nextflow workflow suite
 - Primary use case: personal/research-group use on local Linux/WSL and HPC
-- Authority: this document defines the migration direction and architecture.
-  Detailed implementation specifications are deferred until this mainline is
-  reviewed and frozen.
-- Legacy baseline: existing Snakemake workflows remain available and are
-  bugfix-only during migration.
+- Legacy policy: existing Snakemake workflows remain available during the
+  transition, but they are references and historical baselines, NOT migration
+  compatibility targets
+- Authority: this document freezes the project-level direction. Detailed
+  scientific choices, exact pipeline revisions, parameters, and implementation
+  specifications are decided per workflow after a current-state review.
 
 ## 1. Project positioning
 
-BioWorkflows is NOT intended to become a second nf-core framework or a generic
-bioinformatics workflow platform.
+BioWorkflows is a **personal modular workflow suite built on the nf-core
+ecosystem**.
 
-The target is a **personal modular workflow suite built on the nf-core
-ecosystem**:
+It is not intended to become:
 
-- use mature nf-core pipelines directly when they already solve the main
-  analysis problem;
-- extend them with small BioWorkflows-owned downstream or side workflows only
-  when necessary;
-- build custom DSL2 pipelines only where no suitable nf-core pipeline exists;
-- reuse nf-core modules and subworkflows instead of maintaining equivalent
-  local wrappers;
-- keep local infrastructure deliberately small.
+- a second nf-core framework;
+- a generic workflow platform;
+- a compatibility layer around the old Snakemake repository;
+- a framework that forces all assays through one local abstraction.
 
-The value of BioWorkflows is therefore not "another collection of standard
-pipelines". Its value is the small layer of decisions and capabilities that are
-specific to the user's real work:
+The project should use as much maintained community infrastructure as possible
+and keep BioWorkflows-owned code focused on real scientific or operational gaps.
 
-- tested pipeline revisions and preferred parameters;
-- rice and other non-default reference configurations;
-- local/HPC execution profiles;
-- assay-specific analysis choices not covered by an upstream pipeline;
-- retained project-specific analysis scripts;
-- reproducible handoffs between selected workflows;
-- real-data acceptance against the known legacy workflows.
+The expected value of BioWorkflows is:
 
-## 2. Why nf-core alone is not the complete project
+- selecting and pinning scientifically appropriate upstream workflows;
+- keeping useful personal/reference/HPC configuration;
+- adding analysis that is genuinely missing upstream;
+- composing a small number of real downstream handoffs;
+- validating workflows on the user's actual biological use cases;
+- retaining custom analysis only when it remains scientifically justified.
 
-nf-core should provide as much of the execution stack as possible, but it does
-not eliminate the need for BioWorkflows.
+## 2. The migration is an upgrade, not a reproduction exercise
 
-Current BioWorkflows capabilities fall into three categories.
+The central rule of this rebaseline is:
 
-### 2.1 Directly adoptable
+> **Scientific quality and useful functionality take precedence over legacy
+> compatibility, implementation preservation, output-layout preservation, and
+> numerical reproduction of the old workflow.**
 
-Examples include the main execution paths for:
+The old Snakemake implementation provides evidence about:
 
-- BS-seq via nf-core/methylseq;
-- bulk RNA-seq via nf-core/rnaseq;
-- differential abundance via nf-core/differentialabundance where suitable;
-- ChIP-seq via nf-core/chipseq;
-- CUT&Tag via nf-core/cutandrun;
-- ATAC-seq via nf-core/atacseq.
+- the data types the user analyzes;
+- previously useful features;
+- known edge cases;
+- historical outputs that can help detect regressions;
+- locally validated operating knowledge.
 
-BioWorkflows should not reimplement these pipelines merely to preserve old
-Snakemake structure or output paths.
+It does NOT define what the new workflow must contain.
 
-### 2.2 Adoptable core plus BioWorkflows extension
+During rebaseline, an old feature may be:
 
-Some analyses have a strong upstream pipeline but also retained local
-capabilities.
+1. **adopted** from a maintained upstream workflow;
+2. **replaced** by a scientifically better current method;
+3. **expanded** using richer upstream/community functionality;
+4. **retained locally** because it still fills a real gap;
+5. **dropped** because it is obsolete, redundant, weakly justified, or no
+   longer useful.
 
-Examples:
+Feature parity with the legacy implementation is therefore NOT a freeze or
+retirement requirement.
 
-- methylseq -> local methylKit DMR analysis where retained;
-- rnaseq -> project-specific lncRNA discovery;
-- adopted chromatin pipelines -> selected local downstream analysis when the
-  upstream pipeline does not provide the required scientific behavior.
+## 3. Scientific-first decision order
 
-These extensions should consume explicit upstream outputs and remain bounded.
-They are not justification for forking the whole upstream pipeline.
+For every sequencing/assay workflow, decisions are made in this order.
 
-### 2.3 Custom workflow still justified
+### Step 1 - Define the biological objective
 
-Some current workflows have important analysis logic that is not well
-represented by an existing nf-core pipeline.
+State what biological question and output the workflow should support today.
 
-Current examples include:
+Do not start from the old rule graph.
 
-- plant-oriented small-RNA cascade filtering/counting;
-- the current seCLIP UMI/input-control/reproducible-peak design;
-- FAIRE-seq;
-- selected project-specific lncRNA and DMR analyses.
+### Step 2 - Review the current ecosystem
 
-These become BioWorkflows-owned DSL2 pipelines built with nf-core conventions
-and reusable nf-core components wherever practical.
+Review, at implementation time:
 
-## 3. Frozen architecture principles
+- current stable nf-core pipelines;
+- relevant nf-core modules/subworkflows;
+- maintained community workflows;
+- current commonly accepted analysis methods;
+- known assay-specific guidance and limitations.
 
-### D1. nf-core first
+The review must be refreshed before implementation because upstream pipelines
+and best practices change.
 
-For every workflow entry point, evaluate the routes in this order:
+### Step 3 - Choose the best route
 
-1. run an existing nf-core pipeline;
-2. run an existing nf-core pipeline plus a bounded local extension;
-3. build a custom DSL2 pipeline from nf-core modules/subworkflows.
+Use the simplest scientifically adequate route:
 
-Do not choose route 3 merely because the legacy Snakemake workflow was custom.
+1. direct upstream adoption;
+2. upstream adoption plus a bounded local extension;
+3. composition of community/nf-core components;
+4. custom BioWorkflows DSL2 only when a genuine gap remains.
 
-### D2. One repository, flat workflow entry points
+### Step 4 - Choose methods independently of the legacy implementation
+
+Do not retain:
+
+- a tool merely because the Snakemake workflow used it;
+- an old parameter merely because it was previously validated;
+- a downstream step merely to preserve historical output;
+- a local script when a maintained community implementation is better.
+
+### Step 5 - Validate the new scientific workflow
+
+Validation asks whether the new workflow is scientifically credible, complete,
+reproducible, and useful.
+
+Comparison with the legacy workflow is supporting evidence, not the acceptance
+target.
+
+## 4. Frozen architecture principles
+
+### D1. nf-core first, community-aware
+
+Use maintained nf-core pipelines and components as the default ecosystem.
+
+When nf-core does not cover a requirement well, also consider maintained
+community workflows before deciding to implement a custom pipeline.
+
+Custom code is the last option, not the default destination of old custom code.
+
+### D2. One repository, flat workflow entries
 
 BioWorkflows remains one repository.
 
-Each sequencing/assay type is a first-class workflow entry point. There is no
-formal RNA-family, chromatin-family, or other biological-family execution
-layer.
+Each sequencing/assay type is an independent first-class workflow entry. There
+is no formal RNA-family, chromatin-family, or other family execution layer.
 
 Conceptually:
 
@@ -123,393 +145,523 @@ BioWorkflows
 |-- atacseq
 |-- faireseq
 |-- seclip
-|-- lncrna
-|-- dmr
-`-- future assay/workflow entries
+|-- optional downstream analyses
+`-- future workflow entries
 ```
 
-Documentation may group related workflows for navigation, but family labels do
-not determine code ownership or execution.
+Documentation may group related assays for navigation only.
 
-### D3. Workflow entries compose reusable capabilities
+### D3. No giant multi-assay workflow
 
-A workflow entry owns its scientific semantics, parameters, input requirements,
-and acceptance criteria.
+The legacy `chip_cuttag_atac_faire` architecture is explicitly retired as a
+design pattern.
 
-Shared modules/subworkflows are used only when the underlying scientific
-operation is actually reusable.
+ChIP-seq, CUT&Tag, ATAC-seq, and FAIRE-seq receive separate workflow entry
+points and separate scientific reviews.
 
-The project must not recreate the legacy pattern of a single workflow with a
-large `seqtype` switch and many assay-dependent feature flags.
+Shared operations may use common modules/subworkflows only when their scientific
+semantics are genuinely the same.
 
-### D4. Native nf-core interfaces are preferred
+### D4. Native upstream interfaces are preferred
 
-Adopted pipelines keep their native:
+For an adopted upstream pipeline, prefer its native:
 
-- samplesheet schema;
-- parameter schema;
-- output organization;
-- container/process definitions;
-- release/version semantics.
+- samplesheet/input schema;
+- parameters;
+- outputs;
+- containers;
+- release/version model;
+- testing behavior.
 
-BioWorkflows does not define a universal samplesheet or universal run manifest
-as a prerequisite for migration.
+BioWorkflows does not require a universal samplesheet, universal run manifest,
+universal artifact model, or legacy output compatibility layer.
 
-Small one-way input helpers may be added when they save repeated manual work,
-but each helper targets a specific workflow and emits that workflow's native
-input format.
+Small adapters may be written only when they solve repeated real work.
 
-### D5. Define cross-workflow contracts only where a handoff exists
+### D5. Cross-workflow contracts are local and evidence-driven
 
-Do not create a global artifact model.
+Do not define a global artifact framework.
 
-Define a small explicit handoff only for workflows that actually consume the
-outputs of another workflow.
+Define a handoff only when one workflow actually consumes another workflow's
+outputs.
 
-Initial examples:
+Examples that may justify explicit handoffs include:
 
-- rnaseq -> differentialabundance;
-- rnaseq -> lncrna;
-- methylseq -> dmr.
+- rnaseq -> differential analysis;
+- rnaseq -> lncRNA analysis;
+- methylation calling -> differential methylation.
 
-Additional handoffs are introduced only when a real workflow requires them.
+The exact downstream method is not frozen by this mainline.
 
 ### D6. Container-native execution
 
-Adopted nf-core pipelines use their native Apptainer/Singularity support.
+Adopted nf-core workflows use their native container support.
 
-Custom BioWorkflows DSL2 pipelines use nf-core module software definitions or
-explicit per-process containers from the start.
+BioWorkflows-owned Nextflow processes should use nf-core module software
+definitions or explicit per-process containers.
 
-The legacy WorkflowSpec executable resolver is migration knowledge, not the new
-Nextflow runtime architecture.
+The legacy WorkflowSpec executable resolver is not part of the future runtime
+architecture.
 
-A developer Conda profile may exist where useful, but production/HPC
-reproducibility is container-based.
+A developer Conda profile may exist, but HPC/reproducible use is
+container-oriented.
 
-### D7. Explicit version locking
+### D7. Explicit version locking, without freezing versions in the mainline
 
-Production and acceptance runs do not use an unpinned `latest`.
+Production and scientific validation runs must use explicit tested revisions.
 
-A small tracked version file records the tested baseline for:
+A small tracked baseline records at least:
 
-- Nextflow;
-- adopted nf-core pipeline revisions;
+- Nextflow version;
+- adopted workflow revisions;
 - nf-core tooling where relevant;
-- nf-test;
-- important local container/module revisions.
+- nf-test where used;
+- local module/container revisions where needed.
 
-An upstream upgrade is an explicit maintenance change and requires relevant
-re-testing.
+This mainline does not freeze exact versions because those must be selected from
+the current ecosystem at implementation time.
 
-### D8. Keep the shared BioWorkflows layer small
+### D8. Minimal local shared layer
 
-The shared layer should initially contain only proven cross-workflow needs:
+Only share things with demonstrated cross-workflow value, for example:
 
-- HPC/site execution configuration;
-- container/cache/mirror configuration;
+- HPC/site profiles;
+- Apptainer/cache/mirror configuration;
 - version pins;
-- reference presets or reference helper configuration where shared;
-- truly reusable local modules/subworkflows;
-- testing conventions;
-- small input/output adapters that have demonstrated repeated use.
+- reusable reference configuration where appropriate;
+- genuinely reusable modules/subworkflows;
+- focused testing conventions.
 
-Do not build a generic orchestration framework, plugin system, global schema,
-registry, workspace model, or unified CLI during this migration.
+Do not build during this migration:
 
-A higher-level convenience CLI can be considered later only if repeated usage
-shows a real need.
+- a central orchestration service;
+- a workspace/project object model;
+- a plugin registry;
+- a global capability registry;
+- a global metadata database;
+- a universal workflow schema;
+- a mandatory BioWorkflows CLI;
+- a custom replacement for nf-core tooling.
 
-### D9. Acceptance before retirement
+### D9. Scientific acceptance, not parity acceptance
 
-Each workflow entry has its own migration acceptance criteria.
+A workflow is accepted when it is:
 
-Acceptance covers:
+1. scientifically appropriate for its stated biological objective;
+2. functionally complete for the intended use;
+3. reproducible;
+4. successfully validated on relevant real data;
+5. operationally usable on the target environment.
 
-1. successful execution;
-2. expected output completeness;
-3. scientific consistency with the legacy workflow or an explicitly approved
-   changed method;
-4. reproducibility on the target execution environment.
+Legacy numerical/output similarity may be checked when informative, but:
 
-Exact metrics and thresholds belong in the implementation specification for
-that workflow.
+- exact parity is not required;
+- changed tools/defaults are allowed;
+- richer new functionality is allowed;
+- obsolete legacy functionality may be removed.
+
+Any important scientific difference should be understood and documented, not
+necessarily eliminated.
 
 ### D10. Git-native legacy preservation
 
-Before a legacy Snakemake implementation is removed from the active tree, its
-final accepted state is preserved with an annotated Git tag/release.
+Before removing a legacy implementation from the active tree, preserve its
+final state with an annotated Git tag/release.
 
-Machine-local archives are optional extra backups, not the formal retirement
-mechanism.
+This is historical reproducibility only. It does not impose compatibility on
+the replacement.
 
-## 4. Simplified target repository organization
+## 5. Independent ecosystem review findings (2026-10-05)
 
-The exact directory names are not frozen, but the intended ownership model is:
+These observations informed the freeze decision. They are evidence, not pinned
+future versions.
 
-```
-BioWorkflows/
-|-- <legacy Snakemake workflows>/       # retained during migration
-|-- nextflow/
-|   |-- conf/                           # HPC/site/container profiles
-|   |-- versions.yml                    # tested tool/pipeline revisions
-|   |-- adopted/                        # configs/docs/helpers only
-|   |   |-- methylseq/
-|   |   |-- rnaseq/
-|   |   |-- differentialabundance/
-|   |   |-- chipseq/
-|   |   |-- cutandrun/
-|   |   `-- atacseq/
-|   |-- pipelines/                      # BioWorkflows-owned DSL2 pipelines
-|   |   |-- srnaseq/
-|   |   |-- seclip/
-|   |   |-- faireseq/
-|   |   |-- lncrna/
-|   |   `-- dmr/
-|   |-- modules/                        # local modules only when needed
-|   |-- subworkflows/                   # local reusable compositions when needed
-|   `-- docs/                           # migration and acceptance records
-|-- plans/
-`-- README.md
-```
+### 5.1 RNA-seq
 
-The `adopted/` directories are not forks of nf-core pipelines. They contain
-only the BioWorkflows-owned material required to run a pinned upstream pipeline,
-such as params, reference settings, usage notes, acceptance records, or a small
-input helper.
+Current nf-core/rnaseq is substantially richer and more actively maintained than
+the legacy local RNA-seq implementation and supports multiple alignment and
+quantification strategies plus extensive QC.
 
-## 5. Workflow disposition
+Mainline conclusion:
 
-| Workflow entry | Mainline route | BioWorkflows ownership |
+- nf-core/rnaseq is the primary candidate;
+- do not preserve old STAR/featureCounts/StringTie/parameter choices merely for
+  parity;
+- downstream differential and lncRNA analysis must be separately re-evaluated.
+
+### 5.2 Differential analysis
+
+nf-core/differentialabundance provides a maintained matrix-based framework for
+differential statistics, plots, gene-set analysis, reports, and multiple
+analysis profiles.
+
+Mainline conclusion:
+
+- evaluate it as the default downstream analysis route;
+- retain local DE/enrichment scripts only where they offer a scientifically
+  necessary capability not covered adequately upstream.
+
+### 5.3 DNA methylation
+
+Current nf-core/methylseq supports several methylation analysis paths rather than
+only the legacy Bismark path, with modern QC and additional capabilities.
+
+Mainline conclusion:
+
+- nf-core/methylseq is the primary upstream candidate;
+- Bismark is not preserved as a requirement;
+- the appropriate aligner/caller route is selected during scientific rebaseline;
+- differential methylation is reviewed separately;
+- methylKit is not frozen as the required DMR method.
+
+### 5.4 Small RNA
+
+Current nf-core/smrnaseq includes considerably more functionality than assumed
+in the earlier migration draft, including UMI handling, multiple contamination
+classes, miRNA/isomiR analysis, genome quantification, and novel miRNA analysis.
+
+However, some upstream documentation explicitly notes limited validation of
+contamination filtering outside human data.
+
+Mainline conclusion:
+
+- do NOT pre-classify small-RNA as a custom workflow;
+- first evaluate nf-core/smrnaseq on the actual plant/rice requirements;
+- use direct adoption or a bounded extension if scientifically adequate;
+- build a custom plant-oriented workflow only for proven gaps.
+
+### 5.5 ChIP-seq
+
+nf-core/chipseq provides a maintained ChIP-seq-specific workflow with peak
+calling, QC, and differential-analysis capabilities.
+
+Mainline conclusion:
+
+- direct adoption is the default starting point;
+- legacy ChIP-specific code is retained only if a current capability gap is
+  demonstrated.
+
+### 5.6 CUT&Tag
+
+nf-core/cutandrun explicitly supports CUT&Tag and includes spike-in support,
+controls, SEACR/MACS2 peak calling, consensus processing, and downstream QC.
+
+Mainline conclusion:
+
+- direct adoption is the default starting point;
+- legacy CUT&Tag branches from the mixed workflow are not migration targets.
+
+### 5.7 ATAC-seq
+
+nf-core/atacseq is a dedicated maintained ATAC-seq workflow.
+
+Mainline conclusion:
+
+- direct adoption is the default starting point;
+- compare its current QC/peak/accessibility functionality with actual research
+  needs before creating any local extension;
+- old TOBIAS or other optional steps are retained only if still scientifically
+  useful and not already better covered by current community tools.
+
+### 5.8 CLIP/eCLIP
+
+The released nf-core/clipseq pipeline is old DSL1 and is incompatible with
+modern Nextflow releases. It therefore cannot simply be adopted as the modern
+replacement.
+
+At the same time, maintained community DSL2 CLIP workflows exist and should be
+reviewed before rebuilding the legacy local implementation.
+
+Mainline conclusion:
+
+- perform a fresh CLIP/eCLIP ecosystem review;
+- do not port the old seCLIP pipeline by default;
+- select a maintained community route or compose modern modules where possible;
+- write a new local DSL2 workflow only for remaining scientifically necessary
+  gaps.
+
+### 5.9 lncRNA
+
+nf-core/lncpipe is under active modernization but remains under development.
+
+Mainline conclusion:
+
+- do not freeze the legacy CNCI/Pfam/NR chain as the target design;
+- review current lncRNA identification/coding-potential/community methods when
+  this workflow is reached;
+- adopt, compose, or implement only the scientifically justified final route.
+
+### 5.10 FAIRE-seq
+
+No mature nf-core FAIRE-seq replacement is assumed by this mainline.
+
+Mainline conclusion:
+
+- perform a current community review before implementation;
+- reuse compatible chromatin/accessibility components where scientifically
+  valid;
+- create a small custom workflow only if no maintained alternative fits.
+
+## 6. Reframing the legacy workflow inventory
+
+The old workflow names no longer determine the new implementation route.
+
+The current working disposition is:
+
+| Biological workflow | Primary candidate | Mainline status |
 |---|---|---|
-| bsseq | Adopt nf-core/methylseq | params/reference/HPC configuration and acceptance |
-| dmr | Custom downstream DSL2 | retained DMR logic and methylseq handoff |
-| rnaseq | Adopt nf-core/rnaseq | params/reference/HPC configuration and acceptance |
-| differentialabundance | Adopt nf-core/differentialabundance where suitable | explicit rnaseq handoff and preferred analysis configuration |
-| lncrna | Custom side workflow | retained project-specific lncRNA discovery |
-| srnaseq | Custom DSL2 | plant-oriented cascade filtering/counting and retained analysis |
-| seclip | Custom DSL2 | UMI/input-control/reproducible-peak design |
-| chipseq | Prefer direct nf-core/chipseq adoption | only bounded missing downstream capabilities remain local |
-| cuttag | Prefer direct nf-core/cutandrun adoption | only bounded missing CUT&Tag-specific capabilities remain local |
-| atacseq | Prefer direct nf-core/atacseq adoption | only bounded missing ATAC-specific capabilities remain local |
-| faireseq | Custom DSL2 | FAIRE-specific workflow using reusable components where valid |
+| RNA-seq | nf-core/rnaseq | adopt-first; scientific rebaseline required |
+| Differential abundance | nf-core/differentialabundance | adopt-first; only extend for proven gaps |
+| BS-seq / methylation calling | nf-core/methylseq | adopt-first; method choice re-evaluated |
+| Differential methylation | current community methods | open; do not freeze methylKit |
+| small-RNA | nf-core/smrnaseq | re-evaluate first; custom only if plant gaps remain |
+| ChIP-seq | nf-core/chipseq | adopt-first |
+| CUT&Tag | nf-core/cutandrun | adopt-first |
+| ATAC-seq | nf-core/atacseq | adopt-first |
+| FAIRE-seq | community review / custom if needed | open |
+| seCLIP/eCLIP | community review / composition / custom if needed | open |
+| lncRNA analysis | current nf-core/community methods | open; do not preserve legacy chain automatically |
 
-"Prefer direct adoption" is a mainline default, not a claim of exact
-feature-equivalence. The implementation review must map retained legacy
-capabilities to the selected upstream revision before retirement.
+This table is a routing baseline, not a promise of feature parity with the old
+repository.
 
-## 6. Decomposition of the legacy chip_cuttag_atac_faire workflow
+## 7. Decomposition of chip_cuttag_atac_faire
 
-The current combined workflow is a migration source, not a target architecture.
-
-It is decomposed into four independent workflow entries:
+The combined legacy workflow is split because the assays have different
+scientific semantics and now have stronger dedicated ecosystem support.
 
 ```
 legacy chip_cuttag_atac_faire
         |
-        +--> chipseq  --> nf-core/chipseq
-        +--> cuttag   --> nf-core/cutandrun
-        +--> atacseq  --> nf-core/atacseq
-        `--> faireseq --> BioWorkflows custom DSL2
+        +--> ChIP-seq  --> review/adopt nf-core/chipseq
+        +--> CUT&Tag   --> review/adopt nf-core/cutandrun
+        +--> ATAC-seq  --> review/adopt nf-core/atacseq
+        `--> FAIRE-seq --> current ecosystem review; custom only if needed
 ```
 
-The new design intentionally removes:
+The new design does not preserve:
 
-- one samplesheet mixing four assay types;
-- one global `seqtype` router;
-- global flags whose meaning changes by assay;
-- assay-inapplicable stages that silently schedule nothing;
-- one large mixed-assay DAG.
+- the shared `seqtype` switch;
+- a single mixed-assay samplesheet;
+- global flags that change meaning by assay;
+- the old feature matrix merely for compatibility.
 
-Potentially reusable capabilities such as annotation, motif analysis,
-provenance, selected QC calculations, or output conversion may be shared only
-after confirming identical semantics.
+If an upstream workflow has a more scientifically appropriate QC, peak-calling,
+normalization, replicate, or reporting design, the upstream/current design may
+replace the old local implementation.
 
-Examples of logic that remains owned by the relevant workflow include:
+A project can still contain several assay types; they simply run as independent
+assay workflows.
 
-- ChIP control/replicate/IDR behavior;
-- CUT&Tag spike-in and SEACR/MACS2 behavior;
-- ATAC TSS/accessibility QC and optional footprinting;
-- FAIRE-specific analysis choices.
+## 8. Simplified repository direction
 
-A project may of course contain several assay types. They are run through their
-respective workflow entries and compared/integrated downstream when needed.
-They are not forced into one execution DAG.
+Exact paths are implementation details, but the repository should remain
+conceptually simple:
 
-The legacy combined workflow is retired only when all replacement workflow
-entries required for its supported use cases have passed acceptance.
+```
+BioWorkflows/
+|-- legacy Snakemake workflows/        # temporary during transition
+|-- nextflow/
+|   |-- conf/                          # local/HPC/container configuration
+|   |-- versions.yml                   # tested revisions
+|   |-- adopted/                       # thin configs/docs/recipes for upstream workflows
+|   |-- pipelines/                     # only genuinely necessary local DSL2 workflows
+|   |-- modules/                       # local modules only when upstream lacks one
+|   |-- subworkflows/                  # only demonstrated reusable compositions
+|   `-- docs/                          # scientific decisions + validation records
+|-- plans/
+`-- README.md
+```
 
-## 7. What BioWorkflows deliberately does NOT build
+An `adopted/` entry is not a fork. It may contain only:
 
-To keep the project appropriate for personal/research use, the migration does
-not initially build:
+- a params file;
+- rice/reference configuration;
+- an HPC profile/example command;
+- a short scientific decision record;
+- validation notes.
 
-- a universal metadata database;
-- a universal run/workspace object;
-- a generic artifact registry;
-- a plugin/capability registry;
-- a workflow-family hierarchy;
-- a central orchestration service;
-- a unified GUI;
-- a custom replacement for nf-core schema/module tooling;
-- a mandatory `bioworkflows` CLI;
-- compatibility copies of all legacy output layouts.
+If upstream can be run cleanly without even that directory, do not create one.
 
-Any of these may be reconsidered later only if a repeated concrete need emerges.
+## 9. Per-workflow scientific rebaseline record
 
-## 8. Testing and acceptance
+Before implementing or adopting each workflow, create one concise scientific
+decision record answering:
 
-### 8.1 Adopted pipelines
+1. What biological use case is required?
+2. What inputs and scientifically meaningful outputs are needed?
+3. What does the current nf-core/community ecosystem provide?
+4. Which current methods are preferable and why?
+5. Which legacy functions are:
+   - replaced,
+   - retained,
+   - expanded,
+   - dropped?
+6. Is any local code still necessary?
+7. What real-data validation demonstrates scientific usability?
 
-For each adopted nf-core pipeline:
+This record comes before implementation specifications.
 
-- pin a tested release/revision;
-- validate the local params/reference/HPC configuration;
-- use upstream test profiles for basic execution;
-- run BioWorkflows-owned real-data acceptance where migration equivalence
-  matters;
-- document deliberate differences from the legacy method.
+It prevents both blind migration and uncontrolled feature accumulation.
+
+## 10. Testing and validation philosophy
+
+### 10.1 Adopted workflows
 
 Do not duplicate upstream module-level tests.
 
-### 8.2 Custom pipelines
+BioWorkflows validation focuses on:
 
-For BioWorkflows-owned DSL2 pipelines:
+- local/HPC execution;
+- reference configuration;
+- real biological datasets;
+- expected scientific outputs;
+- chosen optional functionality;
+- important upstream version changes.
 
-- follow the nf-core custom-pipeline structure where useful;
-- install/reuse nf-core modules and subworkflows where possible;
-- use nf-test for local modules/workflow composition;
-- retain focused tests for reused Python/R scripts;
-- use real-data acceptance before legacy retirement.
+### 10.2 Local workflows/extensions
 
-### 8.3 Acceptance philosophy
+Use nf-test or appropriate focused tests for locally owned logic.
 
-The purpose of migration testing is not byte-for-byte reproduction when the
-upstream method has deliberately changed.
+Reuse upstream-tested modules rather than reproducing their tests locally.
 
-The acceptance record must distinguish:
+### 10.3 Legacy comparison
 
-- accidental regression;
-- parameter/default differences;
-- tool-version differences;
-- intentional methodological changes.
+Legacy comparison is optional and targeted.
 
-Only unexplained or unacceptable differences block retirement.
+Use it when it helps answer questions such as:
 
-## 9. Migration sequence
+- did a major biological signal disappear unexpectedly?
+- is a new default producing a surprising systematic difference?
+- did a previously important capability disappear?
 
-### Stage 0 - Minimal common foundation
+Do not fail a new workflow because:
 
-Before migrating biology:
+- file names changed;
+- output directories changed;
+- tools changed;
+- defaults changed;
+- numerical values differ for understood scientific reasons;
+- a weak/obsolete legacy feature was intentionally removed.
 
-- create the minimal `nextflow/` layout;
-- pin the tested Nextflow/nf-core/nf-test baseline;
-- establish Apptainer and HPC profiles;
-- define the lightweight adopted-pipeline directory convention;
-- define the custom-pipeline convention based on nf-core tooling;
-- add minimal Nextflow CI;
-- define the acceptance-record template.
+## 11. Migration sequence
 
-Do not build a universal manifest, CLI, registry, or orchestration layer.
+### Stage 0 - Minimal shared foundation
 
-### Stage 1 - Adoption pilot: BS-seq
+Implement only the common infrastructure that is already clearly necessary:
 
-Use nf-core/methylseq as the first direct-adoption case and connect the retained
-DMR analysis only through the outputs it actually needs.
+- Nextflow baseline;
+- Apptainer/HPC execution;
+- tested version recording;
+- thin adopted-workflow convention;
+- local custom-pipeline convention;
+- minimal CI;
+- concise scientific decision/validation record templates.
 
-This validates the adopted-pipeline pattern.
+Do NOT build a universal manifest, registry, CLI, artifact platform, or
+orchestration layer.
 
-### Stage 2 - Custom pilot: small-RNA
+### Stage 1 - First adoption case
 
-Build srnaseq as the first BioWorkflows-owned DSL2 workflow using nf-core
-components where appropriate.
+Use one high-confidence upstream workflow as the first real migration.
 
-This validates the custom-pipeline pattern.
+BS-seq/nf-core/methylseq remains a good candidate, but the selected internal
+methylation route is chosen scientifically rather than inherited from legacy.
 
-### Stage 3 - Remaining workflow migrations
+The purpose is to validate the thin adoption model, not to reproduce bs-seq
+v0.2.
 
-After the two patterns above are stable, migrate the remaining workflow entries
-independently.
+### Stage 2 - Continue by research value and scientific confidence
 
-Planned routes:
+After the first adoption case, migrate workflows based on:
 
-- seclip -> custom;
-- chipseq -> adopted;
-- cuttag -> adopted;
-- atacseq -> adopted;
-- faireseq -> custom;
-- rnaseq -> adopted;
-- differentialabundance -> adopted handoff;
-- lncrna -> custom side workflow.
+- current research need;
+- confidence in the upstream/community route;
+- expected scientific benefit;
+- maintenance reduction.
 
-Their exact implementation order is operational, not architectural, and can be
-chosen according to current research need and migration risk.
+There is no mandatory "custom pipeline pilot".
 
-### Stage 4 - Legacy retirement and cleanup
+If small-RNA can be solved well with nf-core/smrnaseq plus a small plant
+extension, do that instead of creating srnaseq solely to demonstrate a custom
+pipeline.
 
-Retire each legacy implementation only after its replacement has passed
-acceptance.
+### Stage 3 - Build local DSL2 only where the review proves it is necessary
 
-For the combined chip_cuttag_atac_faire legacy workflow, retirement waits until
-all required replacement assay entries are accepted.
+Likely candidates may include parts of CLIP/eCLIP, FAIRE-seq, lncRNA, or
+differential methylation, but none is pre-committed to custom implementation.
 
-Create the final legacy Git tag/release, update user documentation, and remove
-obsolete Snakemake-era shared machinery only when it no longer has active
-consumers.
+### Stage 4 - Legacy retirement
 
-## 10. Mainline decision rule for future workflows
+Retire old code when the user's real analysis needs are covered by accepted new
+routes.
 
-When a new sequencing or assay type is needed:
+Retirement does NOT require every historical option to have a replacement.
+
+Before deletion:
+
+- document deliberately dropped capabilities;
+- preserve the final legacy state by Git tag/release;
+- confirm that currently required biological use cases are covered.
+
+## 12. Future-workflow rule
+
+For any new assay or analysis:
 
 ```
-Is there a suitable nf-core pipeline?
+Define biological need
         |
-       yes
+Review current nf-core + maintained community workflows
         |
-Can it be used directly with params/config?
-        | yes --> adopt it
+        +--> suitable upstream exists
+        |       |
+        |       +--> use directly
+        |       `--> add a small extension only if needed
         |
-        no
-        |
-Can the missing capability be a bounded side/downstream workflow?
-        | yes --> adopt + extend
-        |
-        no
-        v
-Build a custom DSL2 workflow using nf-core components
+        `--> no suitable upstream
+                |
+                +--> compose existing modules/subworkflows
+                |
+                `--> custom DSL2 only for the remaining gap
 ```
 
-This decision rule is the main architectural safeguard against BioWorkflows
-growing into another monolithic or duplicative framework.
+The project should prefer deleting local code over owning equivalent code when a
+maintained upstream solution becomes better.
 
-## 11. Explicitly deferred
+## 13. Freeze-review conclusions
 
-The mainline intentionally does not freeze:
+Independent review identified and corrected five remaining migration biases in
+the previous draft:
 
-- exact Nextflow/nf-core/nf-test version numbers;
-- exact per-pipeline params;
-- exact reference paths;
+1. **legacy parity bias** - removed;
+2. **premature custom small-RNA decision** - removed;
+3. **premature methylKit / legacy lncRNA method retention** - removed;
+4. **mandatory custom-pipeline pilot** - removed;
+5. **legacy output/scientific consistency as acceptance target** - replaced by
+   scientific usability and current best-practice validation.
+
+The mainline is therefore frozen with the following interpretation:
+
+> BioWorkflows will evolve by adopting and composing the best maintained
+> nf-core/community workflows for the user's real scientific needs, while
+> keeping only the minimum amount of local workflow code required for genuine
+> gaps.
+
+## 14. What is explicitly deferred
+
+The frozen mainline does NOT decide:
+
+- exact nf-core pipeline versions;
+- exact tool/aligner/caller choices inside adopted pipelines;
+- exact parameters;
+- exact DMR method;
+- exact lncRNA identification strategy;
+- exact small-RNA route;
+- exact CLIP/eCLIP route;
+- exact FAIRE implementation;
 - exact local module boundaries;
-- exact acceptance thresholds;
-- exact execution order after the two pilot migrations;
-- whether a convenience launcher/CLI is ever needed.
+- exact validation thresholds;
+- implementation order after the first adoption case.
 
-These belong to later implementation specifications or to evidence from real
-use.
-
-## 12. Freeze criterion
-
-This mainline can be frozen when an independent consistency review confirms:
-
-1. every legacy capability has an intended migration route or an explicit
-   decision to drop it;
-2. no new shared abstraction duplicates an existing nf-core capability without
-   a demonstrated need;
-3. adopted and custom workflows remain independently runnable;
-4. the legacy chip_cuttag_atac_faire workflow has been fully decomposed at the
-   architecture level;
-5. Stage 0 remains a minimal foundation rather than a new platform-building
-   project.
-
-Only after mainline freeze should Stage 0 implementation specifications be
-written.
+Those decisions require a fresh scientific review at the time each workflow is
+implemented.
