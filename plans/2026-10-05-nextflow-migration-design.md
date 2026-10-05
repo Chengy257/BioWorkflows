@@ -211,7 +211,10 @@ The legacy WorkflowSpec executable resolver is not part of the future runtime
 architecture.
 
 A developer Conda profile may exist, but HPC/reproducible use is
-container-oriented.
+container-oriented. Amended 2026-10-05 (see Section 15): the apptainer
+profile is the only supported execution profile on the HPC, and conda remains
+a developer convenience on local machines - it is never a validation or
+production target.
 
 ### D7. Explicit version locking, without freezing versions in the mainline
 
@@ -564,7 +567,12 @@ Do not fail a new workflow because:
 Implement only the common infrastructure that is already clearly necessary:
 
 - Nextflow baseline;
-- Apptainer/HPC execution;
+- Apptainer/HPC execution: the apptainer profile is the only supported
+  execution profile on the HPC; images for adopted pipelines are pre-pulled
+  per release with `nf-core download --singularity` into a configurable
+  shared cache directory (environment-variable fallback in tracked profiles;
+  machine-specific paths stay in machine-local, git-ignored Nextflow
+  configuration);
 - tested version recording;
 - thin adopted-workflow convention;
 - local custom-pipeline convention;
@@ -716,3 +724,14 @@ listed remains frozen as reviewed.
    syntax validation, and documentation link checks. Upstream test profiles
    are not re-run locally (Section 10.1); nf-test is introduced when the
    first locally owned module or pipeline exists.
+5. **Software environment management is container-only on the HPC.** The
+   apptainer profile is the single supported execution profile. Locally owned
+   processes follow the modules-first rule: reuse an existing nf-core module
+   first, then write a local module in nf-core module format (software
+   definition and container declaration versioned together), and use
+   per-process conda only as a developer convenience. Images for adopted
+   pipelines are pre-pulled per release with `nf-core download --singularity`
+   into a configurable shared cache directory; registry reachability problems
+   are solved at pull time, not by adding a conda fallback to the HPC.
+   Machine-specific paths live in machine-local, git-ignored Nextflow
+   configuration.

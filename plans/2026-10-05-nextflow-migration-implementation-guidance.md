@@ -61,7 +61,11 @@ Only a small shared Nextflow foundation is required.
 Implement once:
 
 - a tested Nextflow baseline;
-- Apptainer/Singularity execution for local/HPC use;
+- Apptainer/Singularity execution for local/HPC use: the apptainer profile is
+  the only supported execution profile on the HPC, with per-release image
+  pre-pulling (`nf-core download --singularity`) into a configurable shared
+  cache directory; machine-specific paths stay in machine-local git-ignored
+  configuration;
 - SGE/PBS/SLURM site configuration where actually needed;
 - a tracked record of tested workflow/tool revisions;
 - a simple convention for BioWorkflows-owned custom DSL2 pipelines;
