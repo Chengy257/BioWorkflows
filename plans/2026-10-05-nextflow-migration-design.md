@@ -750,3 +750,14 @@ listed remains frozen as reviewed.
    proxy / local build from the USTC bioconda mirror) and the container
    override convention are recorded in the implementation guidance,
    section 3.1.
+7. **Chipseq scientific rebaseline record ratified (2026-10-06).** The
+   per-workflow record mandated by Section 9 exists at
+   `plans/2026-10-06-chipseq-scientific-decision-record.md` and is frozen:
+   every retained legacy capability (DiffBind, spike-in, IDR, SEACR, HOMER
+   motif discovery, QC gate table, organelle QC) is delivered by upgrading the
+   existing local implementation as a default-off local extension on the
+   adopted nf-core/chipseq route; no replacement alternatives are taken.
+   CUT&Tag data therefore routes through the chipseq route with local
+   spike-in/SEACR extensions; nf-core/cutandrun remains the documented
+   ecosystem option but is not adopted for now. nf-core/atacseq covers
+   ATAC-seq natively, including TOBIAS footprinting (`--with_tobias`).
