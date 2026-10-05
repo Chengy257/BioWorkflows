@@ -96,3 +96,10 @@ desktop.ini
 
 # Local scratch staging (vendor docs, per-project run configs) — never commit
 .tmp_vendor/
+
+# Nextflow-era container artifacts: SIF images are hardlink-dropped by
+# `apptainer pull` into the current directory and must never be committed
+# (they belong in the machine-local apptainer cache / -local dirs).
+*.sif
+.nextflow/
+.nextflow.log*
