@@ -71,6 +71,17 @@ config.local.yaml
 *.bak.*
 .local_backup/
 
+# ---- Machine-local files — never commit ----
+# AGENTS.md carries machine-specific facts (paths, toolchains) and stays
+# untracked so wrong-machine descriptions never enter the repo.
+AGENTS.md
+
+# ---- plans/: development-process documents, local by default ----
+# Everything under plans/ stays untracked except design documents
+# explicitly whitelisted below (tracked and shared via the repository).
+plans/*
+!plans/2026-10-05-nextflow-migration-design.md
+
 # ---- Editors / OS / tooling ----
 .DS_Store
 Thumbs.db
