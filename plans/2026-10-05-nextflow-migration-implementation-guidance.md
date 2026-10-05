@@ -66,7 +66,10 @@ Implement once:
 - a tracked record of tested workflow/tool revisions;
 - a simple convention for BioWorkflows-owned custom DSL2 pipelines;
 - a simple convention for thin adopted-workflow configuration;
-- minimal CI for locally owned code/configuration;
+- minimal CI for locally owned code/configuration, scoped to static checks
+  only (YAML/shell lint, Nextflow config syntax validation, documentation
+  link checks); upstream test profiles are not re-run locally, and nf-test is
+  added when the first locally owned module or pipeline appears;
 - concise scientific decision and real-data validation records.
 
 Avoid introducing:

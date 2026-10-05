@@ -1,7 +1,8 @@
 # BioWorkflows: Scientific-First nf-core-Based Nextflow Rebaseline
 
 - Date: 2026-10-05
-- Status: FROZEN after independent mainline review
+- Status: FROZEN after independent mainline review; amended 2026-10-05
+  (Section 15)
 - Scope: scientific and architectural rebaseline of the current Snakemake
   workflows into a simpler nf-core-based Nextflow workflow suite
 - Primary use case: personal/research-group use on local Linux/WSL and HPC
@@ -178,6 +179,12 @@ universal artifact model, or legacy output compatibility layer.
 
 Small adapters may be written only when they solve repeated real work.
 
+Reference genomes are never fixed by this mainline. Adopted pipelines consume
+references through their own native configuration; species- and site-specific
+reference data (for example the locally used rice references) are separated
+into local retained configuration and stay out of the frozen mainline and the
+tracked repository.
+
 ### D5. Cross-workflow contracts are local and evidence-driven
 
 Do not define a global artifact framework.
@@ -323,12 +330,15 @@ classes, miRNA/isomiR analysis, genome quantification, and novel miRNA analysis.
 However, some upstream documentation explicitly notes limited validation of
 contamination filtering outside human data.
 
-Mainline conclusion:
+Mainline conclusion (amended 2026-10-05, see Section 15):
 
-- do NOT pre-classify small-RNA as a custom workflow;
-- first evaluate nf-core/smrnaseq on the actual plant/rice requirements;
-- use direct adoption or a bounded extension if scientifically adequate;
-- build a custom plant-oriented workflow only for proven gaps.
+- the BioWorkflows plant-oriented small-RNA workflow is the scientific
+  starting point for this assay;
+- nf-core/smrnaseq and other maintained community workflows are reviewed for
+  useful capabilities (QC, UMI handling, contamination classes, miRNA/isomiR
+  analysis, reporting) and absorbed where scientifically appropriate;
+- local pieces that become redundant after the review are removed;
+- acceptance follows D9 - scientific usability, not parity.
 
 ### 5.5 ChIP-seq
 
@@ -384,12 +394,14 @@ Mainline conclusion:
 
 nf-core/lncpipe is under active modernization but remains under development.
 
-Mainline conclusion:
+Mainline conclusion (amended 2026-10-05, see Section 15):
 
-- do not freeze the legacy CNCI/Pfam/NR chain as the target design;
-- review current lncRNA identification/coding-potential/community methods when
-  this workflow is reached;
-- adopt, compose, or implement only the scientifically justified final route.
+- the existing BioWorkflows lncRNA analysis is the functional starting point;
+- the legacy CNCI/Pfam/NR chain is not frozen as the final method;
+- current coding-potential, transcript-quality, annotation, and homology
+  methods are reviewed, and legacy components are replaced or expanded where
+  better-maintained or scientifically stronger options exist;
+- outputs from the adopted RNA-seq route are reused where appropriate.
 
 ### 5.10 FAIRE-seq
 
@@ -414,13 +426,14 @@ The current working disposition is:
 | Differential abundance | nf-core/differentialabundance | adopt-first; only extend for proven gaps |
 | BS-seq / methylation calling | nf-core/methylseq | adopt-first; method choice re-evaluated |
 | Differential methylation | current community methods | open; do not freeze methylKit |
-| small-RNA | nf-core/smrnaseq | re-evaluate first; custom only if plant gaps remain |
+| small-RNA | BioWorkflows plant-oriented workflow, upgraded with absorbed upstream modules | local-foundation route; smrnaseq/community capabilities reviewed for absorption |
 | ChIP-seq | nf-core/chipseq | adopt-first |
+| ChIP differential binding | nf-core/chipseq differential analysis | expected covered by the adopted pipeline; proven gaps route to a bounded local extension |
 | CUT&Tag | nf-core/cutandrun | adopt-first |
 | ATAC-seq | nf-core/atacseq | adopt-first |
 | FAIRE-seq | community review / custom if needed | open |
 | seCLIP/eCLIP | community review / composition / custom if needed | open |
-| lncRNA analysis | current nf-core/community methods | open; do not preserve legacy chain automatically |
+| lncRNA analysis | BioWorkflows local lncRNA workflow + current community methods | local-foundation route; legacy method chain not frozen, components replaced on evidence |
 
 This table is a routing baseline, not a promise of feature parity with the old
 repository.
@@ -555,7 +568,10 @@ Implement only the common infrastructure that is already clearly necessary:
 - tested version recording;
 - thin adopted-workflow convention;
 - local custom-pipeline convention;
-- minimal CI;
+- minimal CI, scoped to static checks only: config/YAML/shell lint, Nextflow
+  config syntax validation, and documentation link checks; upstream test
+  profiles are not re-run locally, and nf-test is added when the first
+  locally owned module or pipeline appears;
 - concise scientific decision/validation record templates.
 
 Do NOT build a universal manifest, registry, CLI, artifact platform, or
@@ -565,11 +581,14 @@ orchestration layer.
 
 Use one high-confidence upstream workflow as the first real migration.
 
-BS-seq/nf-core/methylseq remains a good candidate, but the selected internal
-methylation route is chosen scientifically rather than inherited from legacy.
+Amended 2026-10-05 (see Section 15): the first adoption case is
+ChIP-seq/nf-core/chipseq, selected by the research-priority principle of the
+implementation guidance. BS-seq/nf-core/methylseq moves to a later adoption
+case; its internal methylation route is then chosen scientifically rather
+than inherited from legacy.
 
-The purpose is to validate the thin adoption model, not to reproduce bs-seq
-v0.2.
+The purpose is to validate the thin adoption model, not to reproduce the
+legacy ChIP or BS-seq implementations.
 
 ### Stage 2 - Continue by research value and scientific confidence
 
@@ -654,6 +673,8 @@ The frozen mainline does NOT decide:
 - exact nf-core pipeline versions;
 - exact tool/aligner/caller choices inside adopted pipelines;
 - exact parameters;
+- reference species/genomes and the mechanism of reference configuration
+  (see D4 - always user-configured, site specifics locally retained);
 - exact DMR method;
 - exact lncRNA identification strategy;
 - exact small-RNA route;
@@ -665,3 +686,33 @@ The frozen mainline does NOT decide:
 
 Those decisions require a fresh scientific review at the time each workflow is
 implemented.
+
+## 15. Post-freeze amendments (2026-10-05 pre-implementation discussion)
+
+The following owner decisions were taken in the pre-implementation discussion
+of 2026-10-05 and amend the frozen mainline as recorded here. Everything not
+listed remains frozen as reviewed.
+
+1. **First adoption case is ChIP-seq.** Stage 1 starts with nf-core/chipseq,
+   selected by the research-priority principle of the implementation
+   guidance. The legacy ChIP capability list (replicate-aware peaks,
+   IDR/consensus, spike-in normalization, SEACR, differential binding, QC
+   gate table, TOBIAS, HOMER motifs, per-sample bigWigs) is the checklist for
+   the chipseq scientific decision record; spike-in normalization and
+   differential binding are the expected review focus points. methylseq moves
+   to a later adoption case.
+2. **small-RNA and lncRNA follow the local-foundation route.** The existing
+   BioWorkflows plant small-RNA and lncRNA workflows are the scientific
+   starting points, upgraded by absorbing maintained upstream modules where
+   scientifically appropriate. This partially reinstates what freeze-review
+   correction 2 removed; it is an explicit owner decision informed by the
+   plant/rice biology embedded in the local implementations. Sections 5.4,
+   5.9, and the Section 6 routing table reflect this.
+3. **Reference genomes are never fixed.** No species, reference, or
+   reference-configuration mechanism is decided by this mainline; adopted
+   pipelines consume references through their native configuration and
+   species/site specifics stay in local retained configuration (see D4).
+4. **Minimal CI (Stage 0) is static checks only.** Lint, Nextflow config
+   syntax validation, and documentation link checks. Upstream test profiles
+   are not re-run locally (Section 10.1); nf-test is introduced when the
+   first locally owned module or pipeline exists.
