@@ -62,10 +62,9 @@ Implement once:
 
 - a tested Nextflow baseline;
 - Apptainer/Singularity execution for local/HPC use: the apptainer profile is
-  the only supported execution profile on the HPC, with per-release image
-  pre-pulling (`nf-core download --singularity`) into a configurable shared
-  cache directory; machine-specific paths stay in machine-local git-ignored
-  configuration;
+  the only supported execution profile on the HPC; image seeding follows the
+  validated per-source routing recipe in section 3.1; machine-specific paths
+  stay in machine-local git-ignored configuration;
 - SGE/PBS/SLURM site configuration where actually needed;
 - a tracked record of tested workflow/tool revisions;
 - a simple convention for BioWorkflows-owned custom DSL2 pipelines;
@@ -88,6 +87,40 @@ Avoid introducing:
 
 Add shared utilities only after repeated real use demonstrates that they are
 worth sharing.
+
+### 3.1 Image acquisition recipe (validated 2026-10-05 on the HPC)
+
+For each adopted pipeline, the seeding procedure is:
+
+1. Pin the pipeline revision (branch or commit SHA) compatible with the
+   pinned Nextflow driver. Tagged releases may lag the active branch by a
+   year or more and may use config syntax rejected by modern Nextflow
+   (chipseq 2.1.0 is the recorded example).
+2. Resolve the authoritative image list with `nextflow inspect -format json
+   -profile <execution profiles> main.nf`. Never grep module files: unused
+   module variants and blob-path style references pollute the result.
+3. Pull images sequentially, one at a time, routed per source: direct
+   connections where reachable and stable (wave, depot, quay), the layered
+   proxy environment where required (shell/Go read https_proxy; the JVM only
+   reads NXF_JVM_ARGS system properties), and - for images unreachable by
+   either - local builds from the USTC bioconda mirror using the
+   version/build string encoded in the image tag (a fresh conda env, not the
+   base env, to avoid python freeze conflicts).
+4. Where a source is rewritten (docker.io-hosted biocontainers images pulled
+   from quay.io/biocontainers - DaoCloud rejects biocontainers by allowlist)
+   or built locally, record a machine-local container-override configuration
+   mapping process names to the cached image URI or local SIF path, and pass
+   it with `nextflow -c`.
+5. Validate with the pipeline's test profile plus the apptainer profile on
+   the HPC, throttling the local executor on the shared head node (full
+   parallelism hits fork EAGAIN alongside lab jobs).
+6. Record the tested driver, pipeline revision, and image set in the version
+   baseline (BASELINE.yml machine-local today; the tracked versions.yml when
+   the nextflow/ tree exists).
+
+The machine-local tooling on ginpie (`nf-pull-seq.sh`, `nf-pull-env.sh`,
+`nf-build-depot.sh`) implements this recipe and is the reference
+implementation for seeding future pipelines.
 
 ## 4. Workflow implementation directions
 
@@ -340,6 +373,12 @@ Evaluate, as relevant:
 
 Legacy comparison may be used diagnostically, but no workflow should be forced
 back to an inferior method to improve numerical parity.
+
+The first concrete validation record followed exactly this shape on
+2026-10-05: an nf-core/chipseq dev-HEAD smoke run on the HPC with the test
+and apptainer profiles, a throttled local executor, verified outputs
+(MultiQC report, peak calls, bigWigs), and a machine-local baseline record
+(BASELINE.yml). It is the template for per-workflow validation records.
 
 ## 9. Retirement guidance
 

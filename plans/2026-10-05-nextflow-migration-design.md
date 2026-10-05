@@ -568,11 +568,13 @@ Implement only the common infrastructure that is already clearly necessary:
 
 - Nextflow baseline;
 - Apptainer/HPC execution: the apptainer profile is the only supported
-  execution profile on the HPC; images for adopted pipelines are pre-pulled
-  per release with `nf-core download --singularity` into a configurable
-  shared cache directory (environment-variable fallback in tracked profiles;
-  machine-specific paths stay in machine-local, git-ignored Nextflow
-  configuration);
+  execution profile on the HPC. Image acquisition follows the validated
+  per-source routing recipe (implementation guidance, section 3.1):
+  sequential direct pulls where reachable and stable, proxy pulls where
+  needed, and local builds from the USTC bioconda mirror as the in-country
+  fallback; rewritten sources go through a machine-local container-override
+  configuration. Machine-specific paths stay in machine-local, git-ignored
+  Nextflow configuration;
 - tested version recording;
 - thin adopted-workflow convention;
 - local custom-pipeline convention;
@@ -735,3 +737,16 @@ listed remains frozen as reviewed.
    are solved at pull time, not by adding a conda fallback to the HPC.
    Machine-specific paths live in machine-local, git-ignored Nextflow
    configuration.
+6. **Per-step modular images reconfirmed; acquisition chain validated
+   (2026-10-05).** The owner reconfirmed the D6 image granularity after
+   reviewing the monolithic alternative: per-step modular containers
+   (wave-merged tool combinations), not one big per-pipeline image - the
+   accepted cost is roughly 2x cheap storage in exchange for dependency
+   solvability, per-step version pinning, and upstream alignment. The whole
+   environment chain was validated end-to-end the same day with an
+   nf-core/chipseq dev-HEAD smoke run on the HPC (all 29 runtime images
+   seeded, container overrides verified, full test-profile pipeline
+   completed with outputs). The image acquisition routing matrix (direct /
+   proxy / local build from the USTC bioconda mirror) and the container
+   override convention are recorded in the implementation guidance,
+   section 3.1.
