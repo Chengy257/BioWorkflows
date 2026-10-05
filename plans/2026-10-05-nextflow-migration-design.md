@@ -1,237 +1,552 @@
-# BioWorkflows: Snakemake to Nextflow Migration Design
+# BioWorkflows: Snakemake to Nextflow Migration Mainline Design
 
 - Date: 2026-10-05
-- Status: design agreed with the user; implementation NOT started
-- Scope: all five Snakemake workflows (rna-seq, chip_cuttag_atac_faire,
-  seclip-seq, srna-seq, bs-seq), the shared/ layer, tests, CI, and docs
-- Machine context: written on the HPC Linux server. Repository sync checked
-  2026-10-05: local main == origin/main at 8a33551 (2026-09-12), working tree
-  clean, no stash.
-- Document class: development-process document. plans/ is local-by-default
-  (git-ignored via plans/*); this design doc is explicitly whitelisted in
-  .gitignore and tracked in the repository.
+- Status: mainline design revision; implementation NOT started
+- Scope: migration of the five legacy Snakemake workflow families, the shared
+  execution layer, testing, CI, documentation, and legacy retirement
+- Authority: this document defines migration direction and architectural
+  boundaries. Detailed implementation specifications are intentionally deferred
+  until the mainline is reviewed and frozen.
+- Legacy baseline: current Snakemake implementations remain available and are
+  bugfix-only during migration.
 
-## 1. Current state (verified 2026-10-05)
+## 1. Purpose
 
-The monorepo is 100% Snakemake 7.32.4 based (CI pins snakemake==7.32.4 plus
-pulp==2.7.0). Five workflows share one architecture and a shared/ layer.
+BioWorkflows is moving from a Snakemake-centered monorepo to a Nextflow DSL2
+workflow collection with three goals:
 
-| Workflow   | Rules | Workflow logic LOC | Scripts (py/R) | Scripts LOC | run.sh LOC |
-|------------|-------|--------------------|----------------|-------------|------------|
-| rna-seq    | 25    | ~2,422             | 13             | 1,134       | 535        |
-| chip       | 52    | ~4,342             | 12             | 1,228       | 541        |
-| seclip-seq | 24    | ~1,844             | 4              | 516         | 459        |
-| srna-seq   | 13    | ~1,479             | 6              | 533         | 459        |
-| bs-seq     | 15    | ~1,408             | 3              | 310         | 460        |
-| Total      | 129   | ~11,495            | 38             | ~3,721      | ~2,454     |
+1. reuse mature nf-core pipelines and modules instead of rebuilding solved
+   infrastructure;
+2. make HPC, Apptainer/container, and future cloud execution first-class; and
+3. use migration to correct legacy architectural coupling rather than translate
+   the old DAGs mechanically.
 
-Plus: shared/ layer ~430 LOC (launcher.sh shell helpers, WorkflowSpec runtime
-framework, software version collector); per-workflow lint/dry-run test suites;
-five CI jobs. chip_cuttag_atac_faire is the largest single unit (52 rules, 17
-feature flags, a 1,231-line common.smk).
+The migration is therefore a scientific and architectural rebaseline, not a
+line-by-line Snakemake-to-Nextflow translation.
 
-Architecture characteristics that matter for migration:
+## 2. Current-state observations that constrain the migration
 
-- Zero per-rule conda directives anywhere: one pre-activated environment per
-  run; executables resolved at runtime via software.yaml plus <PREFIX>_TOOL_*
-  environment variables (WorkflowSpec framework). This model is
-  framework-agnostic and migrates well.
-- All 38 scripts are standalone argparse CLIs with zero snakemake-object
-  coupling; rules pass params and shell invocations. Scripts port to Nextflow
-  unchanged.
-- Deeply Snakemake-specific layers that must be rebuilt, not translated:
-  parse-time Python in common.smk (config validation aggregating all errors,
-  species preset backfill, conditional rule inclusion driven by config flags),
-  the 4-layer configfile merge chain, expand()-based I/O declarations,
-  dry-run DAG job-count baselines as tests, snakemake --lint, and the
-  460-540-line run.sh launchers with SGE/PBS/SLURM auto-detection.
+The repository currently contains five first-class Snakemake workflows:
+rna-seq, chip_cuttag_atac_faire, seclip-seq, srna-seq, and bs-seq. They share
+runtime resolution, launcher conventions, scheduler handling, configuration
+patterns, and standalone Python/R scripts.
 
-## 2. Decisions (agreed with the user, 2026-10-05)
+Important migration properties:
 
-- D1 Motivation: reuse the nf-core ecosystem; become cloud/container ready.
-- D2 Strategy: hybrid. Adopt nf-core pipelines where coverage exists; write
-  custom DSL2 pipelines (reusing nf-core modules) where it does not.
-- D3 Conventions: adopted pipelines are used as shipped (their samplesheet
-  format, output layout, tool versions). No compatibility shims mimicking the
-  legacy layout; downstream adaptation is our own work. Legacy Snakemake
-  implementations remain available during the transition.
-- D4 Software environment model: custom pipelines phase in (pre-activated
-  environment, then per-process conda, then containers). Adopted nf-core
-  pipelines start on containers directly: a single pre-activated environment
-  cannot satisfy a 40-50 process nf-core pipeline, so "use the current env
-  first" only applies to custom pipelines.
-- D5 HPC reality: Apptainer/Singularity usable, network access available.
-  The containerization target is directly feasible.
-- D6 Legacy handling: Snakemake implementations are frozen (bugfix only) and
-  retired per pipeline after the Nextflow replacement passes real-data
-  acceptance.
+- The existing Python/R analysis scripts are mostly standalone CLI programs and
+  can usually be reused without Snakemake coupling.
+- Parse-time Python, config merging, conditional rule inclusion, target
+  expansion, scheduler launchers, and dry-run DAG baselines are Snakemake
+  architecture and must be redesigned rather than translated.
+- The current chip_cuttag_atac_faire workflow is a legacy aggregation of four
+  biologically distinct assay types. Its common sample table routes
+  ChIP-seq, CUT&Tag, ATAC-seq, and FAIRE-seq through one DAG, while many
+  downstream stages are already assay-specific. This coupling must not be
+  reproduced in the Nextflow architecture.
+- AGENTS.md is machine-local and git-ignored. Repository-level migration
+  governance must therefore live in tracked project documentation, not in
+  AGENTS.md.
 
-## 3. nf-core landscape facts (checked 2026-10-05)
+## 3. Frozen migration principles
 
-- No released nf-core/eclip exists. The CLIP pipeline is nf-core/clipseq
-  (iCount / PureCLIP / Piranha / paraclu in parallel); it does not match
-  seclip-seq's core design (UMI dedup plus input-control reproducible-peak
-  logic; no CLIPper).
-- nf-core modules exist for the key building blocks of the custom pipelines:
-  seacr_callpeaks, tobias_* (footprint / bindetect), diffbind, homer_findpeaks,
-  pureclip, among 2,100+ modules installable with nf-core tooling.
-- The four chromatin assays are split across nf-core/chipseq, nf-core/atacseq,
-  and nf-core/cutandrun. None offers this repo's unified four-assay design
-  with per-assay flags, spike-in normalization, and the QC gate table.
-- nf-core/rnaseq (mature, ~50 processes), nf-core/methylseq (mature, Bismark
-  based), and nf-core/smrnaseq (released; animal miRNA / miRDeep2 focus)
-  cover the remaining biology to varying degrees (see disposition matrix).
+### D1. Hybrid adoption strategy
 
-## 4. Target architecture
+Prefer an existing nf-core pipeline when it covers the biological execution
+path sufficiently well. Use custom DSL2 only for capabilities that are genuinely
+project-specific or not covered by a suitable upstream pipeline.
+
+### D2. Adopt upstream pipelines; do not fork them by default
+
+Adopted nf-core pipelines are run at pinned revisions with BioWorkflows-owned
+input adapters, parameter sets, reference configuration, executor profiles, and
+acceptance records.
+
+Do not fork an nf-core pipeline merely to preserve the legacy BioWorkflows
+output layout or CLI. Deliberate downstream adaptation is preferred over
+compatibility shims.
+
+### D3. Assay-first decomposition
+
+The legacy chip_cuttag_atac_faire workflow will NOT migrate to one monolithic
+`chip-nf` pipeline.
+
+ChIP-seq, CUT&Tag, ATAC-seq, and FAIRE-seq become independent execution units
+with explicit assay contracts. They may reuse shared modules and subworkflows,
+but assay-specific decisions remain in the assay that owns them.
+
+A new Nextflow run has one primary assay contract. Mixed-assay projects may
+contain several assay runs, but cross-assay coordination occurs above the
+individual execution DAGs rather than by mixing all assays in one sample table.
+
+### D4. Share capabilities, not giant workflows
+
+Reusable capabilities should be factored into shared DSL2 modules/subworkflows
+or reusable post-processing components where scientifically appropriate.
+
+Examples include:
+
+- reference and input validation;
+- alignment/QC primitives where parameters are genuinely compatible;
+- peak-format normalization and annotation;
+- MultiQC integration;
+- motif analysis;
+- differential-binding primitives;
+- provenance/version capture;
+- selected QC summaries and reporting.
+
+Assay-specific logic must not be generalized merely to remove duplication.
+
+Examples that stay assay-specific include:
+
+- ATAC-specific TSS and accessibility QC;
+- ATAC/FAIRE footprinting;
+- CUT&Tag/CUT&RUN-style SEACR and spike-in semantics;
+- ChIP control and replicate/IDR policy;
+- assay-specific deduplication and peak-calling defaults.
+
+### D5. Container-native Nextflow target
+
+New Nextflow execution should be container-native from the start wherever
+practical.
+
+- Adopted nf-core pipelines use their native Apptainer/Singularity support.
+- Custom DSL2 processes use nf-core module software definitions or explicit
+  per-process containers.
+- A local Conda/developer profile may exist as a secondary execution option.
+- The legacy WorkflowSpec executable resolver is not a long-term Nextflow
+  runtime contract. It may be consulted for migration knowledge and temporarily
+  used for isolated in-house scripts only when a container is not yet available.
+
+This removes the previous plan to rebuild custom pipelines first around one
+pre-activated environment and containerize them later.
+
+### D6. Explicit version locking
+
+No production or acceptance run uses an unpinned `latest`.
+
+Phase 0 establishes a tracked version manifest covering at minimum:
+
+- tested Nextflow version;
+- nf-core pipeline revisions;
+- nf-core tooling revision where relevant;
+- nf-test revision;
+- locally maintained module/container revisions when applicable.
+
+Upgrades are explicit changes followed by re-validation.
+
+### D7. Normalized input contract plus pipeline-specific adapters
+
+BioWorkflows will not rely on a universal
+`sample_id -> nf-core samplesheet` converter.
+
+Instead, a normalized BioWorkflows run manifest captures the information
+actually needed to describe a run, including as applicable:
+
+- sample identity;
+- assay;
+- FASTQ paths and layout;
+- biological group/condition/batch;
+- treatment/control or control linkage;
+- strandedness or assay-specific metadata;
+- reference selection and optional run metadata.
+
+Pipeline-specific adapters validate this manifest and emit the exact
+samplesheet/parameter contract required by the selected adopted or custom
+pipeline.
+
+The normalized manifest is a BioWorkflows boundary. The upstream nf-core input
+formats remain unchanged.
+
+### D8. Acceptance precedes retirement
+
+Every migrated execution unit must have a pipeline-specific acceptance contract
+before real-data cross-comparison begins.
+
+"Results are explainable" is not sufficient as a retirement gate.
+
+Acceptance must cover four dimensions:
+
+1. execution completeness;
+2. expected output/artifact completeness;
+3. scientific consistency with the legacy baseline or an explicitly approved
+   changed method;
+4. reproducibility and target-HPC execution.
+
+Exact metrics and tolerances are defined in the later implementation
+specification for each execution unit.
+
+### D9. Legacy preservation is Git-native
+
+The final accepted Snakemake baseline is preserved by Git tag/release before its
+removal from the active tree.
+
+Machine-local archives may exist as extra backups, but they are not the formal
+project retirement mechanism.
+
+A combined legacy workflow such as chip_cuttag_atac_faire is not retired until
+all execution units required to replace its supported assays have independently
+passed acceptance.
+
+## 4. Target repository architecture
+
+The exact file layout may be refined during Phase 0, but the ownership model is
+frozen as follows:
 
 ```
 BioWorkflows/
-|-- rna-seq/ ... bs-seq/        # five Snakemake workflows: frozen legacy,
-|                               #   retired per pipeline after NF acceptance
-|-- shared/                     # kept; WorkflowSpec and launcher.sh serve
-|                               #   legacy and custom NF pipelines (phase 1)
-|-- plans/                      # dev-process docs: local by default,
-|                               #   whitelisted design docs are tracked
-|-- nextflow/                   # NEW: everything of the Nextflow era
-|   |-- conf/                   # institutional config: sge.config / pbs.config
-|   |   |                       #   / slurm.config / apptainer.config / mirrors
-|   |   `-- adopted/            # run configs for adopted pipelines
-|   |                           #   (params.yml + genome config + launchers)
-|   |-- pipelines/              # custom DSL2 pipelines, nf-core-style layout
-|   |   |-- srna-nf/  seclip-nf/  chip-nf/  lncrna-nf/  dmr-nf/
-|   |-- modules/                # local modules shared across custom pipelines
-|   `-- docs/                   # migration matrix, acceptance records
-`-- AGENTS.md / README.md       # governance updated; English / LF /
-                                # conventional-commit rules all carry over
+|-- rna-seq/ ... bs-seq/              # frozen legacy Snakemake during transition
+|-- shared/                            # legacy shared code; reusable generic code
+|-- plans/
+|   `-- 2026-10-05-nextflow-migration-design.md
+|-- nextflow/
+|   |-- conf/                          # executor/container/site configuration
+|   |-- contracts/                     # normalized run manifest + artifact contracts
+|   |-- versions/                      # tested/pinned tool and pipeline revisions
+|   |-- adopted/                       # BioWorkflows configs/adapters for nf-core runs
+|   |   |-- methylseq/
+|   |   |-- rnaseq/
+|   |   |-- chipseq/
+|   |   |-- atacseq/
+|   |   `-- cutandrun/
+|   |-- pipelines/                     # BioWorkflows-owned DSL2 pipelines
+|   |   |-- srna-nf/
+|   |   |-- seclip-nf/
+|   |   |-- faire-nf/
+|   |   |-- lncrna-nf/
+|   |   `-- dmr-nf/
+|   |-- modules/                       # local reusable processes only when needed
+|   |-- subworkflows/                  # shared compositions / post-processing blocks
+|   `-- docs/                          # migration matrix + acceptance records
+`-- README.md
 ```
 
-Adopted nf-core pipelines are run (not forked) with pinned versions, custom
-params YAML, and the institutional config. Custom pipelines follow a
-lightweight nf-core template: main.nf, workflows/, subworkflows/, modules/,
-conf/, assets/ (samplesheet schema), tests/.
+The directory names above express component ownership, not a requirement that
+every listed directory be created in Phase 0.
 
-## 5. Per-workflow disposition
+## 5. Migration disposition by biological execution unit
 
-| Workflow | Route | Rationale |
-|----------|-------|-----------|
-| bs-seq   | Adopt nf-core/methylseq + custom dmr-nf add-on | Bismark engine matches exactly; the 13-round Bismark flag contract knowledge carries over. methylKit DMR has no nf-core home; existing run_dmr.R is a standalone CLI and is reused unchanged. |
-| rna-seq  | Adopt nf-core/rnaseq (DE via differentialabundance) + custom lncrna-nf side pipeline | Upstream and DE are covered; optional StringTie assembly exists. CNCI / Pfam / NR lncRNA identification must be custom; scripts reused. |
-| chip     | Custom chip-nf DSL2 + installed nf-core modules (seacr, tobias, diffbind, homer) | The unified four-assay design, spike-in normalization, and QC gate table do not exist in any nf-core pipeline; splitting into three pipelines would fragment them. Largest unit (52 rules), scheduled last. |
-| seclip   | Custom seclip-nf (pureclip and related modules) | UMI + input-control reproducible-peak logic is in-house; clipseq does not match. Scripts reused. |
-| srna     | Custom srna-nf | Plant small-RNA biology (rice osa presets; cascade filter with per-class counting) does not match smrnaseq's animal miRNA / miRDeep2 focus; only 13 rules, cheap to port. |
+| Legacy capability | Mainline Nextflow route | Notes |
+|---|---|---|
+| BS-seq core | Adopt nf-core/methylseq | High functional overlap, but legacy Bismark parameters and output semantics require explicit mapping and real-data acceptance. |
+| BS-seq DMR | Custom dmr-nf | Reuse the existing methylKit analysis logic where scientifically retained; consume a defined methylation artifact contract rather than legacy paths. |
+| Bulk RNA-seq core | Adopt nf-core/rnaseq | Use pinned upstream behavior and BioWorkflows input/reference adapters. |
+| RNA differential analysis | Adopt nf-core/differentialabundance where suitable | Treat rnaseq -> differentialabundance as an explicit artifact handoff, not an internal rnaseq stage. Preserve custom analysis only where upstream capability is insufficient. |
+| lncRNA discovery | Custom lncrna-nf | CNCI/Pfam/NR and other retained project-specific logic remain a side pipeline consuming explicit RNA-seq artifacts. |
+| small-RNA | Custom srna-nf | Plant-oriented cascade filtering and counting remain project-specific; this is the first custom DSL2 pilot. |
+| seCLIP | Custom seclip-nf | Preserve UMI/input-control/reproducible-peak logic while reusing upstream modules where appropriate. |
+| ChIP-seq | Prefer adopted nf-core/chipseq + BioWorkflows add-ons | Do not inherit unrelated ATAC/FAIRE/CUT&Tag branches. Missing retained capabilities are added as bounded downstream components rather than by forking upstream by default. |
+| CUT&Tag | Prefer adopted nf-core/cutandrun + BioWorkflows add-ons | CUT&Tag support, controls, spike-in and peak calling make this a strong adoption route; retained BioWorkflows behavior still requires explicit mapping/acceptance. |
+| ATAC-seq | Prefer adopted nf-core/atacseq + BioWorkflows add-ons | ATAC-specific QC and optional footprinting remain explicitly owned by the ATAC route. |
+| FAIRE-seq | Custom faire-nf | No mature upstream replacement is assumed. Reuse appropriate accessibility/chromatin modules without pretending FAIRE is ATAC. |
 
-## 6. Software environment model (phased)
+"Prefer adopted" means adoption is the mainline design. A later implementation
+review may fall back to a thin custom DSL2 pipeline only if real contract gaps
+make upstream adoption scientifically or operationally unsuitable.
 
-| Phase | Custom pipelines | Adopted pipelines |
-|-------|------------------|-------------------|
-| 1 (now) | Pre-activated environment + software.yaml; WorkflowSpec runtime resolution reused as-is | apptainer/singularity profile from day one |
-| 2 | Per-process conda directives (auto-created envs) | already containerized |
-| 3 | Apptainer containers | - |
+## 6. Chromatin-family decomposition
 
-Note on the HPC: conda lives at ~/soft/miniconda3 (base python 3.10); the WSL
-project analysis envs are not provisioned on this server, and snakemake is not
-in the base env. Phase 1 on this machine therefore requires either
-provisioning envs here or running phase 1 validation on the WSL side; decide
-at implementation start of each pipeline.
+### 6.1 What is being removed from the legacy design
 
-## 7. Implementation phases
+The following legacy behavior is intentionally not preserved as a core
+execution contract:
 
-### Phase 0 - Foundations (first PR-sized deliverable)
+- one sample sheet containing ChIP, CUT&Tag, ATAC, and FAIRE rows;
+- one `ASSAYS=(chip, cuttag, atac, faire)` branch table driving a single DAG;
+- global feature flags whose meaning changes by assay;
+- optional stages silently producing jobs for only a subset of assay groups;
+- a single 50+ rule workflow whose complexity is dominated by combinations of
+  assay and feature flags.
 
-1. Create the nextflow/ directory skeleton and the custom-pipeline template
-   (lightweight nf-core structure).
-2. Institutional configs: SGE / PBS / SLURM executor configs aligned with the
-   current run.sh policy (queue, h_vmem-style memory resource, runtime), plus
-   apptainer.config and mirror settings; validate on this HPC.
-3. Shared component: samplesheet converter (single-column sample_id CSV ->
-   nf-core samplesheet format), preserving the aggregate-validation style of
-   common.smk.
-4. Testing basis: -stub-run DAG assertions plus nf-test for modules; CI gains
-   a Nextflow job (Java + Nextflow install); the five legacy CI jobs stay as
-   they are.
-5. AGENTS.md governance additions for the Nextflow era; this design doc is
-   the reference for the migration matrix.
+This is an architectural breaking change and is intentional.
 
-### Phase 1 - Pilot A: the adoption path (bs-seq -> nf-core/methylseq)
+### 6.2 New ownership model
 
-- Samplesheet conversion, rice/osa and custom-reference genome config,
-  -profile apptainer/singularity runs on WSL (or HPC) and on the HPC.
-- dmr-nf small pipeline (phase 1 environment model): wires the existing
-  run_dmr.R unchanged via WorkflowSpec.
-- Acceptance: cross-compare against legacy bs-seq outputs on real data
-  (Bismark coverage / methylKit DMR consistency).
+Each assay route owns:
 
-### Phase 2 - Pilot B: the custom path (srna-nf)
+- its required input metadata;
+- assay-specific validation;
+- upstream execution;
+- default QC;
+- peak/signal semantics;
+- its own acceptance baseline.
 
-- Port all 13 rules; establish the standard custom-pipeline idioms: channel
-  model, includeConfig layered config chain, Groovy aggregate validation,
-  species preset backfill, feature flags driving conditional processes.
-- Reuse all 6 scripts unchanged (phase 1 environment model); pytest keeps
-  covering the script layer.
-- Deliverable: the finalized custom-pipeline template that the later
-  pipelines copy.
+Shared components may then be composed where appropriate.
 
-### Phase 3 - Main custom builds (seclip-nf, then chip-nf)
+A conceptual model is:
 
-- seclip-nf: UMI + STAR + pureclip module + in-house reproducible-peak logic
-  (input control, filter by input).
-- chip-nf: unified four-assay DSL2; all 17 feature flags parameterized;
-  seacr_callpeaks / tobias_* / diffbind / homer modules installed and
-  adapted; QC gate table via gates_summary.py reuse. Deliver in batches:
-  ChIP main chain first, then spike-in, IDR/consensus, QC gates, footprint.
-- Each pipeline: WSL real-run, then HPC run, then cross-acceptance against
-  the legacy Snakemake outputs.
+```
+normalized project/run manifest
+        |
+        +-- ChIP run ------> chipseq route -----+
+        +-- CUT&Tag run ---> cutandrun route ---+--> shared compatible post-processing
+        +-- ATAC run ------> atacseq route -----+    and normalized artifacts
+        +-- FAIRE run -----> faire-nf route ----+
+                                                   |
+                                                   v
+                                      optional cross-assay integration
+```
 
-### Phase 4 - Adopted heavy pipeline (rna-seq)
+Cross-assay integration is downstream of assay execution. It is not a reason to
+recombine assay-specific processing into one pipeline.
 
-- nf-core/rnaseq adoption (differentialabundance for DE/enrichment);
-  lncrna-nf side pipeline custom (StringTie assembly -> CNCI -> Pfam/NR).
-- Map batch_correction and other in-house capabilities to nf-core
-  equivalents; record deliberate differences in nextflow/docs/.
+### 6.3 Shared chromatin/accessibility capabilities
 
-### Phase 5 - Containerization sweep + legacy retirement
+Candidates for reusable local modules/subworkflows include:
 
-- Switch custom pipelines from the phase-1 environment model to apptainer
-  profiles, one pipeline at a time.
-- Per pipeline, after NF acceptance: freeze the Snakemake version, archive it
-  outside the repo per AGENTS.md, update README / user-guide / CHANGELOG.
-- Replace the dry-run job-count baselines in AGENTS.md with the Nextflow
-  equivalents as each pipeline retires.
+- common artifact metadata and provenance;
+- peak BED/narrowPeak/broadPeak normalization;
+- peak annotation;
+- generic FRiP-like calculations where definitions are harmonized;
+- motif analysis;
+- selected differential-binding preparation;
+- MultiQC/custom summary integration;
+- common reference utilities.
 
-## 8. Testing and acceptance strategy
+Reuse is conditional on identical scientific semantics. Similar-looking steps
+with different assay assumptions remain separate.
 
-- Custom pipelines: -stub-run assertions that key processes appear / do not
-  appear per feature-flag scenario (mirrors today's DAG assertions), nf-test
-  for modules, pytest for scripts. One scenario per feature flag.
-- Adopted pipelines: nf-core test profile on small data to prove plumbing,
-  then one real-data full acceptance run.
-- Cross-acceptance: every NF pipeline is compared against the legacy
-  Snakemake run on the same samples (count tables / peak counts / DMR loci).
-  Differences must be explainable before legacy retirement.
-- CI evolves incrementally; legacy jobs stay green but frozen.
+### 6.4 Assay-specific retained capabilities
 
-## 9. Risks and mitigations
+ChIP-seq:
+- treatment/control semantics;
+- narrow/broad peak behavior;
+- replicate-aware/IDR behavior where retained;
+- differential binding and motif routes as applicable.
 
-- nf-core version drift: pin adopted pipeline versions; upgrades go through
-  dedicated PRs with re-acceptance.
-- Non-model reference genomes (rice/osa and custom): igenomes has no
-  coverage; maintain genome configs centrally under nextflow/conf/adopted/.
-- chip-nf size: 52 rules and 17 flags - deliver in batches (see Phase 3).
-- R package environment differences (Bioconductor versions inside nf-core
-  containers): check DESeq2 / DiffBind / methylKit numeric differences during
-  cross-acceptance.
+CUT&Tag:
+- CUT&Tag-appropriate peak calling;
+- SEACR/MACS2 mapping where retained;
+- spike-in/control behavior;
+- assay-appropriate duplicate handling.
 
-## 10. First milestone (upon implementation start)
+ATAC-seq:
+- accessibility-specific peak behavior;
+- TSS enrichment;
+- organelle fraction reporting where relevant;
+- optional TOBIAS footprinting;
+- accessibility-specific QC interpretation.
 
-Phase 0 in full, plus the start of Phase 1: directory skeleton, the three
-institutional executor configs validated on this HPC, samplesheet converter,
-AGENTS.md governance update, and the dmr-nf skeleton wiring run_dmr.R. The
-five legacy workflows remain untouched in this phase.
+FAIRE-seq:
+- independent assay contract;
+- only reuse ATAC components when the scientific assumptions are genuinely
+  shared;
+- no automatic inheritance of ATAC-only TSS/footprinting semantics.
 
-## 11. References
+## 7. Configuration and site execution boundary
 
-- nf-core/clipseq: https://nf-co.re/clipseq/1.0.0
-- nf-core modules browser: https://nf-co.re/modules
-- homer_findpeaks module: https://nf-co.re/modules/homer_findpeaks
-- pureclip module:
-  https://github.com/nf-core/modules/blob/master/modules/nf-core/pureclip/meta.yml
+Nextflow configuration is split conceptually into:
+
+1. portable workflow/pipeline parameters;
+2. portable executor resource labels;
+3. institution/site overlays for SGE/PBS/SLURM details, queue names, memory
+   syntax, container cache/mirror paths, and filesystem policy.
+
+The old run.sh scheduler auto-detection behavior is migration evidence, not the
+new configuration architecture.
+
+A pipeline should not embed one HPC site's queue or memory syntax in its
+scientific configuration.
+
+## 8. Testing and acceptance model
+
+### 8.1 Custom DSL2 pipelines
+
+Use:
+
+- Nextflow stub runs for workflow composition;
+- nf-test for processes/modules/subworkflows where appropriate;
+- existing pytest/script tests for reused CLI scripts;
+- scenario tests for feature behavior;
+- selected interaction scenarios for coupled options.
+
+For complex pipelines, especially chromatin routes, testing every flag in
+isolation is not sufficient. Known interacting options receive explicit
+combination scenarios.
+
+### 8.2 Adopted nf-core pipelines
+
+Use:
+
+- upstream test profile to validate execution plumbing;
+- BioWorkflows adapter/config validation;
+- one or more project-owned real-data acceptance runs;
+- pinned revision records.
+
+### 8.3 Real-data cross-acceptance
+
+The later per-pipeline specification defines objective metrics.
+
+Examples of metric classes:
+
+- RNA/small-RNA: mapping, quantification/count concordance, retained feature
+  completeness and differential-analysis consistency;
+- BS-seq: mapping, CpG coverage/methylation agreement and DMR consistency;
+- ChIP/CUT&Tag: mapping/QC, peak-set and signal agreement, replicate/control
+  behavior and optional spike-in behavior;
+- ATAC/FAIRE: mapping/QC, accessibility peak/signal agreement, assay-specific
+  QC, and optional footprinting outputs;
+- seCLIP: deduplication, peak/control behavior and reproducible-peak outputs.
+
+A changed upstream method may intentionally produce non-identical output. Such
+changes require an explicit migration decision and acceptance rationale rather
+than being hidden behind a compatibility threshold.
+
+## 9. Migration phases
+
+### Phase 0 - Migration foundation and contracts
+
+Freeze and implement the common migration substrate:
+
+- Nextflow repository skeleton;
+- tested Nextflow/nf-core/nf-test version manifest;
+- normalized run-manifest contract;
+- pipeline-specific adapter pattern;
+- executor/site-overlay configuration pattern;
+- Apptainer/container baseline;
+- custom DSL2 template;
+- initial Nextflow CI;
+- migration matrix and acceptance-record format.
+
+The five legacy workflows stay unchanged except for necessary bug fixes.
+
+### Phase 1 - Adoption pilot: BS-seq
+
+Migrate the BS-seq core to pinned nf-core/methylseq and implement the small
+dmr-nf downstream component.
+
+This phase proves:
+
+- adopted-pipeline execution;
+- input/reference adapters;
+- container/HPC profiles;
+- artifact handoff;
+- real-data acceptance.
+
+### Phase 2 - Custom DSL2 pilot: small-RNA
+
+Build srna-nf.
+
+This phase proves the BioWorkflows-owned DSL2 template, local module policy,
+validation pattern, custom container execution, and nf-test strategy.
+
+The finalized custom pattern becomes the reference for later custom pipelines.
+
+### Phase 3 - seCLIP custom migration
+
+Build seclip-nf using the Phase 2 template and reusable nf-core modules where
+appropriate. Preserve the in-house UMI/input-control/reproducible-peak
+scientific contract.
+
+### Phase 4 - Chromatin-family decomposition and migration
+
+Migrate the legacy chip_cuttag_atac_faire capabilities as independent assay
+units.
+
+The phase begins by freezing the shared chromatin artifact boundaries, then
+migrates and accepts the assay routes independently:
+
+- CUT&Tag -> nf-core/cutandrun adoption route;
+- ATAC-seq -> nf-core/atacseq adoption route;
+- ChIP-seq -> nf-core/chipseq adoption route;
+- FAIRE-seq -> custom faire-nf.
+
+BioWorkflows-specific downstream capabilities are attached as bounded reusable
+components where needed.
+
+The legacy combined Snakemake workflow remains available until all four
+replacement assay routes required for feature parity have passed their own
+acceptance gates.
+
+### Phase 5 - RNA-seq adoption and side pipelines
+
+Adopt nf-core/rnaseq, establish the explicit handoff to
+nf-core/differentialabundance where retained, and build lncrna-nf for the
+project-specific lncRNA discovery path.
+
+RNA-seq is scheduled after the two migration patterns and chromatin
+decomposition have stabilized because it has a broad downstream surface.
+
+### Phase 6 - Consolidation and legacy retirement
+
+Per accepted execution unit:
+
+- finalize user documentation and examples;
+- record the accepted version/configuration baseline;
+- mark the legacy implementation as superseded.
+
+Before deleting a legacy implementation from the active tree:
+
+- create an annotated Git tag/release for the final Snakemake state;
+- confirm all replacement units required for that legacy workflow have passed
+  acceptance;
+- keep migration/acceptance records tracked.
+
+There is no separate late "containerization sweep": container-native execution
+is part of the new implementation from the beginning.
+
+## 10. Mainline risks and controls
+
+### Upstream nf-core drift
+
+Control: pin revisions; upgrade through dedicated changes and re-acceptance.
+
+### Non-model references
+
+Control: BioWorkflows-owned reference adapters/configuration for rice and custom
+genomes; do not depend on iGenomes availability.
+
+### Over-generalization of chromatin assays
+
+Control: assay-first top-level contracts and explicit ownership of
+assay-specific QC/peak semantics.
+
+### Duplication after assay split
+
+Control: share only scientifically identical modules/subworkflows; accept some
+assay-local duplication when semantics differ.
+
+### Local custom code becoming a second nf-core fork
+
+Control: keep adopted pipelines upstream-owned; put BioWorkflows-specific
+capabilities behind explicit artifact boundaries instead of patching upstream
+internals by default.
+
+### Runtime inconsistency
+
+Control: container-native target plus version manifest and tested HPC site
+profiles.
+
+### False parity
+
+Control: objective per-pipeline acceptance specifications before retirement.
+
+## 11. Explicitly deferred from this mainline document
+
+The following belong to later implementation specifications and are not frozen
+here:
+
+- exact Nextflow/nf-core/nf-test version numbers;
+- exact directory/file names beyond the ownership model;
+- exact samplesheet schemas for each adapter;
+- exact container images for in-house scripts;
+- detailed per-process resource labels;
+- exact acceptance thresholds;
+- exact chromatin post-processing component boundaries;
+- exact implementation order within the four chromatin assay routes when work
+  can proceed independently.
+
+These are implementation decisions constrained by this mainline, not missing
+mainline decisions.
+
+## 12. First implementation milestone after mainline freeze
+
+Only after this document passes a final consistency review:
+
+1. write the Phase 0 implementation specification;
+2. establish the version and execution baselines;
+3. create the normalized run-manifest and adapter contracts;
+4. create the minimal custom DSL2 template and CI;
+5. start the BS-seq adoption pilot.
+
+No assay migration implementation should begin before Phase 0 contracts are
+frozen.
