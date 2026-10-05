@@ -28,11 +28,34 @@ BioWorkflows/
 ├── seclip-seq/                  # Single-end eCLIP (protein-RNA binding) workflow (same layout)
 ├── srna-seq/                    # Small-RNA cascade-filter workflow (same layout)
 ├── bs-seq/                      # Bisulfite methylation-calling workflow (same layout)
+├── nextflow/                    # Nextflow migration (in progress; see its README below)
+│   ├── conf/                    #   shared execution config (container-only HPC)
+│   ├── adopted/                 #   thin adoption entries for upstream nf-core pipelines
+│   ├── pipelines/               #   local DSL2 pipelines (chipseq-ext)
+│   ├── docs/                    #   scientific decision + validation records
+│   └── versions.yml             #   tested revisions
 ├── shared/                      # Cross-project layer (consumed in place, never copied)
 │   ├── python/                  #   software-runtime framework + version capture
 │   └── lib/launcher.sh          #   shared launcher helpers for every project's run.sh
 └── .github/workflows/ci.yml     # CI: all five suites (lint, unit tests, dry-run / end-to-end regression)
 ```
+
+## Nextflow migration (in progress)
+
+The repository is migrating to Nextflow/nf-core under a frozen scientific-first
+mainline (design + guidance documents under `plans/`). Status:
+
+- `nextflow/adopted/chipseq/` — adopted [nf-core/chipseq](https://nf-co.re/chipseq)
+  entry (pinned dev HEAD), with an example params file and HPC launcher.
+  The Snakemake `chip_cuttag_atac_faire/` legacy capabilities are delivered by
+  `nextflow/pipelines/chipseq-ext/` as default-off extension stages
+  (DiffBind, spike-in, IDR, SEACR, HOMER motifs, QC gates, organelle QC).
+- Records: `nextflow/docs/chipseq-scientific-decision-record.md` (ratified
+  2026-10-06), `nextflow/docs/chipseq-ext-validation-notes.md`, and
+  `nextflow/versions.yml` (tested revisions).
+- The Snakemake suites below remain the validated daily drivers; retirement
+  happens only when the new routes cover real analysis needs (design doc
+  Stage 4).
 
 ## Shared architecture
 
