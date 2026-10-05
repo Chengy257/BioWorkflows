@@ -1,0 +1,38 @@
+# Example params for nf-core/chipseq (dev HEAD 1b3078d71c4c8126a9b976d3b0248e9b9b525608).
+#
+# Every path below is a PLACEHOLDER. Reference genomes are never fixed by the
+# repository (design doc D4): fill in real paths in a project-local copy of
+# this file and pass it with `-params-file`. Species/site specifics stay in
+# that local file; nothing species-specific is tracked here.
+#
+# consumed_by: run-chipseq.sh (passed as -params-file)
+
+# -- Input --------------------------------------------------------------------
+input: "path/to/samplesheet.csv"   # nf-core/chipseq sample sheet (group, control, replicate columns)
+outdir: "results"
+
+# -- Reference (user-configured; rice genome shown only as an example) --------
+fasta: "path/to/reference/genome.fa"
+gtf: "path/to/reference/genes.gtf"
+bwa_index: "path/to/reference/bwa_index/"      # prebuilt; or drop to let the pipeline build it
+bowtie2_index: "path/to/reference/bowtie2_index/"
+gtf_bed: "path/to/reference/genes.bed"         # optional; built from the GTF when omitted
+blacklist: ""                                  # optional BED; species-specific
+gene_bed: "path/to/reference/genes.bed"        # for deepTools plotProfile
+
+# -- Aligner / peak calling ---------------------------------------------------
+aligner: "bwa"
+narrow_peak: true
+macs_fdr: 0.05
+keep_dup: "all"
+
+# -- QC -----------------------------------------------------------------------
+skip_picard: false
+skip_preseq: false
+skip_plot_fingerprint: false
+phantompeakqualtools: true
+
+# -- Local extension inputs (consumed by nextflow/pipelines/chipseq-ext) ------
+# The adopted run publishes per-sample filtered BAMs, per-sample MACS3 peaks,
+# consensus peaks, bigWigs, flagstats and the MultiQC report under `outdir`;
+# chipseq-ext reads them from there (see its README for the exact contract).

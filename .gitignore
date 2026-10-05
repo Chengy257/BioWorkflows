@@ -82,11 +82,13 @@ AGENTS.md
 plans/*
 !plans/2026-10-05-nextflow-migration-design.md
 !plans/2026-10-05-nextflow-migration-implementation-guidance.md
-!plans/2026-10-06-chipseq-scientific-decision-record.md
 
 # ---- Editors / OS / tooling ----
 .DS_Store
 Thumbs.db
+
+# ---- Nextflow migration: generated fixtures and run debris ----
+nextflow/pipelines/chipseq-ext/tests/fixtures/
 desktop.ini
 *.swp
 *~

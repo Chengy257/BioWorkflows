@@ -1,0 +1,21 @@
+# Tested revisions for BioWorkflows Nextflow entries.
+# Update a row only after a validated run (recorded under nextflow/docs/).
+# Dates are absolute; do not use relative expressions.
+
+nextflow:
+  version: "25.10.x"          # conda env `nf` on the HPC; exact build in the validation notes
+  tested: 2026-10-05
+
+java:
+  version: "17+"              # required by current Nextflow; HPC `nf` env
+  tested: 2026-10-05
+
+apptainer:
+  version: "1.3.2-1.el7"
+  tested: 2026-10-05
+
+pipelines:
+  nf-core/chipseq:
+    revision: 1b3078d71c4c8126a9b976d3b0248e9b9b525608   # dev HEAD; the 2.1.0 release is incompatible with Nextflow 26
+    note: "smoke-validated on the HPC 2026-10-05 (test profile, throttled head-node config); see nextflow/docs/"
+    tested: 2026-10-05

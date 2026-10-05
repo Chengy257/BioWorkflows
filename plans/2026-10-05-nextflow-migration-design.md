@@ -752,7 +752,7 @@ listed remains frozen as reviewed.
    section 3.1.
 7. **Chipseq scientific rebaseline record ratified (2026-10-06).** The
    per-workflow record mandated by Section 9 exists at
-   `plans/2026-10-06-chipseq-scientific-decision-record.md` and is frozen:
+   `nextflow/docs/chipseq-scientific-decision-record.md` and is frozen:
    every retained legacy capability (DiffBind, spike-in, IDR, SEACR, HOMER
    motif discovery, QC gate table, organelle QC) is delivered by upgrading the
    existing local implementation as a default-off local extension on the
