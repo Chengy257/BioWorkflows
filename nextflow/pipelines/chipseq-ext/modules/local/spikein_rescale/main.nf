@@ -5,7 +5,9 @@ process SPIKEIN_RESCALE {
     // uses; a local process is required here because the scale factor is a
     // per-sample runtime value that the module's static ext.args cannot
     // express.
-    container 'quay.io/biocontainers/mulled-v2-eb9e7907c7a753917c1e4d7a64384c047429618a:28424fe3aec58d2b3e4e4390025d886207657d25-0'
+    container "${ workflow.containerEngine in ['singularity', 'apptainer'] && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/mulled-v2-eb9e7907c7a753917c1e4d7a64384c047429618a:28424fe3aec58d2b3e4e4390025d886207657d25-0':
+        'quay.io/biocontainers/mulled-v2-eb9e7907c7a753917c1e4d7a64384c047429618a:28424fe3aec58d2b3e4e4390025d886207657d25-0' }"
 
     input:
     tuple val(meta), path(bam), path(bai), path(idxstats)

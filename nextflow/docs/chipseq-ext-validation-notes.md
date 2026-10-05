@@ -47,3 +47,31 @@ Environment: Nextflow 26.04.6 (conda env `nf`), apptainer 1.3.2, no proxy.
 - DiffBind R code is the legacy WSL-validated logic ported verbatim; its
   first real-data run is the scientific acceptance gate (decision record,
   Section 7).
+
+## 2026-10-06 - container seeding + real-fixture preparation (PAUSED HERE)
+
+- Six new images seeded into the shared apptainer cache (blob layer cache,
+  offline rebuild at runtime): idr 2.0.4.2, seacr mulled, deeptools mulled
+  (all three direct from depot), bioconductor-diffbind 3.20.0, python 3.12.12,
+  samtools 1.24 (all three via the proxy quay route). Pull logs:
+  ~/soft/build-cache/chipseq-ext-{depot,quay}-pull.log; lists:
+  ~/soft/nf-pipelines/chipseq-ext-{depot,quay}.txt (0 failures).
+- Machine-local artifacts: `~/soft/biowf-chipseq-ext-overrides.config`
+  (rewrites the installed samtools modules' wave blob URL to the quay
+  samtools:1.24 image), `~/soft/biowf-ext-smoke.config` (local executor +
+  head-node throttle for execution smokes).
+- Real-BAM fixtures: `tests/make_real_bams.sh` upgrades the placeholder BAMs
+  to real tiny BAMs (reads biased into the fixture peak regions so DiffBind
+  counts are non-zero; 10 spike reads on chrS per sample) and writes the
+  custom genome FASTA the HOMER stage uses offline. Verified: idxstats on
+  the generated BAMs returns chr1:75 / chrS:10 / unmapped:5 for s1.
+- First real execution attempt (`-profile test_full` + overrides + local
+  executor) STOPPED at runtime sample-sheet validation:
+  "control 'ctl1' is declared by more than one group". The fixture sheet
+  legitimately shares one control (ctl1) across the WT and MUT groups;
+  the validation in `workflows/ext.nf` (groupControl count check) is
+  stricter than intended and must allow one control sample shared by
+  several treat groups (legacy semantics). **Resume point: relax that
+  single check, re-run the smoke.**
+- Task paused by owner request 2026-10-06; no processes left running; all
+  work committed at the checkpoint below.
