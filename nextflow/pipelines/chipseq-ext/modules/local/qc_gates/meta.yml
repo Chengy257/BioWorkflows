@@ -1,0 +1,14 @@
+name: qc_gates
+description: QC gate table: one PASS/WARN/FAIL row per sample aggregating flagstat mapping rate, picard duplication rate and the organelle fraction
+keywords: [''qc', 'gates', 'flagstat'']
+tools:
+  - name: qc_gates
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - description: QC thresholds, flagstat suffix, dup metrics suffix, per-sample flagstats, optional picard metrics, optional organelle summary
+output:
+  - description: qc_gates.tsv + MultiQC custom content
+authors:
+  - "@Chengy257"

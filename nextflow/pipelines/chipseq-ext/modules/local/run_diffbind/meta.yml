@@ -1,0 +1,14 @@
+name: run_diffbind
+description: DiffBind differential binding analysis (DESeq2/edgeR, summit-window counting, optional batch blocking)
+keywords: [''diffbind', 'differential', 'chipseq'']
+tools:
+  - name: run_diffbind
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - description: DiffBind samplesheet, BAMs, peaks, analysis method, summit flank, FDR, fold-change, batch flag
+output:
+  - description: DB_results.tsv, DB_significant.tsv, MA/Volcano/PCA plots, sessionInfo
+authors:
+  - "@Chengy257"

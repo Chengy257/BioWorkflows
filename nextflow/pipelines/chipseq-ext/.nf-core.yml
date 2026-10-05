@@ -1,0 +1,4 @@
+# nf-core/tools configuration for this local pipeline.
+# repository_type: pipeline lets `nf-core modules install` manage ecosystem
+# modules (modules/nf-core + modules.json) inside a non-nf-core pipeline.
+repository_type: pipeline

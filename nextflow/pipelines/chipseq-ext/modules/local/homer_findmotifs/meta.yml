@@ -1,0 +1,14 @@
+name: homer_findmotifs
+description: HOMER findMotifsGenome.pl motif discovery on a peak BED
+keywords: [''homer', 'motifs', 'peaks'']
+tools:
+  - name: homer_findmotifs
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - description: meta, consensus peak BED, HOMER genome tag, size, extra args, optional background BED
+output:
+  - description: HOMER motif result directory per antibody
+authors:
+  - "@Chengy257"

@@ -1,0 +1,14 @@
+name: seacr_convert
+description: Convert a SEACR 6-column peak bed to the 10-column narrowPeak contract
+keywords: [''seacr', 'narrowpeak', 'cuttag'']
+tools:
+  - name: seacr_convert
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - description: meta, SEACR bedGraph peaks, name prefix
+output:
+  - description: narrowPeak file
+authors:
+  - "@Chengy257"

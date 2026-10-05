@@ -1,0 +1,14 @@
+name: diffbind_sheet
+description: Build a DiffBind sample sheet for one contrast from the project sample sheet plus staged BAMs and per-sample peaks
+keywords: [''diffbind', 'differential', 'peaks'']
+tools:
+  - name: diffbind_sheet
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - description: contrast meta, project sample sheet CSV, BAMs, peaks, controls flag, suffixes, peak type
+output:
+  - description: DiffBind samplesheet TSV per contrast
+authors:
+  - "@Chengy257"

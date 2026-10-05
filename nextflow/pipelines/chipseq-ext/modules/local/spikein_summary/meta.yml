@@ -1,0 +1,14 @@
+name: spikein_summary
+description: Spike-in normalization summary and per-sample scale factors from per-sample idxstats of a combined-reference run
+keywords: [''spike-in', 'normalization', 'idxstats'']
+tools:
+  - name: spikein_summary
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - description: contig patterns, spike label, per-sample idxstats
+output:
+  - description: spikein_summary.tsv + MultiQC custom content
+authors:
+  - "@Chengy257"

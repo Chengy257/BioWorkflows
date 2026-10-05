@@ -1,0 +1,27 @@
+name: organelle_summary
+description: Summarize organelle (chloroplast/mitochondrial) read fractions from per-sample samtools idxstats tables
+keywords: [qc, organelle, chloroplast, mitochondrion, idxstats]
+tools:
+  - name: organelle_summary
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - meta:
+      type: map
+      description: sample metadata
+  - idxstats:
+      type: file
+      description: per-sample samtools idxstats TSV files
+      pattern: "*.idxstats"
+output:
+  - tsv:
+      type: file
+      description: per-sample organelle read fraction summary table
+      pattern: "organelle_summary.tsv"
+  - mqc:
+      type: file
+      description: MultiQC custom-content table
+      pattern: "organelle_summary_mqc.tsv"
+authors:
+  - "@Chengy257"
