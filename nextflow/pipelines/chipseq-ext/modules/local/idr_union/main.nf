@@ -13,6 +13,7 @@ process IDR_UNION {
     script:
     """
     idr_union.py \\
+        --group ${group} \\
         --min-replicates ${min_replicates} \\
         --out ${group}_idr_consensus.narrowPeak \\
         pairs/*

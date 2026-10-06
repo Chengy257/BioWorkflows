@@ -48,18 +48,32 @@ for s in s1 s2 s3 s4 ctl1; do
     : > "${fx}/results/bwa/bigwig/${s}.mLb.clN.bigWig"
 done
 
-# Per-sample MACS3 narrowPeaks: two real 10-column rows per sample
-for s in s1 s2 s3 s4; do
-    cat > "${fx}/results/bwa/merged_library/macs3/narrow_peak/${s}_peaks.narrowPeak" <<EOF
-chr1	1000	1200	${s}_1	250	.	5.5	25	25	100
-chr1	5000	5300	${s}_2	180	.	4.2	18	18	150
-EOF
-done
+# Per-sample MACS3 narrowPeaks: 25 real 10-column rows per sample (the idr
+# tool requires >= 20 peaks post-merge), coordinates jittered per sample
+# around shared peak loci so the pairwise IDR stage sees overlap signal
+python3 - "$fx" <<'PYEOF'
+import random, sys
+fx = sys.argv[1]
+for si, s in enumerate(("s1", "s2", "s3", "s4")):
+    rng = random.Random(100 + si)
+    rows = []
+    for k in range(25):
+        base = 1000 + k * 300
+        start = base + rng.randint(-40, 40)
+        end = start + rng.randint(150, 250)
+        score = rng.randint(60, 600)
+        rows.append(f"chr1\t{start}\t{end}\t{s}_{k+1}\t{score}\t.\t5.5\t25\t25\t{end-start}")
+    with open(f"{fx}/results/bwa/merged_library/macs3/narrow_peak/{s}_peaks.narrowPeak", "w") as fh:
+        fh.write("\n".join(rows) + "\n")
+PYEOF
 
-# Consensus peak BED for one antibody (native MACS3_CONSENSUS output shape)
-cat > "${fx}/results/bwa/merged_library/macs3/narrow_peak/consensus/H3K27ac/H3K27ac.consensus_peaks.bed" <<'EOF'
-chr1	1000	1200	H3K27ac_1	0	+
-chr1	5000	5300	H3K27ac_2	0	+
-EOF
+# Consensus peak BED: 25 regions mirroring the per-sample peak loci
+python3 - "$fx" <<'PYEOF'
+import sys
+fx = sys.argv[1]
+rows = [f"chr1\t{1000 + k * 300}\t{1000 + k * 300 + 200}\tH3K27ac_{k+1}\t0\t+" for k in range(25)]
+with open(f"{fx}/results/bwa/merged_library/macs3/narrow_peak/consensus/H3K27ac/H3K27ac.consensus_peaks.bed", "w") as fh:
+    fh.write("\n".join(rows) + "\n")
+PYEOF
 
 echo "fixtures ready under ${fx}"

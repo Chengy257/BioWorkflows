@@ -75,3 +75,62 @@ Environment: Nextflow 26.04.6 (conda env `nf`), apptainer 1.3.2, no proxy.
   single check, re-run the smoke.**
 - Task paused by owner request 2026-10-06; no processes left running; all
   work committed at the checkpoint below.
+
+## 2026-10-06/07 - real container execution debugging (runs 2-21), PAUSED
+
+Owner scope decision: HPC-only ("不管 WSL 侧，全部以本机为主"); owner then
+paused ("暂停任务，报告目前的进展") at run 21.
+
+Images: 7/7 seeded (6 + homer 5.1, verified to carry findMotifsGenome.pl).
+Runtime offline pulls from the seeded blob cache confirmed in the logs
+(no network at run time).
+
+Nextflow 26.04.6 runtime traps found and fixed (all recorded for
+re-derivation avoidance):
+
+1. `collect()` flattens tuples by default - value-list aggregation after a
+   tuple stream must use `.map { ... }.toList()` (organelle/spikein summary
+   inputs).
+2. Workflow `take` accepts channels only; scalars are read from `params`
+   inside subworkflows instead of being passed as val arguments.
+3. A single-element `tuple(map)` makes downstream `meta.field` a cross-tuple
+   spread list - emit bare maps for single-value payloads (DiffBind contrast).
+4. Shell globs in script templates must stay quoted when the helper expands
+   them itself (`--dup-metrics 'dup/*'`); unquoted, the shell expands them
+   into many argv words and argparse rejects the positionals.
+5. `join(..., remainder: true)` pads a missing right-hand side with null
+   (4-tuple with null) rather than shortening the tuple - handle null
+   explicitly before path inputs.
+6. `join` pairs duplicate keys ONE-TO-ONE: a shared control sample joined by
+   sample id reaches only the first declaring group. Shared-control BAMs are
+   resolved synchronously in the workflow body and passed per group instead.
+7. Module-level `bin/` auto-staging did not fire in this layout - helper
+   scripts moved to the pipeline-level `bin/` (auto-staged + PATH'd).
+8. A lost `meta.control` field silently routed the no-control group into the
+   normalized SEACR branch - carry the field through every channel hop.
+
+Scientific routing decision implemented: SEACR `norm` normalization requires
+a control bedGraph; groups without a control route to a `non`-mode alias
+(SEACR_CALLPEAK_TH) with the numeric FDR threshold.
+
+Real execution state at the pause (all in real containers, local executor,
+throttled head-node config; 39 tasks incl. 5 cached):
+
+- PASS with published outputs: organelle QC, QC gates, spike-in (summary +
+  5 rescaled bigWigs), IDR (both groups, 15 reproducible peaks for WT),
+  HOMER motifs (knownResults + homerMotifs), SEACR for groups WITH control
+  (H3K27ac_WT narrowPeak; MUT convert was killed mid-run at the pause).
+- Remaining for a full PASS (resume points, in order):
+  1. RUN_DIFFBIND has never completed - submitted then killed at each
+     earlier abort; first resume lets it finish (bioconductor-diffbind
+     container already seeded).
+  2. SEACR_CONVERT (H3K27ac_MUT) - trivial follow-on after CALLPEAK (done).
+  3. SEACR_CALLPEAK_TH (INPUT, the no-control group): SEACR's empirical-FDR
+     mode degenerates on toy data - it derives a threshold above the max
+     feature AUC (threshold.txt = max AUC), the thresholded set is empty and
+     its internal awk divides by zero. Tool minimum-data edge, NOT a pipeline
+     bug. Options on resume: (a) give the fixture INPUT real peak/background
+     separation; (b) skip SEACR for groups whose only treat IS the shared
+     control (scientifically defensible - peaks are not called on the input
+     alone) - owner to choose.
+- Task paused by owner request; no processes left running.

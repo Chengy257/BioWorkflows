@@ -89,6 +89,7 @@ Thumbs.db
 
 # ---- Nextflow migration: generated fixtures and run debris ----
 nextflow/pipelines/chipseq-ext/tests/fixtures/
+nextflow/pipelines/chipseq-ext/work/
 desktop.ini
 *.swp
 *~

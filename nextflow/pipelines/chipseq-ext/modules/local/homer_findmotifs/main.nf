@@ -1,6 +1,7 @@
 process HOMER_FINDMOTIFS {
     tag "${meta.id}"
     label 'process_medium'
+    container 'quay.io/biocontainers/homer:5.1--pl5321hc52dbad_1'
 
     input:
     tuple val(meta), path(bed)

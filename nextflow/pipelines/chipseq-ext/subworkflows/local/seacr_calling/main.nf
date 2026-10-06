@@ -3,43 +3,53 @@ include { SAMTOOLS_MERGE as SAMTOOLS_MERGE_CTL } from '../../../modules/nf-core/
 include { DEEPTOOLS_BAMCOVERAGE as DEEPTOOLS_BDGC_RAW } from '../../../modules/nf-core/deeptools/bamcoverage/main'
 include { DEEPTOOLS_BAMCOVERAGE as DEEPTOOLS_BDGC_RAW_CTL } from '../../../modules/nf-core/deeptools/bamcoverage/main'
 include { SEACR_CALLPEAK } from '../../../modules/nf-core/seacr/callpeak/main'
+// `norm` normalization requires a control bedGraph (SEACR semantics); groups
+// without a control fall back to the numeric FDR threshold in `non` mode
+include { SEACR_CALLPEAK as SEACR_CALLPEAK_TH } from '../../../modules/nf-core/seacr/callpeak/main'
 include { SEACR_CONVERT } from '../../../modules/local/seacr_convert/main'
 
 workflow SEACR_CALLING {
     take:
-    ch_groups       // channel: [ val(meta: id=group, group, control), val(treat_metas) ]
+    ch_groups       // channel: [ val(meta: id=group, group, control), val(treat_metas), val(ctl_bam|null) ]
     ch_bams         // channel: [ val(meta), path(bam) ]
 
     main:
-    // All samples of a group, BAM + BAI side by side.
+    // Treat samples of a group, BAM + BAI side by side. The control sample
+    // usually lives in its own sheet group (e.g. INPUT), so it is joined in
+    // separately by sample id below.
     ch_group_bams = ch_bams
         .map { meta, bam -> tuple(meta.group, meta.id, bam, file("${bam}.bai", checkIfExists: true)) }
         .groupTuple()
 
-    ch_treat_ids = ch_groups.map { meta_g, treat_metas ->
-        tuple(meta_g.id, treat_metas.collect { it.id }.toSet())
+    ch_treat_ids = ch_groups.map { meta_g, treat_metas, ctl_bam ->
+        tuple(meta_g.id, treat_metas.collect { it.id }.toSet(), meta_g.control)
     }
 
-    // One tuple per group: [meta, treat_bams, treat_bais, ctl_bams, ctl_bais]
+    // One tuple per group: [meta, treat_bams, treat_bais]
     ch_prepared = ch_group_bams
         .join(ch_treat_ids)
-        .flatMap { group, ids, bams, bais, treat_ids ->
+        .flatMap { group, ids, bams, bais, treat_ids, control ->
             def treats = []
             def treats_bai = []
-            def ctls = []
-            def ctls_bai = []
             [ids, bams, bais].transpose().each { id, bam, bai ->
                 if (treat_ids.contains(id)) {
                     treats << bam
                     treats_bai << bai
-                } else {
-                    ctls << bam
-                    ctls_bai << bai
                 }
             }
-            def meta = [id: group, group: group]
-            [tuple(meta, treats, treats_bai, ctls, ctls_bai)]
+            def meta = [id: group, group: group, control: control]
+            [tuple(meta, treats, treats_bai)]
         }
+
+    // Control BAM per group (the same shared control may back several
+    // groups; a group without a control emits nothing)
+    ch_ctl_bams = ch_groups.flatMap { meta_g, treat_metas, ctl_bam ->
+        ctl_bam
+            ? [tuple([id: "${meta_g.id}_control", group: meta_g.group],
+                     ctl_bam,
+                     file("${ctl_bam}.bai", checkIfExists: true))]
+            : []
+    }
 
     ch_fasta_stub = channel.value(tuple([:], [], [], []))
     ch_blacklist_stub = channel.value(tuple([:], []))
@@ -47,9 +57,7 @@ workflow SEACR_CALLING {
     // Pooled treat BAM -> raw-depth bedGraph (zero-omitted, bin 1), the
     // coverage SEACR integrates (legacy recipe).
     SAMTOOLS_MERGE(
-        ch_prepared.map { meta, treats, treats_bai, ctls, ctls_bai ->
-            tuple(meta, treats, treats_bai)
-        },
+        ch_prepared,
         ch_fasta_stub,
         'bai',
     )
@@ -66,10 +74,7 @@ workflow SEACR_CALLING {
 
     // Pooled control BAM, only for groups that declare a control.
     SAMTOOLS_MERGE_CTL(
-        ch_prepared
-            .flatMap { meta, treats, treats_bai, ctls, ctls_bai ->
-                ctls ? [tuple([id: "${meta.id}_control", group: meta.group], ctls, ctls_bai)] : []
-            },
+        ch_ctl_bams.map { meta, bam, bai -> tuple(meta, [bam], [bai]) },
         ch_fasta_stub,
         'bai',
     )
@@ -91,12 +96,20 @@ workflow SEACR_CALLING {
     ch_seacr_in = ch_treat_bdg
         .join(ch_ctl_bdg, remainder: true)
         .map { row ->
-            row.size() == 4 ? tuple(row[1], row[2], row[3]) : tuple(row[1], row[2], [])
+            // join pads the missing right-hand side with null (4-tuple with a
+            // null control) instead of shortening the tuple
+            def ctl = row.size() == 4 ? row[3] : null
+            tuple(row[1], row[2], ctl ? [ctl] : [])
         }
 
-    SEACR_CALLPEAK(ch_seacr_in, params.seacr.fdr_threshold)
+    ch_with_ctl = ch_seacr_in.filter { row -> row[0].control != '' }
+    ch_no_ctl = ch_seacr_in.filter { row -> row[0].control == '' }
+    SEACR_CALLPEAK(ch_with_ctl, params.seacr.fdr_threshold)
+    SEACR_CALLPEAK_TH(ch_no_ctl, params.seacr.fdr_threshold)
     SEACR_CONVERT(
-        SEACR_CALLPEAK.out.bed.map { meta, bed -> tuple(meta, bed, meta.id) },
+        SEACR_CALLPEAK.out.bed
+            .mix(SEACR_CALLPEAK_TH.out.bed)
+            .map { meta, bed -> tuple(meta, bed, meta.id) },
     )
 
     emit:

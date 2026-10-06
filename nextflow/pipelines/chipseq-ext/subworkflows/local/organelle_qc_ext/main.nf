@@ -10,7 +10,10 @@ workflow ORGANELLE_QC_EXT {
         tuple(meta, bam, file("${bam}.bai", checkIfExists: true))
     }
     SAMTOOLS_IDXSTATS(ch_with_idx)
-    ORGANELLE_SUMMARY(params.organelle_qc.patterns, SAMTOOLS_IDXSTATS.out.idxstats.collect())
+    ORGANELLE_SUMMARY(
+        params.organelle_qc.patterns,
+        SAMTOOLS_IDXSTATS.out.idxstats.map { meta, idx -> idx }.toList(),
+    )
 
     emit:
     summary = ORGANELLE_SUMMARY.out.tsv

@@ -14,7 +14,7 @@ workflow SPIKEIN_SCALING {
     SPIKEIN_SUMMARY(
         params.spike_in.patterns,
         params.spike_in.name,
-        SAMTOOLS_IDXSTATS.out.idxstats.collect(),
+        SAMTOOLS_IDXSTATS.out.idxstats.map { meta, idx -> idx }.toList(),
     )
     if (params.spike_in.rescale_bigwigs) {
         ch_idx_by_meta = SAMTOOLS_IDXSTATS.out.idxstats.map { meta, idx -> tuple(meta.id, idx) }

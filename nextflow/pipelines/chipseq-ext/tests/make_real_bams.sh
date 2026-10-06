@@ -44,6 +44,24 @@ rng = random.Random(seed * 7919)
 read_seq = "ACGTTGCAAGGCTTACGATCGATCGATCGATCGATCGATCGATCGATCGA"
 qual = "F" * 50
 reads = []
+if seed == 5:
+    # ctl1 is the shared input control: uniform background plus three sharp
+    # clusters so the SEACR empirical-FDR path has real peak/background
+    # contrast (it degenerates on flat toy coverage)
+    for i in range(40):
+        pos = rng.randint(1, 9900)
+        reads.append(f"bg{i}\t0\tchr1\t{pos}\t60\t50M\t*\t0\t0\t{read_seq}\t{qual}")
+    for c, center in enumerate((1500, 4000, 7000)):
+        for i in range(40):
+            pos = center + rng.randint(-200, 200)
+            reads.append(f"cl{c}_{i}\t0\tchr1\t{pos}\t60\t50M\t*\t0\t0\t{read_seq}\t{qual}")
+    reads.sort(key=lambda r: (r.split("\t")[2], int(r.split("\t")[3])))
+    with open(samfile, "w") as fh:
+        fh.write("@HD\tVN:1.6\tSO:coordinate\n")
+        fh.write("@SQ\tSN:chr1\tLN:10000\n")
+        fh.write("@SQ\tSN:chrS\tLN:1000\n")
+        fh.write("\n".join(reads) + "\n")
+    raise SystemExit(0)
 # reads biased into the fixture peak regions (chr1:1000-1200, 5000-5300) so
 # DiffBind counts are non-zero; plus spike-in chrS and unmapped reads
 for i in range(25):

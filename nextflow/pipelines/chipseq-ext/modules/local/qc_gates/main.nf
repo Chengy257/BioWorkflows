@@ -17,8 +17,9 @@ process QC_GATES_SUMMARY {
 
     script:
     def org_max = thresholds.organelle_fraction_max ?: ''
-    def dup_arg     = dup_metrics ? "--dup-metrics dup/*" : ''
-    def org_arg     = organelle_summary ? "--organelle organelle/*" : ''
+    // globs stay quoted: the helper expands them itself with glob.glob
+    def dup_arg = dup_metrics ? "--dup-metrics 'dup/*'" : ''
+    def org_arg = organelle_summary ? "--organelle 'organelle/*'" : ''
     """
     qc_gates_summary.py \\
         --mapping-rate-min ${thresholds.mapping_rate_min} \\
