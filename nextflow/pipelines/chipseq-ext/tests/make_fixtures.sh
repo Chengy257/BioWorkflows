@@ -50,7 +50,13 @@ done
 
 # Per-sample MACS3 narrowPeaks: 25 real 10-column rows per sample (the idr
 # tool requires >= 20 peaks post-merge), coordinates jittered per sample
-# around shared peak loci so the pairwise IDR stage sees overlap signal
+# around shared peak loci so the pairwise IDR stage sees overlap signal.
+# Loci follow L(k) = 3000 + k * 11500 on a 300 kb chr1 (MUST match
+# tests/make_real_bams.sh): the spacing keeps DiffBind summit recentering
+# (summit_flank 250 -> 500 bp windows) from chain-merging adjacent windows,
+# which on the old 10 kb toy chromosome collapsed every consensus region
+# into one interval (a DiffBind degenerate case). Column 10 carries a
+# realistic interior summit offset (200), not the peak width.
 python3 - "$fx" <<'PYEOF'
 import random, sys
 fx = sys.argv[1]
@@ -58,11 +64,9 @@ for si, s in enumerate(("s1", "s2", "s3", "s4")):
     rng = random.Random(100 + si)
     rows = []
     for k in range(25):
-        base = 1000 + k * 300
-        start = base + rng.randint(-40, 40)
-        end = start + rng.randint(150, 250)
+        start = 3000 + k * 11500 + rng.randint(-40, 40)
         score = rng.randint(60, 600)
-        rows.append(f"chr1\t{start}\t{end}\t{s}_{k+1}\t{score}\t.\t5.5\t25\t25\t{end-start}")
+        rows.append(f"chr1\t{start}\t{start + 400}\t{s}_{k+1}\t{score}\t.\t5.5\t25\t25\t200")
     with open(f"{fx}/results/bwa/merged_library/macs3/narrow_peak/{s}_peaks.narrowPeak", "w") as fh:
         fh.write("\n".join(rows) + "\n")
 PYEOF
@@ -71,7 +75,7 @@ PYEOF
 python3 - "$fx" <<'PYEOF'
 import sys
 fx = sys.argv[1]
-rows = [f"chr1\t{1000 + k * 300}\t{1000 + k * 300 + 200}\tH3K27ac_{k+1}\t0\t+" for k in range(25)]
+rows = [f"chr1\t{3000 + k * 11500}\t{3000 + k * 11500 + 200}\tH3K27ac_{k+1}\t0\t+" for k in range(25)]
 with open(f"{fx}/results/bwa/merged_library/macs3/narrow_peak/consensus/H3K27ac/H3K27ac.consensus_peaks.bed", "w") as fh:
     fh.write("\n".join(rows) + "\n")
 PYEOF

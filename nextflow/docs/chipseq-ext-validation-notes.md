@@ -134,3 +134,78 @@ throttled head-node config; 39 tasks incl. 5 cached):
      control (scientifically defensible - peaks are not called on the input
      alone) - owner to choose.
 - Task paused by owner request; no processes left running.
+
+## 2026-10-08 - runs 22-26: DiffBind completion + PBS end-to-end, ALL GREEN
+
+Owner resumed the task; validation scope still HPC-only.
+
+### RUN_DIFFBIND root causes (two independent blockers, both fixed)
+
+1. **bioconda bioconductor-diffbind:3.20.0 image is missing GenomeInfoDb**
+   (and UCSC.utils + GenomeInfoDbData). GenomicRanges/GreyListChIP are
+   installed but their hard dependency is not, so DiffBind's blacklist step
+   died ("there is no package called 'GenomeInfoDb'"). Fixed by sandbox
+   surgery: `apptainer build --sandbox` from the SIF, `R CMD INSTALL` of
+   UCSC.utils 1.6.1 -> GenomeInfoDbData 1.2.15 -> GenomeInfoDb 1.46.2
+   (Bioconductor 3.22 source tarballs, matching the image's R 4.5.2) into
+   /usr/local/lib/R/library, repack to SIF, swap in place at
+   ~/soft/apptainer-cache/quay.io-biocontainers-bioconductor-diffbind-3.20.0--r45ha27e39d_0.img
+   (original kept as *.img.broken until real-data validation). The repo
+   pipeline config is unchanged - the patched image carries the fix.
+2. **`dba.contrast(block = NULL)` is an error** ("attribute must be a DBA_
+   attribute, a logical vector, or a list of logical vectors"): `block` has
+   no default and NULL fails attribute validation; omitting the argument is
+   fine. run_diffbind.R now builds the contrast argument list and attaches
+   `block` only when the Batch column really carries >= 2 levels.
+
+### Fixture surgery (tests/make_fixtures.sh + tests/make_real_bams.sh)
+
+The 10 kb toy chromosome was itself a third blocker, on two fronts:
+
+- Peak loci at 300 bp spacing chain-merged under DiffBind summit
+  recentering (summit_flank 250 -> 500 bp windows): pv.Recenter collapsed
+  all 25 regions into ONE consensus interval and pv$called lost matrix
+  shape (trace: `pv.merge exit: dim(merged)= 1x3`). Peaks now sit at
+  L(k) = 3000 + k * 11500 on a 300 kb chr1 (both generator scripts share
+  the formula; narrowPeak column 10 is a realistic interior summit
+  offset 200, not the width).
+- Poisson-flat toy counts broke DESeq2's dispersion fit ("all gene-wise
+  dispersion estimates are within 2 orders of magnitude"). Counts are now
+  lognormal per locus (4-60 read-pair baseline, multiplicative sample
+  noise), loci 21-23 WT-only / 24-25 MUT-only, so the contrast is
+  non-degenerate in both directions.
+- Spike contig renamed chrS -> **spike1**: the spike-in summary matches
+  contig patterns by substring ("spike", 5 chars) and chrS never matched -
+  this was the real cause of the all-NA spikein_summary.tsv (NOT stale
+  cache; run 23 recomputed it still-NA before the rename).
+
+Standalone DiffBind chain on the new fixture (patched container): count 25
+consensus regions, DESeq2 report OK, 4 significant at FDR<=0.05, Fold in
+[-4.4, 4.9] with the expected per-locus direction.
+
+### Run outcomes
+
+- run 25 (local executor, -resume): exit 0. Published under
+  tests/fixtures/results-ext/: diffbind/WT_vs_mut/ (results+significant+3
+  plots+sessionInfo), seacr/ (WT 17 peaks, MUT 10 peaks via norm path),
+  idr/ (15 reproducible peaks per group), spike_in/ (real numbers:
+  spike_mapped=10, scale_factor=100000), organelle_qc/, qc_gates/
+  (5/5 PASS), homer/.
+- run 26 (PBS executor, fresh work dir ~/soft/build-cache/nf-pbs-work):
+  exit 0 with 41/41 tasks through qsub (queue workq, 4 cpus / 16 GB per
+  task, queueSize 8) - the PBS path is validated end-to-end. Machine-local
+  config: ~/soft/biowf-ext-pbs.config.
+- **The no-control SEACR edge self-resolved**: with the enriched ctl1
+  (uniform background + 3 sharp 40-read clusters at loci 4/14/23), the
+  INPUT-as-treat `non`+numeric-FDR path exits 0 and calls a valid minimal
+  peak set (1 peak, score 1000) - option (a) "enrich the fixture" is
+  effectively realized; SEACR_CALLPEAK_TH no longer needs the
+  errorStrategy=ignore override (kept only as belt-and-braces in
+  ~/soft/biowf-chipseq-ext-seacr-ignore.config).
+
+Machine-local DiffBind image patch provenance: UCSC.utils 1.6.1 +
+GenomeInfoDbData 1.2.15 + GenomeInfoDb 1.46.2 from bioconductor.org/3.22
+(3-layer proxy), tarballs + build logs under
+~/soft/build-cache/diffbind-fix/.
+
+Fixture dry-run DAG baselines are unchanged (content-only edits).
