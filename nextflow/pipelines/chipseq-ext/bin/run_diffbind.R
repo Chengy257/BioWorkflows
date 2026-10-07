@@ -59,14 +59,18 @@ if (summit_flank > 0) count_args$summits <- summit_flank
 dba <- do.call(dba.count, count_args)
 
 conds <- as.character(unique(sheet$Condition))
-# dba.contrast's block argument takes a DBA_ attribute constant or a logical
-# vector aligned with the sample sheet (a character vector of batch labels is
-# the old API); block on the first batch level = the classic paired design
-block_mask <- if (has_batch) sheet$Batch == batch_levels[1] else NULL
-dba <- dba.contrast(dba,
-                    group1 = dba$masks[[conds[1]]],
-                    group2 = dba$masks[[conds[2]]],
-                    block = block_mask)
+# dba.contrast's block argument must stay ABSENT when there is no batch
+# factor: passing block=NULL trips the attribute validation ("attribute must
+# be a DBA_ attribute, a logical vector, or a list of logical vectors") - a
+# logical vector over the sheet (first batch level = classic paired design)
+# is only attached when blocking is actually possible.
+contrast_args <- list(DBA = dba,
+                      group1 = dba$masks[[conds[1]]],
+                      group2 = dba$masks[[conds[2]]])
+if (has_batch) {
+  contrast_args$block <- sheet$Batch == batch_levels[1]
+}
+dba <- do.call(dba.contrast, contrast_args)
 dba <- dba.analyze(dba, method = method)
 
 res <- dba.report(dba, method = method, contrast = 1,
