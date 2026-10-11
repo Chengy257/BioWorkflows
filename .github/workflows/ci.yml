@@ -211,14 +211,17 @@ jobs:
           pip install pyyaml pytest
           sudo apt-get update
           sudo apt-get install -y shellcheck
-      - name: Nextflow config syntax validation (chipseq-ext)
+      - name: Nextflow config syntax validation (chipseq-ext, rnaseq-ext)
         run: |
-          cd nextflow/pipelines/chipseq-ext
-          nextflow config -flat -profile test > /dev/null
-          nextflow config -flat -profile test_full > /dev/null
+          for d in nextflow/pipelines/chipseq-ext nextflow/pipelines/rnaseq-ext; do
+            cd $d
+            nextflow config -flat -profile test > /dev/null
+            nextflow config -flat -profile test_full > /dev/null
+            cd - > /dev/null
+          done
       - name: YAML validation (adopted params example, versions, module meta)
         run: |
-          python -c "import yaml,glob; files=['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml']+glob.glob('nextflow/pipelines/chipseq-ext/modules/local/*/meta.yml'); [yaml.safe_load(open(f)) for f in files]; print('yaml OK:', len(files), 'files')"
+          python -c "import yaml,glob; files=['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml','nextflow/adopted/rnaseq/params.example.yaml','nextflow/adopted/differentialabundance/params.example.yaml']+glob.glob('nextflow/pipelines/chipseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/rnaseq-ext/modules/local/*/meta.yml'); [yaml.safe_load(open(f)) for f in files]; print('yaml OK:', len(files), 'files')"
       - name: Documentation link check
         # Design doc Section 11 Stage 0 mandates documentation link checks.
         # Cross-references in these docs are backtick-quoted paths: only
@@ -261,10 +264,14 @@ jobs:
           print(f'doc link check OK ({scanned} files)')
           EOF
       - name: Shell lint (launchers)
-        run: shellcheck nextflow/adopted/chipseq/run-chipseq.sh nextflow/pipelines/chipseq-ext/tests/make_fixtures.sh nextflow/pipelines/chipseq-ext/tests/make_real_bams.sh
+        run: shellcheck nextflow/adopted/chipseq/run-chipseq.sh nextflow/adopted/rnaseq/run-rnaseq.sh nextflow/adopted/differentialabundance/run-differentialabundance.sh nextflow/pipelines/chipseq-ext/tests/make_fixtures.sh nextflow/pipelines/chipseq-ext/tests/make_real_bams.sh
       - name: Extension scripts compile
         # helper scripts live in the pipeline-level bin/ (module-level bin/
         # is not auto-staged in this layout - see validation notes)
-        run: python -m py_compile nextflow/pipelines/chipseq-ext/bin/*.py
+        run: |
+          python -m py_compile nextflow/pipelines/chipseq-ext/bin/*.py
+          python -m py_compile nextflow/pipelines/rnaseq-ext/bin/*.py
       - name: Helper script unit tests
-        run: python -m pytest nextflow/pipelines/chipseq-ext/tests/unit -q
+        run: |
+          python -m pytest nextflow/pipelines/chipseq-ext/tests/unit -q
+          python -m pytest nextflow/pipelines/rnaseq-ext/tests/unit -q
