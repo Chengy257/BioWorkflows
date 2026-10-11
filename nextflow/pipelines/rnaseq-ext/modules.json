@@ -1,0 +1,22 @@
+{
+  "name": "",
+  "homePage": "",
+  "repos": {
+    "https://github.com/nf-core/modules.git": {
+      "modules": {
+        "nf-core": {
+          "rseqc/inferexperiment": {
+            "branch": "master",
+            "git_sha": "6d46786420b4d7bc88eba026eb389c0c5535d120",
+            "installed_by": ["modules"]
+          },
+          "subread/featurecounts": {
+            "branch": "master",
+            "git_sha": "c565f1b27c06a1e8b726e2a646d4c822ae3b514a",
+            "installed_by": ["modules"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+name: merge_featurecounts
+description: 'Merge raw per-sample featureCounts outputs into a gene x sample count matrix plus assignment statistics (ported from the legacy rna-seq merge script; count matrix only - TPM comes from the Salmon route)'
+keywords: [featurecounts, merge, rnaseq]
+tools:
+  - name: merge_featurecounts
+    description: Python helper shipped with rnaseq-ext
+input:
+  - description: list of [sample_id, featureCounts.txt] pairs
+output:
+  - description: count.matrix.tsv (DA adapter + lncRNA handoff input) and count_stats.tsv
+authors:
+  - "@Chengy257"

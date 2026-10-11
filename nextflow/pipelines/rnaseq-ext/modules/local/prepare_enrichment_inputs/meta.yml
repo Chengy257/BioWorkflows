@@ -1,0 +1,12 @@
+name: prepare_enrichment_inputs
+description: 'Split a differentialabundance results table into UP/DOWN/ALL DEG gene lists and a full ranked list for GSEA (legacy thresholds padj<=0.05, |log2FC|>=1, both configurable)'
+keywords: [enrichment, deseq2, rnaseq]
+tools:
+  - name: prepare_enrichment_inputs
+    description: Python helper shipped with rnaseq-ext
+input:
+  - description: one DA *.deseq2.results.tsv table + column-name/cutoff meta
+output:
+  - description: UP/DOWN/ALL DEG lists + ranked tsv per contrast
+authors:
+  - "@Chengy257"

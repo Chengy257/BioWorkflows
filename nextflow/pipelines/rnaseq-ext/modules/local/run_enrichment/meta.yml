@@ -1,0 +1,13 @@
+name: run_enrichment
+description: 'clusterProfiler GO (MF/BP/CC) + KEGG over-representation for one DEG gene list (ported from the legacy rna-seq run_enrichment.R; species-neutral - OrgDb/keyType/KEGG code are inputs; aPEAR optional)'
+keywords: [enrichment, clusterprofiler, rnaseq]
+tools:
+  - name: clusterProfiler
+    homepage: https://bioconductor.org/packages/clusterProfiler/
+    description: statistical analysis and visualization of functional profiles for genes and gene clusters
+input:
+  - description: UP/DOWN/ALL DEG lists + OrgDb name/keyType/KEGG code meta (optional OrgDb tarball staged via meta.orgdb_file)
+output:
+  - description: per-ontology all/significant result tables + dotplots (+ optional aPEAR networks)
+authors:
+  - "@Chengy257"

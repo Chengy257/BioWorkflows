@@ -1,0 +1,13 @@
+name: run_gsea
+description: 'clusterProfiler gseGO on a full ranked gene list, per ontology (ported from the legacy rna-seq run_gsea.R; species-neutral - OrgDb/keyType are inputs)'
+keywords: [gsea, clusterprofiler, rnaseq]
+tools:
+  - name: clusterProfiler
+    homepage: https://bioconductor.org/packages/clusterProfiler/
+    description: statistical analysis and visualization of functional profiles for genes and gene clusters
+input:
+  - description: ranked gene table (gene_id + stat) + OrgDb name/keyType meta (optional OrgDb tarball via meta.orgdb_file)
+output:
+  - description: per-ontology GSEA result tables + dotplots
+authors:
+  - "@Chengy257"

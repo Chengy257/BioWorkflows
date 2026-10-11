@@ -1,0 +1,12 @@
+name: parse_strandedness
+description: 'Parse an RSeQC infer_experiment.py report into the legacy featureCounts strand code (secondstrand -> 1, firststrand -> 2, unstranded -> 0; exact port of the legacy check_strandedness + quant mapping)'
+keywords: [strandedness, rnaseq, featurecounts]
+tools:
+  - name: parse_strandedness
+    description: Python helper shipped with rnaseq-ext (ported from the legacy rna-seq workflow)
+input:
+  - description: infer_experiment.py report + sample meta
+output:
+  - description: single-line strand code file
+authors:
+  - "@Chengy257"
