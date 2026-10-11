@@ -26,11 +26,11 @@ fail=0
 note() { printf '[static-checks] %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# 1. Nextflow config syntax validation (chipseq-ext, rnaseq-ext, atacseq-ext)
+# 1. Nextflow config syntax validation (chipseq-ext, rnaseq-ext, atacseq-ext, lncrna-nf)
 if [ "$mode" = "all" ]; then
     if have nextflow; then
         note "nextflow config syntax validation"
-        for d in nextflow/pipelines/chipseq-ext nextflow/pipelines/rnaseq-ext nextflow/pipelines/atacseq-ext; do
+        for d in nextflow/pipelines/chipseq-ext nextflow/pipelines/rnaseq-ext nextflow/pipelines/atacseq-ext nextflow/pipelines/lncrna-nf; do
             (
                 cd "$d" || exit 1
                 nextflow config -flat -profile test > /dev/null &&
@@ -45,7 +45,7 @@ fi
 # 2. YAML validation (adopted params example, versions, module meta)
 if [ "$mode" = "all" ] && have python3 && python3 -c "import yaml" 2>/dev/null; then
     note "YAML validation"
-    python3 -c "import yaml,glob; files=['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml','nextflow/adopted/rnaseq/params.example.yaml','nextflow/adopted/differentialabundance/params.example.yaml']+glob.glob('nextflow/pipelines/chipseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/rnaseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/atacseq-ext/modules/local/*/meta.yml')+['nextflow/adopted/atacseq/params.example.yaml']; [yaml.safe_load(open(f)) for f in files]; print('yaml OK:', len(files), 'files')" || fail=1
+    python3 -c "import yaml,glob; files=['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml','nextflow/adopted/rnaseq/params.example.yaml','nextflow/adopted/differentialabundance/params.example.yaml']+glob.glob('nextflow/pipelines/chipseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/rnaseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/atacseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/lncrna-nf/modules/local/*/meta.yml')+['nextflow/adopted/atacseq/params.example.yaml']; [yaml.safe_load(open(f)) for f in files]; print('yaml OK:', len(files), 'files')" || fail=1
 fi
 
 # 3. Documentation link check (design doc Section 11 Stage 0 mandate).
@@ -111,7 +111,7 @@ fi
 if [ "$mode" = "all" ] && have python3; then
     note "py_compile (pipeline bin/ helpers)"
     ok=1
-    for d in nextflow/pipelines/chipseq-ext nextflow/pipelines/rnaseq-ext nextflow/pipelines/atacseq-ext; do
+    for d in nextflow/pipelines/chipseq-ext nextflow/pipelines/rnaseq-ext nextflow/pipelines/atacseq-ext nextflow/pipelines/lncrna-nf; do
         for f in "$d"/bin/*.py; do
             python3 -m py_compile "$f" || ok=0
         done
@@ -126,6 +126,7 @@ if python3 -c "import pytest" 2>/dev/null; then
     python3 -m pytest nextflow/pipelines/chipseq-ext/tests/unit -q || ok=0
     python3 -m pytest nextflow/pipelines/rnaseq-ext/tests/unit -q || ok=0
     python3 -m pytest nextflow/pipelines/atacseq-ext/tests/unit -q || ok=0
+    python3 -m pytest nextflow/pipelines/lncrna-nf/tests/unit -q || ok=0
     [ "$ok" = 1 ] || fail=1
 else
     note "SKIP pytest unit suites (pytest not importable by this python)"

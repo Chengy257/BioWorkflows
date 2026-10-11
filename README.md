@@ -61,10 +61,17 @@ mainline (design + guidance documents under `plans/`). Status:
   Local extensions (organelle QC, QC gates, spike-in scaling, TOBIAS
   footprinting - the pinned pipeline ships no TOBIAS) land in
   `nextflow/pipelines/atacseq-ext/`.
+- `nextflow/pipelines/lncrna-nf/` — the local lncRNA identification
+  workflow (Stage-4, local-foundation route; nf-core/lncpipe remains
+  unreleased): consumes the rnaseq route's published BAMs and runs
+  StringTie assembly -> classcode-u novel extraction -> CPC2 AND CPAT
+  coding potential -> Pfam + DIAMOND/NR filters -> final set + expression
+  (decision record ratified 2026-10-12).
 - Assay routing: ChIP-seq and CUT&Tag run the chipseq route
   (`adopted/chipseq` + `pipelines/chipseq-ext`); ATAC-seq and FAIRE-seq run
   the atacseq route (`adopted/atacseq` + `pipelines/atacseq-ext`); RNA-seq
-  runs the rnaseq route above.
+  runs the rnaseq route above; de novo lncRNA identification runs the
+  lncrna-nf local pipeline downstream of the rnaseq route.
 - Records: `nextflow/docs/chipseq-scientific-decision-record.md` (ratified
   2026-10-06), `nextflow/docs/chipseq-ext-validation-notes.md`,
   `nextflow/docs/rnaseq-scientific-decision-record.md` (ratified 2026-10-11),
