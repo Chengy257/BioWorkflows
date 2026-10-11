@@ -18,15 +18,18 @@ resolves them against the sheet's own directory, and the pipeline stages the
 BAMs and peaks under the same layout in the analysis task.
 
 Condition comes from the sample sheet's condition column (falling back to the
-group name). The optional batch column becomes the blocking factor; with
---use-controls, groups carrying exactly one control attach that control's BAM
-as bamControl (others get an empty entry - DiffBind tolerates a missing
-control).
+group name). Samples listed in --exclude-ids never become DiffBind rows; the
+pipeline passes the union of every declared control id there (a control may
+be shared by several treat groups and live in its own group). The optional
+batch column becomes the blocking factor; with --use-controls, groups
+carrying exactly one control attach that control's BAM as bamControl (others
+get an empty entry - DiffBind tolerates a missing control).
 
 Usage:
     diffbind_sheet.py --contrast WT_vs_mut --sheet samplesheet.csv \
         --bam-suffix '.mLb.clN.sorted.bam' --peak-suffix '_peaks.narrowPeak' \
-        --peak-type narrowpeak --use-controls F --out sheet.tsv \
+        --peak-type narrowpeak --use-controls F --exclude-ids ctl1 \
+        --out sheet.tsv \
         bams/* peaks/*
 """
 import argparse
@@ -48,12 +51,16 @@ def main():
     ap.add_argument("--peak-suffix", required=True)
     ap.add_argument("--peak-type", required=True, choices=["narrowpeak", "broadpeak"])
     ap.add_argument("--use-controls", required=True, choices=["T", "F"])
+    ap.add_argument("--exclude-ids", default="",
+                    help="comma-separated sample ids to exclude (the pipeline "
+                         "passes the union of all declared control ids)")
     ap.add_argument("--out", required=True)
     ap.add_argument("files", nargs="+",
                     help="staged BAM files followed by peak files")
     args = ap.parse_args()
 
     cond_a, cond_b = args.contrast.split("_vs_", 1)
+    excluded = {x.strip() for x in args.exclude_ids.split(",") if x.strip()}
     peak_ext = os.path.splitext(args.peak_suffix)[1] or args.peak_suffix
 
     # staged files are split by directory (bams/* first, peaks/* second);
@@ -99,8 +106,10 @@ def main():
         condition = m["condition"]
         if condition not in (cond_a, cond_b):
             continue
-        if m["control"] and group_control.get(m["group"]) == sid:
-            # this sample IS the group's control: never a DiffBind sample row
+        if sid in excluded:
+            # declared control samples are never DiffBind sample rows; the
+            # exclusion set comes from the workflow's own group-control
+            # mapping, so shared and own-group controls are both covered
             continue
         bam = bam_by_sample.get(sid)
         peak = peak_by_sample.get(sid)

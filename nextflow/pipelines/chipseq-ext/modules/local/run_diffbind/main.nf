@@ -31,7 +31,8 @@ process RUN_DIFFBIND {
         ${summit_flank} \\
         ${fdr} \\
         ${foldchange} \\
-        ${block_flag}
+        ${block_flag} \\
+        ${meta.contrast}
     """
 
     stub:

@@ -107,6 +107,9 @@ workflow EXT {
             control  : (row.control ?: ''),
             batch    : (row.batch ?: ''),
         ]
+        if (metaById[id].condition.contains('_vs_')) {
+            error "condition '${metaById[id].condition}' (sample ${id}) contains '_vs_' (reserved for the contrast slugs); rename the condition"
+        }
         if (!groups.containsKey(group)) groups[group] = []
         groups[group] << id
     }
@@ -245,7 +248,12 @@ workflow EXT {
                 }
                 tuple(metaById[id], p)
             }
-        DIFFBIND_EXT(ch_meta_bams, ch_meta_peaks)
+        // The union of every declared control id is the authoritative
+        // DiffBind exclusion set (a control may be shared by several treat
+        // groups and live in its own group; sheet-row heuristics would miss
+        // those cases).
+        def declared_controls = groupControl.values().findAll { it }.unique().sort().join(',')
+        DIFFBIND_EXT(ch_meta_bams, ch_meta_peaks, declared_controls)
     }
 
     emit:

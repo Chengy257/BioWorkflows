@@ -12,6 +12,7 @@ process DIFFBIND_SHEET {
     val bam_suffix
     val peak_suffix
     val peak_type
+    val exclude_ids
 
     output:
     tuple val(meta), path("${meta.contrast}_samplesheet.tsv"), emit: sheet
@@ -26,6 +27,7 @@ process DIFFBIND_SHEET {
         --peak-suffix '${peak_suffix}' \\
         --peak-type ${peak_type} \\
         --use-controls ${ctrl_flag} \\
+        --exclude-ids '${exclude_ids}' \\
         --out ${meta.contrast}_samplesheet.tsv \\
         bams/* peaks/*
     """

@@ -5,6 +5,7 @@ workflow DIFFBIND_EXT {
     take:
     ch_bams         // channel: [ val(meta), path(bam) ]
     ch_peaks        // channel: [ val(meta), path(peak) ]
+    exclude_ids     // val: comma-separated control sample ids to exclude
 
     main:
     def peak_suffix = "_peaks.${params.ext_peak_type == 'narrow_peak' ? 'narrowPeak' : 'broadPeak'}"
@@ -24,6 +25,7 @@ workflow DIFFBIND_EXT {
         params.ext_bam_suffix,
         peak_suffix,
         peak_type,
+        exclude_ids,
     )
     RUN_DIFFBIND(
         DIFFBIND_SHEET.out.sheet,

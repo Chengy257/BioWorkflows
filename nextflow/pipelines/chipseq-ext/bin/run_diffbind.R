@@ -12,9 +12,9 @@
 suppressMessages(library(DiffBind))
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 6) {
+if (length(args) < 7) {
   stop(paste("Usage: run_diffbind.R <samplesheet.tsv> <DESeq2|edgeR>",
-             "<summit_flank> <fdr> <foldchange> <block T|F>"))
+             "<summit_flank> <fdr> <foldchange> <block T|F> <contrast A_vs_B>"))
 }
 sheet_file <- args[1]
 analysis <- toupper(args[2])
@@ -22,6 +22,14 @@ summit_flank <- as.integer(args[3])
 fdr_th <- as.numeric(args[4])
 fc_th <- as.numeric(args[5])
 use_block <- toupper(args[6]) == "T"
+contrast <- args[7]
+contrast_parts <- strsplit(contrast, "_vs_", fixed = TRUE)[[1]]
+if (length(contrast_parts) != 2 || !all(nzchar(contrast_parts))) {
+  stop(paste0("[diffbind] invalid contrast '", contrast,
+              "': expected '<conditionA>_vs_<conditionB>'"))
+}
+group1_name <- contrast_parts[1]
+group2_name <- contrast_parts[2]
 outdir <- getwd()
 
 sheet <- read.delim(sheet_file, header = TRUE, colClasses = "character",
@@ -58,15 +66,28 @@ count_args <- list(DBA = dba, bUseSummarizeOverlaps = FALSE)
 if (summit_flank > 0) count_args$summits <- summit_flank
 dba <- do.call(dba.count, count_args)
 
-conds <- as.character(unique(sheet$Condition))
 # dba.contrast's block argument must stay ABSENT when there is no batch
 # factor: passing block=NULL trips the attribute validation ("attribute must
 # be a DBA_ attribute, a logical vector, or a list of logical vectors") - a
 # logical vector over the sheet (first batch level = classic paired design)
 # is only attached when blocking is actually possible.
-contrast_args <- list(DBA = dba,
-                      group1 = dba$masks[[conds[1]]],
-                      group2 = dba$masks[[conds[2]]])
+#
+# The contrast direction is explicit: group1 = conditionA of the A_vs_B
+# slug, so positive Fold always means "higher in conditionA", independent of
+# the sample sheet row order (deriving the groups from
+# unique(sheet$Condition) silently flipped the Fold sign whenever a user's
+# sheet listed condition B first).
+mask1 <- dba$masks[[group1_name]]
+mask2 <- dba$masks[[group2_name]]
+if (is.null(mask1) || length(mask1) == 0) {
+  stop(paste0("[diffbind] condition '", group1_name, "' of contrast '",
+              contrast, "' has no samples in the sheet"))
+}
+if (is.null(mask2) || length(mask2) == 0) {
+  stop(paste0("[diffbind] condition '", group2_name, "' of contrast '",
+              contrast, "' has no samples in the sheet"))
+}
+contrast_args <- list(DBA = dba, group1 = mask1, group2 = mask2)
 if (has_batch) {
   contrast_args$block <- sheet$Batch == batch_levels[1]
 }
