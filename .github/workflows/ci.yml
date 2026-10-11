@@ -216,11 +216,48 @@ jobs:
           cd nextflow/pipelines/chipseq-ext
           nextflow config -flat -profile test > /dev/null
           nextflow config -flat -profile test_full > /dev/null
-      - name: YAML validation (adopted params example, versions)
-        run: python -c "import yaml,glob; [yaml.safe_load(open(f)) for f in ['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml']]"
-      - name: Shell lint (launchers)
-        run: shellcheck nextflow/adopted/chipseq/run-chipseq.sh nextflow/pipelines/chipseq-ext/tests/make_fixtures.sh
-      - name: Extension scripts compile
+      - name: YAML validation (adopted params example, versions, module meta)
         run: |
-          python -m py_compile \
-            nextflow/pipelines/chipseq-ext/modules/local/*/bin/*.py
+          python -c "import yaml,glob; files=['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml']+glob.glob('nextflow/pipelines/chipseq-ext/modules/local/*/meta.yml'); [yaml.safe_load(open(f)) for f in files]; print('yaml OK:', len(files), 'files')"
+      - name: Documentation link check
+        # Design doc Section 11 Stage 0 mandates documentation link checks.
+        # Cross-references in these docs are backtick-quoted paths: only
+        # repo-rooted spans (nextflow/..., plans/...) and *.md spans are
+        # resolvable targets; wildcards, placeholders and machine-local
+        # paths are skipped, as are upstream-relative references.
+        run: |
+          python3 - <<'EOF'
+          import glob, os, re, sys
+          SKIP_CHARS = set(' *{}<>~')
+          bad, scanned = [], 0
+          for f in glob.glob('nextflow/**/*.md', recursive=True):
+              scanned += 1
+              text = open(f, encoding='utf-8').read()
+              spans = re.findall(r'`([^`\n]+)`', text)
+              spans += re.findall(r'\]\(([^)\s]+)\)', text)
+              for span in spans:
+                  s = span.split('#', 1)[0].strip()
+                  if not s or s.startswith(('http://', 'https://', 'mailto:')):
+                      continue
+                  if not (s.startswith(('nextflow/', 'plans/')) or s.endswith('.md')):
+                      continue
+                  if any(ch in SKIP_CHARS for ch in s) or '...' in s or s.startswith('--'):
+                      continue
+                  if not (s.endswith(('.md', '.yml', '.yaml', '.sh', '.py', '.nf', '.csv', '.txt')) or s.endswith('/')):
+                      continue
+                  for base in (os.path.dirname(f), '.'):
+                      if os.path.exists(os.path.normpath(os.path.join(base, s))):
+                          break
+                  else:
+                      bad.append(f'{f}: unresolved path {s}')
+          if bad:
+              print('\n'.join(sorted(set(bad))))
+              sys.exit(1)
+          print(f'doc link check OK ({scanned} files)')
+          EOF
+      - name: Shell lint (launchers)
+        run: shellcheck nextflow/adopted/chipseq/run-chipseq.sh nextflow/pipelines/chipseq-ext/tests/make_fixtures.sh nextflow/pipelines/chipseq-ext/tests/make_real_bams.sh
+      - name: Extension scripts compile
+        # helper scripts live in the pipeline-level bin/ (module-level bin/
+        # is not auto-staged in this layout - see validation notes)
+        run: python -m py_compile nextflow/pipelines/chipseq-ext/bin/*.py
