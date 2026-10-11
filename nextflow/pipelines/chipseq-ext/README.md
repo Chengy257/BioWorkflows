@@ -18,6 +18,11 @@ default-off; enable stages per project with `-params-file` or `--` params.
 | `homer_motif.enabled` | HOMER findMotifsGenome.pl on the native consensus peaks (no ecosystem module exists) | - |
 | `diffbind.enabled` | DiffBind differential binding (DESeq2/edgeR, summit-window counting, batch blocking) - ecosystem vacuum | - |
 
+SEACR skips groups whose treat set consists only of declared control samples
+(e.g. an INPUT group) by default (`seacr.skip_control_groups = true`): peaks
+are not called on the input alone. Set it to `false` to keep the legacy
+all-groups behavior.
+
 ## Consumed adopted-run contract
 
 `ext_results_dir` points at the adopted run's `--outdir`. Expected layout

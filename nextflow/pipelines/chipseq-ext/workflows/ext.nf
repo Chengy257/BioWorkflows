@@ -210,10 +210,18 @@ workflow EXT {
 
     // ---- Stage: pooled per-group SEACR calling -------------------------------
     if (params.seacr.enabled) {
+        def declared_control_ids = groupControl.values().findAll { it } as Set
         def seacr_group_list = []
+        def skipped_groups = []
         groups.each { group, ids ->
             def treats = ids.findAll { it != groupControl[group] }.sort()
             if (!treats) return // continue
+            if (params.seacr.skip_control_groups && treats.every { it in declared_control_ids }) {
+                // e.g. the INPUT group: calling peaks on the input alone
+                // yields junk - skipped by default (seacr.skip_control_groups)
+                skipped_groups << group
+                return // continue
+            }
             // one control sample may serve several treat groups (shared IgG);
             // resolve its BAM synchronously so every group gets its own copy
             def ctl_id = groupControl[group]
@@ -227,6 +235,9 @@ workflow EXT {
             )
         }
         if (!seacr_group_list) {
+            if (skipped_groups) {
+                error "seacr is enabled but every group's treat set consists only of declared control samples (skipped: ${skipped_groups.sort().join(', ')}); disable seacr or set seacr.skip_control_groups = false"
+            }
             error "seacr is enabled but the sample sheet has no groups"
         }
         SEACR_CALLING(Channel.fromList(seacr_group_list), ch_meta_bams)
