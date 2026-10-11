@@ -1,0 +1,52 @@
+# Example params for nf-core/differentialabundance (tag 2.0.0, revision
+# 30ed7741fc; parse-validated under Nextflow 26.04.6 on 2026-10-11).
+#
+# Every path below is a PLACEHOLDER. Differentialabundance consumes the
+# rnaseq route's switch-selected gene matrix plus a samplesheet and a
+# contrasts file; see nextflow/adopted/rnaseq/ for the upstream run and
+# nextflow/pipelines/rnaseq-ext/ (bin/prepare_da_inputs.py) for preparing
+# the featureCounts-matrix variant.
+#
+# consumed_by: run-differentialabundance.sh (passed as -params-file)
+
+# -- Study --------------------------------------------------------------------
+study_name: "myproject"
+study_type: "rnaseq"             # switches feature/observation column defaults
+outdir: "results-da"
+
+# -- Inputs -------------------------------------------------------------------
+input: "path/to/samplesheet.csv"     # DA samplesheet; id column = sample (default)
+matrix: "path/to/gene_counts.tsv"    # salmon.merged.gene_counts.tsv (native) or
+                                     # the rnaseq-ext featureCounts matrix
+contrasts: "path/to/contrasts.yaml"  # see the contrast semantics block below
+# gtf: "path/to/reference/genes.gtf"  # optional: feature annotations when the
+#                                     # matrix carries gene_id only
+
+# -- Differential analysis (DESeq2; decision record D2) -----------------------
+differential_method: "deseq2"        # the DA default backend, ratified
+
+# -- Contrast semantics (verified against the pinned source) ------------------
+# contrasts.yaml entry:
+#   contrasts:
+#     - id: <contrast_id>
+#       comparison: [<variable>, <reference>, <target>]
+#       blocking_factors: [<samplesheet column>, ...]   # optional, per contrast
+# The DESeq2 design formula becomes ~ <variable> (+ blocking factors), so
+# batch correction works by declaring the batch column as a blocking factor.
+# Fold signs are target vs reference: put the CONTROL group as <reference>
+# and the TREATMENT group as <target> to keep the legacy
+# {treat}_vs_{control} direction (positive log2FC = higher in treatment).
+# Example:
+#   contrasts:
+#     - id: drugA_vs_control
+#       comparison: ["group", "control", "drugA"]
+#       blocking_factors: ["batch"]
+
+# -- Thresholds (legacy defaults, overridable per project; D7) ----------------
+differential_max_qval: 0.05          # padj threshold (legacy padj: 0.05)
+differential_min_fold_change: 1.0    # |log2FC| threshold (legacy FoldChange: 2)
+
+# -- Functional analysis (optional; OrgDb-based GO/KEGG is NOT provided by DA,
+#    see decision record D3 - it runs as a rnaseq-ext stage) ------------------
+# functional_method: "gsea"            # GMT-based GSEA is the native option
+# gene_sets_files: "path/to/gene_sets.gmt"
