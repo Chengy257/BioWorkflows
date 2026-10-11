@@ -16,7 +16,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fx="${here}/fixtures"
 samtools_bin="${SAMTOOLS_BIN:?usage: SAMTOOLS_BIN=<samtools command> bash make_real_bams.sh}"
 
-mkdir -p "${fx}/genome" "${fx}/results/bwa/filtered_bam"
+mkdir -p "${fx}/genome" "${fx}/results/bwa/merged_library"
 
 # Shared reference sequences: 300 kb chr1 (MUST match the peak loci in
 # tests/make_fixtures.sh), 1 kb spike1 (spike-in)
@@ -36,8 +36,8 @@ PYEOF
 seed=0
 for s in s1 s2 s3 s4 ctl1; do
     seed=$((seed + 1))
-    sam="${fx}/results/bwa/filtered_bam/${s}.mLb.clN.sorted.bam"
-    samtmp="${fx}/results/bwa/filtered_bam/.${s}.sam"
+    sam="${fx}/results/bwa/merged_library/${s}.mLb.clN.sorted.bam"
+    samtmp="${fx}/results/bwa/merged_library/.${s}.sam"
     fx="$fx" seed="$seed" samfile="$samtmp" python3 - <<'PYEOF'
 import math, os, random
 seed, samfile = int(os.environ["seed"]), os.environ["samfile"]

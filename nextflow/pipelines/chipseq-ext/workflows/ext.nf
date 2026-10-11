@@ -56,11 +56,14 @@ workflow EXT {
     def aligner = params.ext_aligner
     def peak_ext = params.ext_peak_type == 'narrow_peak' ? 'narrowPeak' : 'broadPeak'
 
-    def bam_dir = params.ext_bam_dir ?: "${results}/${aligner}/filtered_bam"
+    // Defaults mirror the pinned nf-core/chipseq dev HEAD publish layout
+    // (conf/modules.config): everything of interest lives under
+    // {aligner}/merged_library/.
+    def bam_dir = params.ext_bam_dir ?: "${results}/${aligner}/merged_library"
     def peaks_dir = params.ext_peaks_dir ?: "${results}/${aligner}/merged_library/macs3/${params.ext_peak_type}"
     def consensus_dir = params.ext_consensus_dir ?: "${peaks_dir}/consensus"
     def bigwig_dir = params.ext_bigwig_dir ?: "${results}/${aligner}/bigwig"
-    def flagstat_dir = params.ext_flagstat_dir ?: "${results}/${aligner}/flagstat"
+    def flagstat_dir = params.ext_flagstat_dir ?: "${results}/${aligner}/merged_library/samtools_stats"
 
     def bam_suffix = params.ext_bam_suffix
     def bigwig_suffix = params.ext_bigwig_suffix
@@ -145,11 +148,11 @@ workflow EXT {
     ch_flagstats = Channel
         .fromPath("${flagstat_dir}/*${flagstat_suffix}")
         .map { p -> tuple(p.name.substring(0, p.name.length() - flagstat_suffix.length()), p) }
-    ch_dup_metrics = params.ext_dup_glob
-        ? Channel.fromPath(params.ext_dup_glob)
-            .map { p -> tuple(p.name.endsWith(params.ext_dup_suffix)
-                ? p.name.substring(0, p.name.length() - params.ext_dup_suffix.length()) : p.simpleName, p) }
-        : channel.empty()
+    def dup_glob = params.ext_dup_glob
+        ?: "${results}/${aligner}/merged_library/picard_metrics/*.metrics.txt"
+    ch_dup_metrics = Channel.fromPath(dup_glob)
+        .map { p -> tuple(p.name.endsWith(params.ext_dup_suffix)
+            ? p.name.substring(0, p.name.length() - params.ext_dup_suffix.length()) : p.simpleName, p) }
     ch_bigwigs = Channel
         .fromPath("${bigwig_dir}/*${bigwig_suffix}")
         .map { p -> tuple(p.name.substring(0, p.name.length() - bigwig_suffix.length()), p) }

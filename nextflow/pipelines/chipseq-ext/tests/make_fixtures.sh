@@ -9,11 +9,10 @@ fx="${here}/fixtures"
 
 rm -rf "${fx}"
 mkdir -p \
-    "${fx}/results/bwa/filtered_bam" \
+    "${fx}/results/bwa/merged_library" \
     "${fx}/results/bwa/merged_library/macs3/narrow_peak/consensus/H3K27ac" \
-    "${fx}/results/bwa/bigwig" \
-    "${fx}/results/bwa/flagstat" \
-    "${fx}/results/bwa/duplicateMarked"
+    "${fx}/results/bwa/merged_library/samtools_stats" \
+    "${fx}/results/bwa/merged_library/picard_metrics"
 
 cat > "${fx}/samplesheet.csv" <<'EOF'
 sample_id,group,condition,control,batch
@@ -24,28 +23,31 @@ s4,H3K27ac_MUT,mut,ctl1,
 ctl1,INPUT,input,,
 EOF
 
-# Minimal flagstat content (parseable by qc_gates_summary.py)
+# Minimal flagstat content (parseable by qc_gates_summary.py). Name follows
+# the pinned upstream: filtered-level samtools stats prefix is
+# {id}.mLb.clN.sorted.bam (conf/modules.config, BAM_FILTER_BAMTOOLS stats).
 for s in s1 s2 s3 s4 ctl1; do
-    cat > "${fx}/results/bwa/flagstat/${s}.mLb.clN.sorted.flagstat" <<EOF
+    cat > "${fx}/results/bwa/merged_library/samtools_stats/${s}.mLb.clN.sorted.bam.flagstat" <<EOF
 1000 + 0 in total (QC-passed reads + QC-failed reads)
 900 + 0 mapped (90.00% : N/A)
 EOF
 done
 
-# Minimal picard MarkDuplicates metrics (PERCENT_DUPLICATION = column 9)
+# Minimal picard MarkDuplicates metrics (PERCENT_DUPLICATION = column 9).
+# Name follows the pinned upstream: prefix {id}.mLb.mkD.sorted +
+# the module's .metrics.txt suffix, published under picard_metrics/.
 for s in s1 s2 s3 s4 ctl1; do
-    cat > "${fx}/results/bwa/duplicateMarked/${s}.duplicate_metrics" <<EOF
+    cat > "${fx}/results/bwa/merged_library/picard_metrics/${s}.mLb.mkD.sorted.metrics.txt" <<EOF
 ## METRICS CLASS	picard.sam.DuplicationMetrics
 LIBRARY	UNPAIRED_READS_EXAMINED	READ_PAIRS_EXAMINED	SECONDARY_OR_SUPPLEMENTARY_RDS	UNMAPPED_READS	UNPAIRED_READ_DUPLICATES	READ_PAIR_DUPLICATES	READ_PAIR_OPTICAL_DUPLICATES	PERCENT_DUPLICATION
 ${s}	100	400	0	100	20	80	0	0.2000
 EOF
 done
 
-# BAM/BAI/bigWig placeholders (empty; dry-run only resolves names)
+# BAM/BAI placeholders (empty; dry-run only resolves names)
 for s in s1 s2 s3 s4 ctl1; do
-    : > "${fx}/results/bwa/filtered_bam/${s}.mLb.clN.sorted.bam"
-    : > "${fx}/results/bwa/filtered_bam/${s}.mLb.clN.sorted.bam.bai"
-    : > "${fx}/results/bwa/bigwig/${s}.mLb.clN.bigWig"
+    : > "${fx}/results/bwa/merged_library/${s}.mLb.clN.sorted.bam"
+    : > "${fx}/results/bwa/merged_library/${s}.mLb.clN.sorted.bam.bai"
 done
 
 # Per-sample MACS3 narrowPeaks: 25 real 10-column rows per sample (the idr

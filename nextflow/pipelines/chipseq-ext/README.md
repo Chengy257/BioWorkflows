@@ -21,24 +21,30 @@ default-off; enable stages per project with `-params-file` or `--` params.
 ## Consumed adopted-run contract
 
 `ext_results_dir` points at the adopted run's `--outdir`. Expected layout
-(dev HEAD, default publish paths; every directory/suffix is overridable via
-`ext_*` params):
+(pinned dev HEAD `1b3078d71c4c8126a9b976d3b0248e9b9b525608`, default publish
+paths; every directory/suffix is overridable via `ext_*` params):
 
 ```
-{ext_results_dir}/{ext_aligner}/filtered_bam/{sample}.mLb.clN.sorted.bam(+.bai)
+{ext_results_dir}/{ext_aligner}/merged_library/{sample}.mLb.clN.sorted.bam(+.bai)
 {ext_results_dir}/{ext_aligner}/merged_library/macs3/{ext_peak_type}/{sample}_peaks.narrowPeak
 {ext_results_dir}/{ext_aligner}/merged_library/macs3/{ext_peak_type}/consensus/{antibody}/{antibody}.consensus_peaks.bed
-{ext_results_dir}/{ext_aligner}/bigwig/{sample}.mLb.clN.bigWig
-{ext_results_dir}/{ext_aligner}/flagstat/{sample}.mLb.clN.sorted.flagstat
-{ext_results_dir}/{ext_aligner}/duplicateMarked/{sample}.duplicate_metrics   (optional, ext_dup_glob)
+{ext_results_dir}/{ext_aligner}/merged_library/samtools_stats/{sample}.mLb.clN.sorted.bam.flagstat
+{ext_results_dir}/{ext_aligner}/merged_library/picard_metrics/{sample}.mLb.mkD.sorted.metrics.txt   (optional; dup_rate for qc_gates)
 ```
+
+**Paired-end adopted runs**: upstream names filtered BAMs
+`{sample}.mLb.flT.sorted.bam` and publishes them only when the adopted run
+was launched with `--save_align_intermeds` (single-end runs publish
+unconditionally). PE projects must therefore (a) run the adopted pipeline
+with `--save_align_intermeds` and (b) set
+`ext_bam_suffix = '.mLb.flT.sorted.bam'` for chipseq-ext.
 
 The sample sheet (`ext_sample_sheet`) is a CSV with header
 `sample_id,group,condition,control,batch`: one row per sample, `control`
 naming the group's control sample (empty when none; the control may live in
 its own group), `condition` used by DiffBind contrasts, `batch` optional
-blocking factor. Sample ids must not contain `_vs_` (used by the IDR pair
-slug).
+blocking factor. Sample ids and condition names must not contain `_vs_`
+(used by the IDR pair slug and the DiffBind contrast slugs).
 
 ## Usage
 
