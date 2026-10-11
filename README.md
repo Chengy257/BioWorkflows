@@ -55,6 +55,16 @@ mainline (design + guidance documents under `plans/`). Status:
   per-project salmon/featureCounts route switch, clusterProfiler GO/KEGG/GSEA
   enrichment) land in `nextflow/pipelines/rnaseq-ext/`; differential
   expression runs via `nextflow/adopted/differentialabundance/` (DESeq2).
+- `nextflow/adopted/atacseq/` — adopted [nf-core/atacseq](https://nf-co.re/atacseq)
+  entry (pinned dev HEAD `6a930770`; the 2.1.2 release fails the Nextflow 26
+  parse gate), Stage-3 route for ATAC-seq AND FAIRE-seq (same entry, D4).
+  Local extensions (organelle QC, QC gates, spike-in scaling, TOBIAS
+  footprinting - the pinned pipeline ships no TOBIAS) land in
+  `nextflow/pipelines/atacseq-ext/`.
+- Assay routing: ChIP-seq and CUT&Tag run the chipseq route
+  (`adopted/chipseq` + `pipelines/chipseq-ext`); ATAC-seq and FAIRE-seq run
+  the atacseq route (`adopted/atacseq` + `pipelines/atacseq-ext`); RNA-seq
+  runs the rnaseq route above.
 - Records: `nextflow/docs/chipseq-scientific-decision-record.md` (ratified
   2026-10-06), `nextflow/docs/chipseq-ext-validation-notes.md`,
   `nextflow/docs/rnaseq-scientific-decision-record.md` (ratified 2026-10-11),

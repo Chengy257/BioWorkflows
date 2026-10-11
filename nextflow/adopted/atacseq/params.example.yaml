@@ -1,0 +1,54 @@
+# Example params for nf-core/atacseq (dev HEAD 6a9307709662bad3e7bcc10aa873f7e81fdd1646).
+#
+# Every path below is a PLACEHOLDER. Reference genomes are never fixed by the
+# repository (design doc D4): fill in real paths in a project-local copy of
+# this file and pass it with `-params-file`. Species/site specifics stay in
+# that local file; nothing species-specific is tracked here.
+#
+# consumed_by: run-atacseq.sh (passed as -params-file)
+
+# -- Input --------------------------------------------------------------------
+input: "path/to/samplesheet.csv"   # nf-core/atacseq sample sheet (sample_id, group, replicate, optional control)
+outdir: "results"
+
+# -- Reference (user-configured; rice genome shown only as an example) --------
+fasta: "path/to/reference/genome.fa"
+gtf: "path/to/reference/genes.gtf"
+bowtie2_index: "path/to/reference/bowtie2_index/"   # prebuilt; or drop to let the pipeline build it
+bwa_index: "path/to/reference/bwa_index/"
+gene_bed: "path/to/reference/genes.bed"             # for deepTools plotProfile
+blacklist: "path/to/reference/blacklist.bed"        # species-specific; recommended for ATAC
+
+# -- Aligner / peak calling ---------------------------------------------------
+# Upstream default aligner is bwa; the plant route documents bowtie2
+# end-to-end very-sensitive PE to mirror the legacy alignment policy.
+aligner: "bowtie2"
+bowtie2_align_args: "--very-sensitive --no-mixed --no-discordant -I 10 -X 700"
+narrow_peak: false              # broad peaks are the adopted ATAC default (upstream default); switch per project
+broad_cutoff: 0.1
+macs_fdr: 0.05
+keep_dups: false                # duplicates removed by the filter chain (legacy atac behavior)
+min_reps_consensus: 2           # boolean-support consensus across replicates (upstream default is 1)
+shift_reads: true               # native Tn5 shifting (replaces the legacy shifted MACS2 mode)
+
+# -- QC -----------------------------------------------------------------------
+skip_preseq: true               # keep the upstream default; flip per project
+skip_deseq2_qc: false
+# UMI: not available on this pin (the workflow hardcodes UMI extraction off);
+# clip_r1/clip_r2 below are trimming-only.
+clip_r1: null
+clip_r2: null
+
+# -- Local extension inputs (consumed by nextflow/pipelines/atacseq-ext) ------
+# The adopted run publishes per-sample filtered BAMs
+# ({outdir}/{aligner}/merged_library/{id}.mLb.clN.sorted.bam), samtools
+# stats/flagstat/idxstats, picard metrics, MACS3 peaks + consensus peaks,
+# bigWigs and the MultiQC report under `outdir`; atacseq-ext reads them from
+# there (see its README for the exact contract). Combined-reference spike-in
+# runs: point fasta/bowtie2_index at a host+spike combined reference and set
+# the ext spike_in.patterns accordingly.
+
+# -- FAIRE-seq runs use the SAME entry (decision record D4): identical params
+#    except the interpretive notes - the TSS profile reads as a
+#    sonication/insertion-bias check rather than a Tn5 metric, and the ext
+#    footprint stage stays disabled. No separate pipeline exists or is needed.
