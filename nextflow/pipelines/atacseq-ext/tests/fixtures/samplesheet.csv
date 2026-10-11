@@ -1,0 +1,5 @@
+sample_id,group,condition,control,batch
+a1,ATAC_WT,WT,,
+a2,ATAC_WT,WT,,
+b1,ATAC_MUT,mut,,
+b2,ATAC_MUT,mut,,

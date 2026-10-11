@@ -1,0 +1,28 @@
+name: tobias_merge
+description: Pool a group's treat BAMs (samtools merge) and index the result - the footprint stage input.
+keywords:
+  - merge
+  - bam
+  - footprint
+tools:
+  - samtools:
+      description: Tools for dealing with SAM and BAM files.
+      homepage: https://github.com/samtools/samtools
+      documentation: https://www.htslib.org/doc/
+      licence: ["MIT"]
+input:
+  - meta:
+      type: map
+      description: Groovy map with the group id.
+  - bams:
+      type: list
+      description: The group's treat BAMs to pool.
+output:
+  - merged:
+      type: tuple
+      description: Pooled BAM and its BAI index.
+      pattern: "*.{bam,bai}"
+authors:
+  - "@Chengy257"
+maintainers:
+  - "@Chengy257"
