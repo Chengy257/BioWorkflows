@@ -3,8 +3,8 @@
 # Dates are absolute; do not use relative expressions.
 
 nextflow:
-  version: "25.10.x"          # conda env `nf` on the HPC; exact build in the validation notes
-  tested: 2026-10-05
+  version: "26.04.6"          # conda env `nf` on the HPC
+  tested: 2026-10-08          # chipseq-ext runs 22-26 (local + PBS)
 
 java:
   version: "17+"              # required by current Nextflow; HPC `nf` env

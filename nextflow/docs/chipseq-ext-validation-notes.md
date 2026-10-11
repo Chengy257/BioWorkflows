@@ -78,8 +78,9 @@ Environment: Nextflow 26.04.6 (conda env `nf`), apptainer 1.3.2, no proxy.
 
 ## 2026-10-06/07 - real container execution debugging (runs 2-21), PAUSED
 
-Owner scope decision: HPC-only ("不管 WSL 侧，全部以本机为主"); owner then
-paused ("暂停任务，报告目前的进展") at run 21.
+Owner scope decision: HPC-only (the WSL side is out of scope; everything
+validates on this machine); the owner then paused the task and asked for a
+progress report at run 21.
 
 Images: 7/7 seeded (6 + homer 5.1, verified to carry findMotifsGenome.pl).
 Runtime offline pulls from the seeded blob cache confirmed in the logs
@@ -209,3 +210,45 @@ GenomeInfoDbData 1.2.15 + GenomeInfoDb 1.46.2 from bioconductor.org/3.22
 ~/soft/build-cache/diffbind-fix/.
 
 Fixture dry-run DAG baselines are unchanged (content-only edits).
+
+## 2026-10-11 - post-audit fix batch, re-validated
+
+Context: the independent post-implementation review of 2026-10-11 returned
+verdict fix-first; the frozen fix plan lives in
+`plans/2026-10-11-chipseq-ext-fix-plan.md` (machine-local, untracked).
+Batches landed as commits 79cf0f3 (consumed-path contract alignment),
+5a6838f (DiffBind contrast direction + control exclusion), 360924e
+(boundary hardening), 7417c95 (meta.yml syntax), cebd604 (CI static job),
+and this records commit. Upstream naming ground truth was verified against
+the pinned commit's `conf/modules.config` and the picard markduplicates
+module source (contract block in the pipeline README): filtered-level
+samtools stats carry prefix `{id}.mLb.clN.sorted.bam` and publish ungated to
+`merged_library/samtools_stats/`; picard metrics are
+`{id}.mLb.mkD.sorted.metrics.txt` under `merged_library/picard_metrics/`;
+PE filtered BAMs are `.mLb.flT.sorted.bam` and publish only with
+`--save_align_intermeds`.
+
+Re-validation (all on fixtures, Nextflow 26.04.6):
+
+- Dry-runs: `-profile test` = 0 tasks; `-profile test_full` = 18 process
+  invocations (both exit 0). Baseline corrected 17 -> 18
+  (SEACR_CALLPEAK_TH was added for no-control groups and never folded into
+  the recorded baseline).
+- Real containers (local executor, machine-local smoke configs, fresh work
+  dir): exit 0, 41/41 tasks, all 7 stages publish. qc_gates 5/5 PASS with
+  the dup_rate column actually joined (the pre-fix join could not match the
+  real picard names); HOMER runs through the new staged-FASTA process
+  (HOMER_FINDMOTIFS_CUSTOM); DiffBind direction correct (contrast
+  WT_vs_mut: WT-only locus Fold +4.4, MUT-only loci negative); spike-in
+  scale_factor 100000 unchanged.
+- run_diffbind.R direction smoke: normal vs reversed sample-sheet row order
+  produce IDENTICAL Fold values over all 25 regions (the removed
+  `unique(Condition)` derivation flipped the Fold sign whenever condition B
+  was listed first).
+- qc_gates_summary.py join smoke: longest-prefix `--samples` resolution on
+  real upstream-style file names; files matching no sheet sample hard-error.
+- All 9 local module meta.yml parse as YAML (7 were malformed before).
+- The CI doc-link check introduced in cebd604 flags exactly the
+  adopted-README dead link fixed in this batch.
+- shellcheck of the three test/launcher scripts runs in CI only (not
+  installed on this machine).

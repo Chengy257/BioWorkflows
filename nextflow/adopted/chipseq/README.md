@@ -44,6 +44,6 @@ the decision record.
 - Scientific decision record:
   `nextflow/docs/chipseq-scientific-decision-record.md` (ratified 2026-10-06).
 - Validation notes (smoke run, container seeding, extension dry-run
-  baselines): `nextflow/docs/chipseq-validation-notes.md`.
+  baselines): `nextflow/docs/chipseq-ext-validation-notes.md`.
 - Image acquisition recipe (per-source routing): implementation guidance
   Section 3.1 (`plans/2026-10-05-nextflow-migration-implementation-guidance.md`).
