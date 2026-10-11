@@ -1,6 +1,6 @@
 name: run_diffbind
 description: DiffBind differential binding analysis (DESeq2/edgeR, summit-window counting, optional batch blocking)
-keywords: [''diffbind', 'differential', 'chipseq'']
+keywords: [diffbind, differential, chipseq]
 tools:
   - name: run_diffbind
     description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)

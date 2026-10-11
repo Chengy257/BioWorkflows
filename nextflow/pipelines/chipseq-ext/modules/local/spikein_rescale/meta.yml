@@ -1,6 +1,6 @@
 name: spikein_rescale
 description: Per-sample bigWig rescaling by 1e6/spike-in-mapped via deeptools bamCoverage
-keywords: [''spike-in', 'bigwig', 'deeptools'']
+keywords: [spike-in, bigwig, deeptools]
 tools:
   - name: spikein_rescale
     description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)

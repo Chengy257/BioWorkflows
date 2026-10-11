@@ -1,9 +1,9 @@
 name: homer_findmotifs
 description: HOMER findMotifsGenome.pl motif discovery on a peak BED
-keywords: [''homer', 'motifs', 'peaks'']
+keywords: [homer, motifs, peaks]
 tools:
   - name: homer_findmotifs
-    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    description: HOMER findMotifsGenome.pl wrapper shipped with chipseq-ext (no ecosystem module exists)
     homepage:
     documentation:
 input:

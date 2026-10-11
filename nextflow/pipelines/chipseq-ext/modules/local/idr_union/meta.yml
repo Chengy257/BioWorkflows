@@ -1,0 +1,26 @@
+name: idr_union
+description: Union the per-pair IDR-reproducible narrowPeaks of a group by replicate support into one consensus narrowPeak
+keywords: [idr, consensus, replicates]
+tools:
+  - name: idr_union
+    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    homepage:
+    documentation:
+input:
+  - group:
+      type: val
+      description: group name the union is computed for
+  - idr_files:
+      type: file
+      description: per-pair IDR output narrowPeak files
+      pattern: "*.narrowPeak"
+  - min_replicates:
+      type: val
+      description: minimum replicate support for a locus to enter the union
+output:
+  - narrowpeak:
+      type: file
+      description: support-annotated union narrowPeak for the group
+      pattern: "*_idr_consensus.narrowPeak"
+authors:
+  - "@Chengy257"
