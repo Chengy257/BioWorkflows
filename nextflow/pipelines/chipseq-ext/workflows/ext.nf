@@ -62,11 +62,9 @@ workflow EXT {
     def bam_dir = params.ext_bam_dir ?: "${results}/${aligner}/merged_library"
     def peaks_dir = params.ext_peaks_dir ?: "${results}/${aligner}/merged_library/macs3/${params.ext_peak_type}"
     def consensus_dir = params.ext_consensus_dir ?: "${peaks_dir}/consensus"
-    def bigwig_dir = params.ext_bigwig_dir ?: "${results}/${aligner}/bigwig"
     def flagstat_dir = params.ext_flagstat_dir ?: "${results}/${aligner}/merged_library/samtools_stats"
 
     def bam_suffix = params.ext_bam_suffix
-    def bigwig_suffix = params.ext_bigwig_suffix
     def flagstat_suffix = params.ext_flagstat_suffix
     def peak_suffix = "_peaks.${peak_ext}"
 
@@ -156,9 +154,6 @@ workflow EXT {
     ch_dup_metrics = Channel.fromPath(dup_glob)
         .map { p -> tuple(p.name.endsWith(params.ext_dup_suffix)
             ? p.name.substring(0, p.name.length() - params.ext_dup_suffix.length()) : p.simpleName, p) }
-    ch_bigwigs = Channel
-        .fromPath("${bigwig_dir}/*${bigwig_suffix}")
-        .map { p -> tuple(p.name.substring(0, p.name.length() - bigwig_suffix.length()), p) }
 
     // ---- Stage: organelle QC ------------------------------------------------
     ch_organelle_summary = channel.empty()
@@ -169,10 +164,18 @@ workflow EXT {
 
     // ---- Stage: QC gate table ------------------------------------------------
     if (params.qc_gates.enabled) {
+        def flagstat_dir_path = file(flagstat_dir)
+        if (!flagstat_dir_path.exists()) {
+            error "qc_gates is enabled but the flagstat directory does not exist: ${flagstat_dir}"
+        }
+        if (!flagstat_dir_path.list().findAll { it.endsWith(flagstat_suffix) }) {
+            error "qc_gates is enabled but no *${flagstat_suffix} files were found under ${flagstat_dir}"
+        }
         QC_GATES_EXT(
             ch_flagstats,
             ch_dup_metrics,
             ch_organelle_summary.toList(),
+            metaById.keySet().sort().join(','),
         )
     }
 
@@ -231,9 +234,21 @@ workflow EXT {
 
     // ---- Stage: HOMER motif discovery on consensus peaks ---------------------
     if (params.homer_motif.enabled) {
-        ch_consensus = Channel
-            .fromPath("${consensus_dir}/*/*.consensus_peaks.bed")
-            .map { p -> tuple([id: p.parent.name], p) }
+        // resolved synchronously: a silent zero-task stage (upstream publishes
+        // no consensus peaks for single-replicate projects) must fail loudly
+        def consensus_path = file(consensus_dir)
+        if (!consensus_path.exists()) {
+            error "homer_motif is enabled but the consensus directory does not exist: ${consensus_dir}"
+        }
+        def consensus_files = consensus_path.listFiles()
+            .findAll { it.isDirectory() }
+            .sort { it.name }
+            .collectMany { sub -> sub.listFiles().findAll { it.name.endsWith('.consensus_peaks.bed') } }
+            .sort { it.name }
+        if (!consensus_files) {
+            error "homer_motif is enabled but no *.consensus_peaks.bed files were found under ${consensus_dir} (single-replicate adopted runs publish no consensus peaks upstream)"
+        }
+        ch_consensus = Channel.fromList(consensus_files.collect { p -> tuple([id: p.parent.name], p) })
         HOMER_MOTIF_EXT(ch_consensus)
     }
 

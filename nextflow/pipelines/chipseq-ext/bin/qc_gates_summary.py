@@ -5,19 +5,27 @@ metrics available in the adopted nf-core/chipseq run's published outputs.
 Metric sources and gates (a metric whose source file is missing or
 unparseable renders NA and does not gate):
 
-    mapping_rate        flagstat/{sample}.mLb.clN.sorted.flagstat
+    mapping_rate        samtools_stats/{sample}.mLb.clN.sorted.bam.flagstat
                         (samtools flagstat mapped/total)
                         gate: value >= --mapping-rate-min
-    dup_rate            picard MarkDuplicates metrics (--dup-metrics glob)
+    dup_rate            picard MarkDuplicates metrics (--dup-metrics glob,
+                        e.g. picard_metrics/{sample}.mLb.mkD.sorted.metrics.txt)
                         (PERCENT_DUPLICATION)
                         gate: value <= --dup-rate-max
     organelle_fraction  organelle summary table row (--organelle glob),
                         computed there with the configured contig patterns
                         gate: value <= --organelle-max (skipped when empty/NA)
 
-Overall per sample: FAIL if any metric FAILs, WARN if no FAIL but at least
-one WARN, PASS otherwise; all-NA renders NA. The pipeline never hard-fails on
-these gates (informational, mirroring the legacy behavior).
+Sample resolution: when --samples is given, every file base name is resolved
+to a sheet sample id by longest-prefix match (upstream file names carry
+infixes such as .mLb.clN.sorted between the id and the extension); a file
+matching no sheet sample is a hard error. Without --samples the pipeline
+declared suffixes are stripped instead (standalone fallback).
+
+Overall per sample: FAIL if any metric FAILs, PASS if at least one gate is
+evaluated and none fails, NA when no metric is evaluable (near-threshold WARN
+bands are a deliberate future addition, not implemented). The pipeline never
+hard-fails on these gates (informational, mirroring the legacy behavior).
 
 Flagstat count-line formats accepted (samtools <= 1.17 and newer builds):
 "N + N mapped" with any of end-of-line, a space, or an opening parenthesis
@@ -27,6 +35,7 @@ import argparse
 import glob
 import os
 import re
+import sys
 
 FLAGSTAT_TOTAL_RE = re.compile(r"^\s*(\d+)\s+\+\s+\d+\s+in total\b")
 FLAGSTAT_MAPPED_RE = re.compile(r"^\s*(\d+)\s+\+\s+\d+\s+mapped(?:\s|\(|$)")
@@ -101,6 +110,10 @@ def main():
     ap.add_argument("--flagstat-suffix", default="",
                     help="file-name suffix after the sample id in the flagstat "
                          "basenames (stripped to derive the sample column)")
+    ap.add_argument("--samples", default="",
+                    help="comma-separated sheet sample ids; file base names "
+                         "are resolved by longest-prefix match and files "
+                         "matching no id are a hard error")
     ap.add_argument("--organelle", default=None,
                     help="glob for the organelle summary TSV (joined by sample)")
     ap.add_argument("--out", required=True)
@@ -108,18 +121,31 @@ def main():
     ap.add_argument("flagstats", nargs="+", help="per-sample flagstat files")
     args = ap.parse_args()
 
+    samples = [s.strip() for s in args.samples.split(",") if s.strip()] or None
+
+    def resolve_sample(name):
+        """Longest sheet sample id that is a prefix of the file base name
+        (upstream prefixes carry infixes such as .mLb.clN.sorted); None when
+        nothing matches."""
+        hits = [s for s in samples if name.startswith(s)]
+        return max(hits, key=len) if hits else None
+
     def strip_suffix(name, suffix):
         if suffix and name.endswith(suffix):
             return name[: -len(suffix)]
         return re.sub(r"(\.flagstat|\.flagstat\.txt|\.txt)$", "", name)
 
-    # sample -> dup rate; both sides are joined on the exact sample id after
-    # stripping the pipeline-declared file-name suffixes
+    # sample -> dup rate; both sides are joined on the sheet sample id
+    unmatched = []
     dup_by_sample = {}
     if args.dup_metrics:
         for path in glob.glob(args.dup_metrics):
             name = os.path.basename(path)
-            dup_by_sample[strip_suffix(name, args.dup_suffix)] = parse_dup_rate(path)
+            sample = resolve_sample(name) if samples else strip_suffix(name, args.dup_suffix)
+            if not sample:
+                unmatched.append(name)
+                continue
+            dup_by_sample[sample] = parse_dup_rate(path)
 
     # sample -> organelle fraction (column 4 of the summary table)
     org_by_sample = {}
@@ -145,7 +171,10 @@ def main():
     rows = []
     for path in args.flagstats:
         name = os.path.basename(path)
-        sample = strip_suffix(name, args.flagstat_suffix)
+        sample = resolve_sample(name) if samples else strip_suffix(name, args.flagstat_suffix)
+        if not sample:
+            unmatched.append(name)
+            continue
         total, mapped = parse_flagstat(path)
         mapping_rate = (mapped / total) if (total and mapped is not None) else None
         dup_rate = dup_for(sample)
@@ -169,6 +198,11 @@ def main():
             return f"{v:.4f}" if v is not None else "NA"
 
         rows.append([sample, fmt(mapping_rate), fmt(dup_rate), fmt(org), overall])
+
+    if unmatched:
+        print(f"qc_gates_summary: files matching no sheet sample: "
+              f"{', '.join(sorted(unmatched))}", file=sys.stderr)
+        return 1
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     for path in (args.out, args.mqc):

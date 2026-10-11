@@ -7,6 +7,7 @@ process QC_GATES_SUMMARY {
     val thresholds
     val flagstat_suffix
     val dup_suffix
+    val sample_ids
     path flagstats, stageAs: 'flagstat/*'
     path dup_metrics, stageAs: 'dup/*'
     path organelle_summary, stageAs: 'organelle/*'
@@ -27,6 +28,7 @@ process QC_GATES_SUMMARY {
         --organelle-max '${org_max}' \\
         --dup-suffix '${dup_suffix}' \\
         --flagstat-suffix '${flagstat_suffix}' \\
+        --samples '${sample_ids}' \\
         --out qc_gates.tsv \\
         --mqc qc_gates_mqc.tsv \\
         ${dup_arg} ${org_arg} \\
