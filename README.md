@@ -1,7 +1,6 @@
 # BioWorkflows
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/Chengy257/BioWorkflows/actions/workflows/ci.yml/badge.svg)](https://github.com/Chengy257/BioWorkflows/actions/workflows/ci.yml)
 
 A collection of [Snakemake](https://snakemake.github.io/)-based bioinformatics workflows for reference-genome analysis on HPC clusters (SGE / SLURM / PBS) or local execution. All workflows share one architecture: a unified launcher, an explicit software-runtime model, per-rule cluster resources in a dedicated config file, species presets, and a common `shared/` layer.
 
@@ -31,13 +30,13 @@ BioWorkflows/
 ├── nextflow/                    # Nextflow migration (in progress; see its README below)
 │   ├── conf/                    #   shared execution config (container-only HPC)
 │   ├── adopted/                 #   thin adoption entries for upstream nf-core pipelines
-│   ├── pipelines/               #   local DSL2 pipelines (chipseq-ext)
+│   ├── pipelines/               #   local DSL2 pipelines (chipseq-ext, rnaseq-ext)
 │   ├── docs/                    #   scientific decision + validation records
+│   ├── tests/                   #   static-checks.sh (local static checks, see Testing)
 │   └── versions.yml             #   tested revisions
 ├── shared/                      # Cross-project layer (consumed in place, never copied)
 │   ├── python/                  #   software-runtime framework + version capture
 │   └── lib/launcher.sh          #   shared launcher helpers for every project's run.sh
-└── .github/workflows/ci.yml     # CI: all five suites (lint, unit tests, dry-run / end-to-end regression)
 ```
 
 ## Nextflow migration (in progress)
@@ -108,7 +107,14 @@ cd ../srna-seq && make test && bash tests/run_test.sh --reads 2000
 cd ../bs-seq && make test && bash tests/run_test.sh --reads 2000
 ```
 
-CI (`.github/workflows/ci.yml`) runs all five suites on every push and pull request.
+There is no hosted CI: GitHub Actions was retired from the repository on
+2026-10-12 (owner decision — it was unnecessary during development). All checks
+run locally through the commands above, and the Nextflow migration entries are
+checked with a single command:
+
+```bash
+bash nextflow/tests/static-checks.sh   # former nextflow-static CI job, kept local
+```
 
 ## License
 

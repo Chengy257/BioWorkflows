@@ -281,7 +281,8 @@ Re-validation (all on fixtures, Nextflow 26.04.6):
   regression). Design Section 10.2 "nf-test or appropriate focused tests":
   pytest chosen for the script-level logic; nf-test deliberately deferred
   (the Nextflow-level wiring is pinned by the dry-run baselines and the
-  fixture real-execution smokes). The nextflow-static CI job runs the
-  suite.
+  fixture real-execution smokes). The local static-checks script
+  (`nextflow/tests/static-checks.sh`, which preserves the retired
+  nextflow-static CI job as a one-command script) runs the suite.
 - `qc_gates_summary.main()` now returns 0 explicitly (was an implicit
   None; the CLI exit code is unchanged).

@@ -70,7 +70,7 @@ Remaining major items:
 
 1. KEGG enrichment requires internet access; offline nodes skip it automatically (GO results are unaffected).
 2. The `lncrna` pipeline is not covered by the full end-to-end automated regression (it depends on CPC2/CNCI/pfam_scan.pl and large Pfam/NR databases); these dependencies are configured via `software.yaml`, and CNCI's Python2 interpreter can be specified separately.
-3. CI lives at the repository root `.github/workflows/ci.yml` (rna-seq job: lint + runtime resolver tests + deg end-to-end regression); the per-subproject `.github/` was removed. End-to-end regression and lint can also be run locally (`make check` / `make lint` / `make test` or `tests/`).
+3. GitHub Actions CI was retired from the repository on 2026-10-12 (owner decision). End-to-end regression and lint run locally (`make check` / `make lint` / `make test` or `tests/`).
 
 ## Testing
 

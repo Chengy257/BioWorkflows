@@ -37,7 +37,7 @@ bash tests/run_test.sh --pipeline deg       # end-to-end regression (generate da
 
 - `deg` is the default acceptance pipeline (covers all align+quant+deg rules); when touching alignment/assembly-related rules, also run `--pipeline as`.
 - When adding output files, add the corresponding assertions in `tests/check_outputs.py`.
-- `make check` / `make lint` / `make test` (in this directory) wrap the same checks; CI (GitHub Actions, repository-root `.github/workflows/ci.yml`) runs lint and a fast `--reads 20000` regression automatically on push/PR.
+- `make check` / `make lint` / `make test` (in this directory) wrap the same checks; GitHub Actions CI was retired from the repository on 2026-10-12 (owner decision), so the fast `--reads 20000` regression runs locally on demand.
 
 ## 5. Code style
 

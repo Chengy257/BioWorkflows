@@ -41,7 +41,7 @@ bash tests/run_test.sh --real-run     # end-to-end run + output assertions (need
 - The local minimum bar is `make check`; PRs touching Snakefile/rules/config must additionally run `bash tests/run_test.sh` in an environment with snakemake.
 - `--real-run` needs a full environment with bowtie2/fastqc/trim_galore/macs2/deeptools/R (ChIPseeker) (i.e. the same as `workflow/environment.yaml`); use it when validating deployments on servers.
 - When adding/modifying output files, add matching entries to the real-run assertions in `tests/run_test.sh`; when adding config-validation logic, add unit tests in `tests/run_tests.py` and keep the **unit-test baseline growing, never shrinking**.
-- CI (GitHub Actions, repository-root `.github/workflows/ci.yml`) runs the chip unit tests + lint + dry-run regression (`bash tests/run_test.sh --reads 2000`); when a CI environment is not available locally, the commands above are the reference.
+- GitHub Actions CI was retired from the repository on 2026-10-12 (owner decision); the commands above (chip unit tests + lint + dry-run regression) are the reference and run locally.
 
 ## 5. Code style
 

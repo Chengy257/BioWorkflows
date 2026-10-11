@@ -41,7 +41,7 @@ bash tests/run_test.sh --real-run     # end-to-end run + output assertions (need
 - The local minimum bar is `make check`; PRs touching Snakefile/rules/config must additionally run `bash tests/run_test.sh` in an environment with snakemake.
 - `--real-run` needs a full environment with bismark/bowtie2/samtools/trim-galore/fastqc/multiqc (i.e. the same as `workflow/environment.yaml`); use it when validating deployments on servers.
 - When adding/modifying output files, add matching entries to the real-run assertions in `tests/run_test.sh`.
-- CI (GitHub Actions, repository-root `.github/workflows/ci.yml`) runs the lint suite + dry-run regression (`bash tests/run_test.sh --reads 2000`); when a CI environment is not available locally, the commands above are the reference.
+- GitHub Actions CI was retired from the repository on 2026-10-12 (owner decision); the commands above (`tests/lint.sh`, `bash tests/run_test.sh --reads 2000`) are the reference and run locally.
 
 ## 5. Code style
 

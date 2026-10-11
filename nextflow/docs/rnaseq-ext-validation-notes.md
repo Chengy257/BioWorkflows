@@ -74,7 +74,8 @@ Dates are absolute; every entry states what ran and what was observed.
 
 ## 2026-10-11 - unit tests + helper fixes
 
-- `tests/unit/` pytest suite (19 tests, run by the nextflow-static CI job)
+- `tests/unit/` pytest suite (19 tests, run by the local static-checks
+  script `nextflow/tests/static-checks.sh`)
   pins: the verbatim legacy strand mapping (margin 0.4, secondstrand -> 1 /
   firststrand -> 2 / unstranded -> 0), raw featureCounts merging (gene order
   anchored to the sample list, NA fill, status aggregation), the DA adapter

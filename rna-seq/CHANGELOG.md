@@ -19,7 +19,8 @@ Architecture consolidation release: flattened output layout, dedicated scheduler
 - Raw FASTQ discovery now also accepts the common sequencer-delivery names `{id}_R1/_R2.fastq.gz` and `{id}_R1/_R2.fq.gz`; the original `{id}_1/_2` patterns keep priority, so existing projects (and the regression-test baseline DAG) resolve identically, and the manual `_1/_2` symlink workaround for deliveries is no longer needed.
 - The `resources:` block was removed from `config/config.yaml` (which now points to `resources.yaml`); scheduler resources are tuned in one dedicated file.
 - `run.sh` now sources `../shared/lib/launcher.sh`; `workflow/scripts/runtime_config.py` and `collect_versions.py` are thin wrappers over `shared/python/bioworkflows_runtime.py` / `bioworkflows_versions.py` (cross-project shared layer).
-- CI moved to the repository root `.github/workflows/ci.yml` (rna-seq job: lint + runtime resolver tests + deg end-to-end regression); the sub-project-level `.github/` was removed.
+- CI moved to the repository root `.github/workflows/ci.yml` (rna-seq job: lint + runtime resolver tests + deg end-to-end regression); the sub-project-level `.github/` was removed. (GitHub Actions CI was later retired from the repository entirely on 2026-10-12, owner decision — see Known issues below.)
+- GitHub Actions CI retired from the repository (2026-10-12, owner decision): all checks now run locally via this project's `tests/` suite and the repo-level `nextflow/tests/static-checks.sh`.
 - Documentation updated to the new architecture (output tree, resources section, config layering); the Chinese user guide was renamed to `docs/user-guide.md` and translated. `rna-seq-workflow/` and the archived review/roadmap documents remain out of the repository.
 - All remaining Chinese comments, messages, and documentation unified in English.
 - License changed to Apache-2.0.
@@ -41,16 +42,16 @@ Architecture consolidation release: flattened output layout, dedicated scheduler
   pins `output_fn_name: multiqc_report.html` to match the rule declaration (found on the
   enhancer_lncRNA_2026 deployment, 2026-09-05).
 
-### Known issues (CI, not yet fixed)
+### Known issues
 
-- GitHub CI (`rna-seq` job) end-to-end regression fails at `trimAdapter_PE` (all samples):
-  trim_galore exits non-zero inside the Conda environment on the runner. The root cause
-  is not yet identified because the rule log (`results/logs/trim/*.log.txt`) is not
-  captured by CI on failure. Everything before it passes: environment solve/creation,
-  runtime resolver tests, lint, sample validation, DAG construction, and the dry-run.
-  Next diagnostic step when resumed: upload rule logs as a CI artifact (or
-  `cat` the trim log on failure), then fix trim_galore/cutadapt in the env.
-- chip_cuttag_atac_faire CI job is green (unit tests + lint + dry-run regression).
+- The end-to-end regression (`tests/run_test.sh --pipeline deg`) previously failed at
+  `trimAdapter_PE` (all samples) on the GitHub CI runner: trim_galore exited non-zero
+  inside the runner's Conda environment there, and the root cause was never diagnosed
+  because the rule log (`results/logs/trim/*.log.txt`) was not captured on the runner.
+  GitHub Actions CI was retired from the repository on 2026-10-12 (owner decision), so
+  the runner-specific failure is moot. The regression remains runnable locally or on
+  the real server with the full analysis environment (`--real-run`); if trim_galore
+  fails there, check the trim rule log first, then fix trim_galore/cutadapt in the env.
 
 ## [0.8.0] - 2026-09-03
 

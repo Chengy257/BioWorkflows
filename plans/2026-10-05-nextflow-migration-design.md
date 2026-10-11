@@ -761,3 +761,17 @@ listed remains frozen as reviewed.
    spike-in/SEACR extensions; nf-core/cutandrun remains the documented
    ecosystem option but is not adopted for now. nf-core/atacseq covers
    ATAC-seq natively, including TOBIAS footprinting (`--with_tobias`).
+8. **CI permanently retired; real-data validation rounds skipped
+   (2026-10-12).** GitHub Actions is removed from the repository
+   (`ci.yml` deleted): hosted CI is unnecessary during development. The
+   former nextflow-static job survives as the local one-command script
+   `nextflow/tests/static-checks.sh`, and every Snakemake suite keeps its
+   own `tests/` entry points (`lint.sh`, `run_test.sh`). This supersedes
+   the "minimal CI" part of amendment 4 and the Stage 0 CI bullet (the
+   static checks themselves remain, run locally). In addition, real-data
+   validation rounds are skipped by owner decision — the chipseq real-data
+   acceptance round and the Stage-2 WP7 items are closed as
+   skipped-by-decision, not blocked: stage validation evidence is the
+   upstream test-profile smoke, synthetic fixtures, dry-run baselines and
+   unit tests (Section 10.1's "real biological datasets" item moves to
+   actual research use).
