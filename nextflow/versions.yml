@@ -4,7 +4,7 @@
 
 nextflow:
   version: "26.04.6"          # conda env `nf` on the HPC
-  tested: 2026-10-08          # chipseq-ext runs 22-26 (local + PBS)
+  tested: 2026-10-11          # rnaseq 3.27.0 smoke + rnaseq-ext dry-runs (local)
 
 java:
   version: "17+"              # required by current Nextflow; HPC `nf` env
@@ -19,3 +19,7 @@ pipelines:
     revision: 1b3078d71c4c8126a9b976d3b0248e9b9b525608   # dev HEAD; the 2.1.0 release is incompatible with Nextflow 26
     note: "smoke-validated on the HPC 2026-10-05 (test profile, throttled head-node config); see nextflow/docs/"
     tested: 2026-10-05
+  nf-core/rnaseq:
+    revision: a1fcdddd3b826fe46eb46f0479f2ff8a7815af05   # tag 3.27.0; parse-validated under Nextflow 26
+    note: "test-profile smoke GREEN on the HPC 2026-10-11 (throttled local executor, apptainer, lazy image pulls - nf-core download cannot render the 3.27.0 config); see nextflow/docs/rnaseq-ext-validation-notes.md"
+    tested: 2026-10-11

@@ -12,7 +12,7 @@ decision and validation records.
 
 | File | Purpose |
 |---|---|
-| `params.example.yaml` | Example params file (rice shown as the example; every path is a placeholder - references are always user-configured, design doc D4). Pins the ratified route: `star_salmon` + `save_align_intermeds`, UMI opt-in default-off |
+| `params.example.yaml` | Example params file (rice shown as the example; every path is a placeholder - references are always user-configured, design doc D4). Pins the ratified route: `star_salmon`, UMI opt-in default-off |
 | `run-rnaseq.sh` | Example HPC launcher wrapping `nextflow run nf-core/rnaseq` with the pinned revision |
 
 ## Usage
@@ -45,9 +45,13 @@ revision's `conf/modules/*.config`):
 | Native Salmon gene matrix | `{outdir}/salmon/salmon.merged.gene_counts.tsv` (+ `_tpm.tsv`, ...) |
 | Per-sample Salmon quant | `{outdir}/salmon/{sample}.salmon_quant/` |
 
-`--save_align_intermeds` is REQUIRED in project params: the extension
-pipeline's featureCounts stage and the lncRNA handoff consume the published
-BAMs. (Layout assumes the default `skip_quantification_merge = false`.)
+Markdup BAMs publish unconditionally in 3.27.0 (verified against the pinned
+source and a real smoke run's output tree), so the extension pipeline's
+featureCounts stage and the lncRNA handoff work without extra flags;
+`--save_align_intermeds` is only needed to ADD the pre-markdup
+`{sample}.sorted.bam` (the legacy pre-dedup counting semantics -
+`rnaseq-ext` selects the counting input via `ext_bam_suffix`). Layout
+assumes the default `skip_quantification_merge = false`.
 
 ## Local extensions
 

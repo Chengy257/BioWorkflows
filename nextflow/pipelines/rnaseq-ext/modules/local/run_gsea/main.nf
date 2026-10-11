@@ -1,6 +1,6 @@
 process RUN_GSEA {
     tag "${meta.contrast}"
-    container 'quay.io/biocontainers/bioconductor-clusterprofiler:4.12.0--r43hdfd78af_1'
+    container 'https://depot.galaxyproject.org/singularity/bioconductor-clusterprofiler:4.14.0--r44hdfd78af_0'
 
     input:
     tuple val(meta), path(ranked)

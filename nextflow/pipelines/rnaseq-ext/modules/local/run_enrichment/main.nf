@@ -1,6 +1,6 @@
 process RUN_ENRICHMENT {
     tag "${meta.contrast}:${meta.direction}"
-    container 'quay.io/biocontainers/bioconductor-clusterprofiler:4.12.0--r43hdfd78af_1'
+    container 'https://depot.galaxyproject.org/singularity/bioconductor-clusterprofiler:4.14.0--r44hdfd78af_0'
 
     input:
     tuple val(meta), path(up_list), path(down_list), path(all_list), path(ranked)

@@ -26,9 +26,10 @@ star_index: "path/to/reference/star_index/"
 
 # -- Ratified Stage-2 route (decision record D1/D6) ---------------------------
 aligner: "star_salmon"             # STAR alignment + native Salmon quantification
-save_align_intermeds: true         # publish the STAR BAMs: REQUIRED for
-                                   # rnaseq-ext (featureCounts stage) and the
-                                   # future lncRNA workflow handoff
+save_align_intermeds: false        # markdup BAMs publish unconditionally; set
+                                   # true only to also keep the pre-dedup
+                                   # {sample}.sorted.bam (legacy counting
+                                   # semantics - see rnaseq-ext ext_bam_suffix)
 save_reference: false              # set true to also publish the built index
 
 # -- UMI handling (opt-in, default off; decision record D6) -------------------

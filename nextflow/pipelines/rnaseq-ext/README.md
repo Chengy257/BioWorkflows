@@ -103,12 +103,16 @@ rationale as chipseq-ext; see `nextflow/docs/rnaseq-ext-validation-notes.md`).
 ## Containers
 
 Per-step modular containers (design doc D6): ecosystem modules carry their
-own images; local processes declare `quay.io/biocontainers/...` tags
-(`python:3.12.12`, reused from the chipseq route, and
-`bioconductor-clusterprofiler:4.12.0--r43hdfd78af_1`, pulled into the shared
-cache on 2026-10-11). Images are seeded via the validated acquisition recipe
-(implementation guidance Section 3.1); unreachable sources are rewritten in
-the machine-local container-override configuration.
+own images; local processes declare verified tags - `python:3.12.12`
+(quay.io/biocontainers, reused from the chipseq route) and
+`bioconductor-clusterprofiler:4.14.0--r44hdfd78af_0` served by
+depot.galaxyproject.org (tag existence verified against the depot listing
+on 2026-10-11; quay's API is not reliably reachable through the local
+proxy, and an invented quay tag was rejected by the registry - the depot
+listing is the verification route). Images are seeded via the validated
+acquisition recipe (implementation guidance Section 3.1); for this
+pipeline the working route is lazy pulls at smoke time (see validation
+notes).
 
 ## Validation
 
