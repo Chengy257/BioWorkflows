@@ -181,8 +181,13 @@ rounds are skipped; validation evidence is
   with a documented FAIRE settings block in the adopted params example
   (control optional; TSS interpreted as a sonication/insertion-bias check
   for FAIRE; footprinting OFF for FAIRE). No separate pipeline.
-- **D5 UMI** - native `--with_umitools` exposed in the adopted params
-  example, default OFF (Stage-2 D6 principle).
+- **D5 UMI** - CORRECTION: the pinned workflow hardcodes UMI extraction OFF
+  (the shared trimgalore subworkflow supports it, but the main workflow
+  passes `with_umi = false` and exposes no opt-in flag). UMI-based dedup is
+  also scientifically marginal for ATAC, where PCR-duplicate removal is the
+  standard. Disposition: not part of the adopted surface; the params example
+  documents `clip_r1/clip_r2` for trimming-only use. No ext port (the legacy
+  workflow never had ATAC UMI support either).
 - **D6 retirement mechanics** (chip_cuttag_atac_faire, design Stage 4) -
   DEFERRED with owner sign-off pending: tag the final legacy state, write
   the dropped-capabilities note, archive the directory outside the repo,
