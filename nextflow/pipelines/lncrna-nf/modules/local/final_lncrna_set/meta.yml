@@ -1,0 +1,50 @@
+name: final_lncrna_set
+description: Build the final lncRNA set - remove transcripts with Pfam or DIAMOND/NR homology hits, extract FASTA, emit the reference-plus-novel merged GTF.
+keywords:
+  - lncrna
+  - final set
+tools:
+  - python:
+      description: Python scripting language.
+      homepage: https://www.python.org/
+      licence: ["PSF"]
+input:
+  - meta:
+      type: map
+      description: Groovy map with the run id.
+  - pfam_ids:
+      type: file
+      description: Pfam hit transcript ids (may be empty).
+  - diamond_ids:
+      type: file
+      description: DIAMOND/NR hit transcript ids (may be empty).
+  - noncoding_gtf:
+      type: file
+      description: The coding-potential-filtered noncoding GTF.
+  - reference_gtf:
+      type: file
+      description: The reference annotation GTF.
+  - genome:
+      type: file
+      description: Reference genome FASTA (sequence extraction).
+output:
+  - final_fasta:
+      type: tuple
+      description: Final lncRNA transcript FASTA.
+      pattern: "final_lncRNA.fa"
+  - final_gtf:
+      type: tuple
+      description: Final lncRNA GTF.
+      pattern: "final_lncRNA.gtf"
+  - ref_with_lncrna_gtf:
+      type: tuple
+      description: Reference GTF merged with the final novel GTF (expression input).
+      pattern: "ref_withLncRNA.gtf"
+  - hit_ids:
+      type: tuple
+      description: The union of homology hit ids (removed transcripts).
+      pattern: "homology.hitIDs.txt"
+authors:
+  - "@Chengy257"
+maintainers:
+  - "@Chengy257"

@@ -1,0 +1,39 @@
+name: coding_potential_set
+description: Intersect the CPC2 and CPAT noncoding predictions with a minimum transcript length (decision record D3).
+keywords:
+  - lncrna
+  - coding potential
+tools:
+  - python:
+      description: Python scripting language.
+      homepage: https://www.python.org/
+      licence: ["PSF"]
+input:
+  - meta:
+      type: map
+      description: Groovy map with the run id.
+  - cpc2_out:
+      type: file
+      description: CPC2 tabular output.
+  - cpat_out:
+      type: file
+      description: CPAT tabular output.
+  - novel_gtf:
+      type: file
+      description: The classcode-u novel GTF (transcript length source).
+  - min_length:
+      type: val
+      description: Minimum transcript length in nt.
+output:
+  - noncoding_ids:
+      type: tuple
+      description: One noncoding transcript id per line.
+      pattern: "noncoding.transcriptIDs.txt"
+  - noncoding_gtf:
+      type: tuple
+      description: The filtered noncoding GTF.
+      pattern: "noncoding.transcripts.gtf"
+authors:
+  - "@Chengy257"
+maintainers:
+  - "@Chengy257"

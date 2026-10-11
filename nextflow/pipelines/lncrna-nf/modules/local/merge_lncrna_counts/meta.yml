@@ -1,0 +1,42 @@
+name: merge_lncrna_counts
+description: Merge per-sample featureCounts outputs into the lncrna-level count/TPM/FPKM matrices (named distinctly from the Stage-2 gene-level matrices).
+keywords:
+  - lncrna
+  - expression
+  - featurecounts
+tools:
+  - python:
+      description: Python scripting language.
+      homepage: https://www.python.org/
+      licence: ["PSF"]
+input:
+  - meta:
+      type: map
+      description: Groovy map with the run id.
+  - counts:
+      type: list
+      description: Per-sample featureCounts TSV files.
+  - sample_ids:
+      type: val
+      description: Comma-separated sample ids (column order anchor).
+output:
+  - counts:
+      type: tuple
+      description: Merged raw count matrix.
+      pattern: "lncrna.count.matrix.tsv"
+  - tpm:
+      type: tuple
+      description: Merged TPM matrix.
+      pattern: "lncrna.tpm.matrix.tsv"
+  - fpkm:
+      type: tuple
+      description: Merged FPKM matrix.
+      pattern: "lncrna.fpkm.matrix.tsv"
+  - assigned:
+      type: tuple
+      description: Per-sample assigned-read log table.
+      pattern: "lncrna.count_assigned.tsv"
+authors:
+  - "@Chengy257"
+maintainers:
+  - "@Chengy257"

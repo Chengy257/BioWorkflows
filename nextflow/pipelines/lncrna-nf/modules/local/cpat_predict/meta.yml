@@ -1,0 +1,34 @@
+name: cpat_predict
+description: Coding-potential prediction with CPAT (species logit model + hexamer table as inputs).
+keywords:
+  - lncrna
+  - coding potential
+  - cpat
+tools:
+  - cpat:
+      description: "Coding Potential Assessment Tool (CPAT) - an efficient lncRNA annotation tool."
+      homepage: "https://github.com/allywangwang/CPAT2"
+      documentation: "https://cpat.readthedocs.io/"
+      licence: ["MIT"]
+input:
+  - meta:
+      type: map
+      description: Groovy map with the run id.
+  - fasta:
+      type: file
+      description: Candidate transcript FASTA.
+  - model:
+      type: file
+      description: Species logit model file.
+  - hexamer:
+      type: file
+      description: Species hexamer frequency table.
+output:
+  - tsv:
+      type: tuple
+      description: CPAT tabular predictions.
+      pattern: "cpat.out.tsv"
+authors:
+  - "@Chengy257"
+maintainers:
+  - "@Chengy257"

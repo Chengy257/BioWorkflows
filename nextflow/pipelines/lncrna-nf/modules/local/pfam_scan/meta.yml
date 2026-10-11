@@ -1,0 +1,40 @@
+name: pfam_scan
+description: Protein-domain search of the candidate transcripts with pfam_scan.pl against a Pfam database directory.
+keywords:
+  - lncrna
+  - pfam
+  - protein domains
+tools:
+  - pfam_scan:
+      description: "pfam_scan.pl - search sequences against Pfam HMM libraries (HMMER-based)."
+      homepage: "https://github.com/Ensembl/pfam_scan"
+      licence: ["GPL-3.0"]
+input:
+  - meta:
+      type: map
+      description: Groovy map with the run id.
+  - novel_gtf:
+      type: file
+      description: The noncoding candidate GTF (context input).
+  - fasta:
+      type: file
+      description: Candidate transcript FASTA.
+  - db_dir:
+      type: directory
+      description: Pfam database directory (Pfam-A.hmm etc.).
+  - evalue:
+      type: val
+      description: Sequence E-value threshold.
+output:
+  - output:
+      type: tuple
+      description: Raw pfam_scan.pl output table.
+      pattern: "pfam_scan.output"
+  - hit_ids:
+      type: tuple
+      description: Transcript ids with Pfam hits (filtered).
+      pattern: "pfam.hitIDs.txt"
+authors:
+  - "@Chengy257"
+maintainers:
+  - "@Chengy257"

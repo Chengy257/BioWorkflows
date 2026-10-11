@@ -1,0 +1,31 @@
+name: novel_transcripts
+description: Extract the novel (gffcompare classcode u) intergenic transcripts from the annotated GTF.
+keywords:
+  - lncrna
+  - gffcompare
+  - classcode
+tools:
+  - python:
+      description: Python scripting language.
+      homepage: https://www.python.org/
+      licence: ["PSF"]
+input:
+  - meta:
+      type: map
+      description: Groovy map with the run id.
+  - annotated_gtf:
+      type: file
+      description: gffcompare *.annotated.gtf (class_code attributes present).
+output:
+  - novel_gtf:
+      type: tuple
+      description: GTF restricted to classcode-u transcripts.
+      pattern: "novel.transcripts.gtf"
+  - novel_ids:
+      type: tuple
+      description: One transcript id per line (classcode u).
+      pattern: "novel.transcriptIDs.txt"
+authors:
+  - "@Chengy257"
+maintainers:
+  - "@Chengy257"
