@@ -1,0 +1,55 @@
+# Example params for nf-core/rnaseq (tag 3.27.0, revision a1fcdddd3b).
+#
+# Every path below is a PLACEHOLDER. Reference genomes are never fixed by the
+# repository (design doc D4): fill in real paths in a project-local copy of
+# this file and pass it with `-params-file`. Species/site specifics stay in
+# that local file; nothing species-specific is tracked here.
+#
+# Every knob of the pipeline stays overridable in the project-local copy
+# (owner principle: no silent absolute configuration); this example pins only
+# the Stage-2 ratified route decisions (D1/D6) and the artifacts the local
+# extension stages and the lncRNA handoff consume.
+#
+# consumed_by: run-rnaseq.sh (passed as -params-file)
+
+# -- Input --------------------------------------------------------------------
+input: "path/to/samplesheet.csv"   # nf-core/rnaseq sample sheet: sample,fastq_1,fastq_2[,strandedness]
+outdir: "results"
+
+# -- Reference (user-configured; rice genome shown only as an example) --------
+fasta: "path/to/reference/genome.fa"
+gtf: "path/to/reference/genes.gtf"
+gene_bed: "path/to/reference/genes.bed"   # optional; deepTools/RSeQC QC plots
+# Prebuilt STAR index (directory); or omit and add save_reference: true to
+# build once and reuse the published index:
+star_index: "path/to/reference/star_index/"
+
+# -- Ratified Stage-2 route (decision record D1/D6) ---------------------------
+aligner: "star_salmon"             # STAR alignment + native Salmon quantification
+save_align_intermeds: true         # publish the STAR BAMs: REQUIRED for
+                                   # rnaseq-ext (featureCounts stage) and the
+                                   # future lncRNA workflow handoff
+save_reference: false              # set true to also publish the built index
+
+# -- UMI handling (opt-in, default off; decision record D6) -------------------
+# Most projects have no UMI. When a library carries one (verified basis of
+# the legacy UMI mRNA libraries: 8 random bases + fixed T anchor at position
+# 9), enable extraction + REAL deduplication and configure the pattern:
+with_umi: false
+# with_umi: true                  # example UMI project settings:
+# umitools_extract_method: "string"
+# umitools_bc_pattern: "NNNNNNNNT"   # 8 random bases + T anchor (per-project!)
+
+# -- QC -----------------------------------------------------------------------
+deseq2_qc: true                    # native PCA/sample-distance QC on the merged counts
+skip_biotype_qc: false
+
+# -- Downstream consumers of this run's published results ---------------------
+# The adopted run publishes:
+#   {outdir}/star_salmon/{sample}.markdup.sorted.bam(+.bai)      (BAMs)
+#   {outdir}/star_salmon/samtools_stats/{sample}.sorted.bam.flagstat
+#   {outdir}/salmon/salmon.merged.gene_counts.tsv(_tpm.tsv ...)  (native matrix)
+# rnaseq-ext reads them from there (see its README for the exact contract)
+# and can add a featureCounts gene matrix; the per-project quantification
+# route switch decides which matrix is authoritative (decision record D1).
+# Differential expression runs via nextflow/adopted/differentialabundance/.

@@ -50,8 +50,16 @@ mainline (design + guidance documents under `plans/`). Status:
   The Snakemake `chip_cuttag_atac_faire/` legacy capabilities are delivered by
   `nextflow/pipelines/chipseq-ext/` as default-off extension stages
   (DiffBind, spike-in, IDR, SEACR, HOMER motifs, QC gates, organelle QC).
+- `nextflow/adopted/rnaseq/` — adopted [nf-core/rnaseq](https://nf-co.re/rnaseq)
+  entry (pinned 3.27.0), Stage-2 route: `star_salmon` with published BAMs,
+  UMI opt-in. Local extensions (featureCounts quantification with a
+  per-project salmon/featureCounts route switch, clusterProfiler GO/KEGG/GSEA
+  enrichment) land in `nextflow/pipelines/rnaseq-ext/`; differential
+  expression runs via `nextflow/adopted/differentialabundance/` (DESeq2).
 - Records: `nextflow/docs/chipseq-scientific-decision-record.md` (ratified
-  2026-10-06), `nextflow/docs/chipseq-ext-validation-notes.md`, and
+  2026-10-06), `nextflow/docs/chipseq-ext-validation-notes.md`,
+  `nextflow/docs/rnaseq-scientific-decision-record.md` (ratified 2026-10-11),
+  `nextflow/docs/rnaseq-ext-validation-notes.md`, and
   `nextflow/versions.yml` (tested revisions).
 - The Snakemake suites below remain the validated daily drivers; retirement
   happens only when the new routes cover real analysis needs (design doc
