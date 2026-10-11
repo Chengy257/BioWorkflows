@@ -53,6 +53,10 @@ blocking factor. Sample ids and condition names must not contain `_vs_`
 nextflow run . -profile test -preview        # all stages off: 0 tasks
 nextflow run . -profile test_full -preview   # all stages on
 
+# Real execution on fixtures additionally needs tests/make_real_bams.sh
+# (SAMTOOLS_BIN=<samtools command>): it upgrades the placeholder BAMs to
+# real ones and writes the custom genome FASTA the HOMER stage consumes.
+
 # Real run against an adopted run's results:
 nextflow run . -profile apptainer \
     -c ~/.nextflow/config \

@@ -214,8 +214,10 @@ Fixture dry-run DAG baselines are unchanged (content-only edits).
 ## 2026-10-11 - post-audit fix batch, re-validated
 
 Context: the independent post-implementation review of 2026-10-11 returned
-verdict fix-first; the frozen fix plan lives in
-`plans/2026-10-11-chipseq-ext-fix-plan.md` (machine-local, untracked).
+verdict fix-first; the frozen fix plan is machine-local and untracked under
+the repo's plans/ convention (dated 2026-10-11), so it is described here
+rather than path-referenced - tracked documentation must not link untracked
+files (the CI doc-link check enforces exactly this).
 Batches landed as commits 79cf0f3 (consumed-path contract alignment),
 5a6838f (DiffBind contrast direction + control exclusion), 360924e
 (boundary hardening), 7417c95 (meta.yml syntax), cebd604 (CI static job),

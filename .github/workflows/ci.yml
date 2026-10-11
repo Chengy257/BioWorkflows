@@ -224,13 +224,18 @@ jobs:
         # Cross-references in these docs are backtick-quoted paths: only
         # repo-rooted spans (nextflow/..., plans/...) and *.md spans are
         # resolvable targets; wildcards, placeholders and machine-local
-        # paths are skipped, as are upstream-relative references.
+        # paths are skipped, as are upstream-relative references. The two
+        # whitelisted plans/ design docs are scanned as well (everything
+        # else under plans/ is machine-local and untracked).
         run: |
           python3 - <<'EOF'
           import glob, os, re, sys
           SKIP_CHARS = set(' *{}<>~')
           bad, scanned = [], 0
-          for f in glob.glob('nextflow/**/*.md', recursive=True):
+          files = glob.glob('nextflow/**/*.md', recursive=True)
+          files += ['plans/2026-10-05-nextflow-migration-design.md',
+                    'plans/2026-10-05-nextflow-migration-implementation-guidance.md']
+          for f in files:
               scanned += 1
               text = open(f, encoding='utf-8').read()
               spans = re.findall(r'`([^`\n]+)`', text)
