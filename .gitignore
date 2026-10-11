@@ -92,6 +92,8 @@ nextflow/pipelines/chipseq-ext/tests/fixtures/
 nextflow/pipelines/chipseq-ext/work/
 nextflow/pipelines/rnaseq-ext/tests/fixtures/
 nextflow/pipelines/rnaseq-ext/work/
+nextflow/pipelines/atacseq-ext/tests/fixtures/
+nextflow/pipelines/atacseq-ext/work/
 desktop.ini
 *.swp
 *~
