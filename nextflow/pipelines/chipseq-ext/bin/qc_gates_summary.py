@@ -216,6 +216,7 @@ def main():
             fh.write("\t".join(HEADER) + "\n")
             for row in rows:
                 fh.write("\t".join(str(x) for x in row) + "\n")
+    return 0
 
 
 if __name__ == "__main__":

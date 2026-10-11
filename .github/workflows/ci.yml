@@ -208,7 +208,7 @@ jobs:
         run: |
           curl -fsSL https://get.nextflow.io | bash
           sudo mv nextflow /usr/local/bin/
-          pip install pyyaml
+          pip install pyyaml pytest
           sudo apt-get update
           sudo apt-get install -y shellcheck
       - name: Nextflow config syntax validation (chipseq-ext)
@@ -266,3 +266,5 @@ jobs:
         # helper scripts live in the pipeline-level bin/ (module-level bin/
         # is not auto-staged in this layout - see validation notes)
         run: python -m py_compile nextflow/pipelines/chipseq-ext/bin/*.py
+      - name: Helper script unit tests
+        run: python -m pytest nextflow/pipelines/chipseq-ext/tests/unit -q

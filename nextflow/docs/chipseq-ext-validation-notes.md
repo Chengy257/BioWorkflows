@@ -254,3 +254,34 @@ Re-validation (all on fixtures, Nextflow 26.04.6):
   adopted-README dead link fixed in this batch.
 - shellcheck of the three test/launcher scripts runs in CI only (not
   installed on this machine).
+
+## 2026-10-11 (later) - seacr skip param + pytest unit suite
+
+- `seacr.skip_control_groups` (default true) closes fix-plan decision D3:
+  groups whose treat set consists only of declared control samples (the
+  INPUT group) are skipped - peaks are not called on the input alone.
+  `test_full` overrides it to false so the no-control `non`+numeric-FDR
+  path (SEACR_CALLPEAK_TH) stays in the dry-run baseline (18 process names).
+  Real-container verification with the production default: exit 0, and
+  exactly the INPUT group's 4-task SEACR chain disappears vs the 41-task
+  all-on run (SAMTOOLS_MERGE, DEEPTOOLS_BDGC_RAW, SEACR_CALLPEAK_TH,
+  SEACR_CONVERT -> 37 tasks), published narrowPeaks = WT 17 + MUT 10 with
+  no INPUT peaks.
+- Verification caveat learned the hard way: `-preview` lists
+  invoked-but-empty process slots and prints its task list progressively
+  (lines can repeat across snapshots), so the dry-run name count is NOT a
+  reliable check for a skip change - probe the wiring (the group list
+  passed to the subworkflow) and verify with real execution.
+- pytest unit suite under `tests/unit/` (27 tests) pins the locally owned
+  helper semantics: idr interval merge/support, DiffBind sheet exclusion +
+  per-condition replicate numbering + control attachment, qc_gates
+  longest-prefix `--samples` join + unmatched-file hard error + gate
+  thresholds, narrowPeak conversion clamps, and the organelle/spike-in
+  contig pattern convention (`spike` must match `spike1` - the chrS
+  regression). Design Section 10.2 "nf-test or appropriate focused tests":
+  pytest chosen for the script-level logic; nf-test deliberately deferred
+  (the Nextflow-level wiring is pinned by the dry-run baselines and the
+  fixture real-execution smokes). The nextflow-static CI job runs the
+  suite.
+- `qc_gates_summary.main()` now returns 0 explicitly (was an implicit
+  None; the CLI exit code is unchanged).

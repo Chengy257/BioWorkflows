@@ -70,6 +70,23 @@ nextflow run . -profile apptainer \
     --params-file my-ext-params.yaml
 ```
 
+## Tests
+
+`tests/unit/` carries a pytest suite for the locally owned helper scripts
+(design doc Section 10.2: "nf-test or appropriate focused tests"): interval
+merge/support semantics of `idr_union.py`, the DiffBind sheet exclusion and
+replicate numbering, the `--samples` longest-prefix join of
+`qc_gates_summary.py`, the narrowPeak conversion clamps, and the contig
+pattern convention shared by the organelle/spike-in helpers. Run with:
+
+```bash
+python -m pytest tests/unit -q
+```
+
+nf-test is deliberately deferred: the Nextflow-level wiring is pinned by the
+dry-run DAG baselines and the fixture real-execution smokes instead (see
+`nextflow/docs/chipseq-ext-validation-notes.md`).
+
 ## Containers
 
 Per-step modular containers (design doc D6): ecosystem modules carry their
