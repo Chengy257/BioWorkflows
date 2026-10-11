@@ -25,7 +25,8 @@
 include { STRINGTIE_STRINGTIE } from '../modules/nf-core/stringtie/stringtie/main'
 include { STRINGTIE_MERGE } from '../modules/nf-core/stringtie/merge/main'
 include { GFFCOMPARE } from '../modules/nf-core/gffcompare/main'
-include { GFFREAD } from '../modules/nf-core/gffread/main'
+include { GFFREAD as GFFREAD_NOVEL } from '../modules/nf-core/gffread/main'
+include { GFFREAD as GFFREAD_NONCODING } from '../modules/nf-core/gffread/main'
 include { CPC2 } from '../modules/nf-core/cpc2/main'
 include { DIAMOND_BLASTX } from '../modules/nf-core/diamond/blastx/main'
 include { SUBREAD_FEATURECOUNTS } from '../modules/nf-core/subread/featurecounts/main'
@@ -125,7 +126,7 @@ workflow IDENTIFY {
     // ---- Assembly + merge + novel extraction (core chain) -------------------
     STRINGTIE_STRINGTIE(
         ch_meta_bams.map { meta, bam -> tuple(meta, bam, []) },
-        null,                      // mode: plain assembly (legacy --conservative route)
+        '',                        // mode: plain assembly (legacy --conservative route)
         gtf,
     )
     STRINGTIE_MERGE(
@@ -134,22 +135,22 @@ workflow IDENTIFY {
         tuple([id: 'lncrna'], gtf_pcg),
     )
     GFFCOMPARE(
-        STRINGTIE_MERGE.out.merged_gtf.map { meta, gtf -> tuple(meta, [gtf]) },
+        STRINGTIE_MERGE.out.merged_gtf.map { meta, g -> tuple(meta, [g]) },
         tuple([id: 'lncrna'], genome, file("${genome}.fai", checkIfExists: true)),
         tuple([id: 'lncrna'], gtf_pcg),
     )
     NOVEL_TRANSCRIPTS(
         GFFCOMPARE.out.annotated_gtf,
     )
-    GFFREAD(
-        NOVEL_TRANSCRIPTS.out.novel_gtf.map { meta, gtf -> tuple(meta, gtf) },
+    GFFREAD_NOVEL(
+        NOVEL_TRANSCRIPTS.out.novel_gtf.map { meta, g -> tuple(meta, g) },
         genome,
     )
 
     // ---- Coding potential: CPC2 AND CPAT AND length >= min_length -----------
-    CPC2(GFFREAD.out.gffread_fasta)
+    CPC2(GFFREAD_NOVEL.out.gffread_fasta)
     CPAT_PREDICT(
-        GFFREAD.out.gffread_fasta,
+        GFFREAD_NOVEL.out.gffread_fasta,
         file(params.cpat.model, checkIfExists: true),
         file(params.cpat.hexamer, checkIfExists: true),
     )
@@ -159,8 +160,8 @@ workflow IDENTIFY {
         NOVEL_TRANSCRIPTS.out.novel_gtf,
         params.min_length,
     )
-    GFFREAD(
-        CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, gtf -> tuple(meta, gtf) },
+    GFFREAD_NONCODING(
+        CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, g -> tuple(meta, g) },
         genome,
     )
 
@@ -168,8 +169,8 @@ workflow IDENTIFY {
     ch_pfam_hits = channel.empty()
     if (params.pfam.enabled) {
         PFAM_SCAN(
-            CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, gtf -> tuple(meta, gtf) },
-            GFFREAD.out.gffread_fasta,
+            CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, g -> tuple(meta, g) },
+            GFFREAD_NONCODING.out.gffread_fasta,
             file(params.pfam.db_dir, checkIfExists: true),
             params.pfam.evalue,
         )
@@ -178,7 +179,7 @@ workflow IDENTIFY {
     ch_diamond_hits = channel.empty()
     if (params.diamond.enabled) {
         DIAMOND_BLASTX(
-            CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, gtf -> tuple(meta, gtf) },
+            CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, g -> tuple(meta, g) },
             tuple([id: 'lncrna'], file(params.diamond.db, checkIfExists: true)),
             'blast',
             '6 qseqid sseqid',
@@ -197,8 +198,9 @@ workflow IDENTIFY {
         genome,
     )
     SUBREAD_FEATURECOUNTS(
-        ch_meta_bams.map { meta, bam -> tuple(meta, [bam]) },
-        FINAL_LNCRNA_SET.out.ref_with_lncrna_gtf,
+        ch_meta_bams.map { meta, bam ->
+            tuple(meta, [bam], FINAL_LNCRNA_SET.out.ref_with_lncrna_gtf.first())
+        },
     )
     MERGE_LNCRNA_COUNTS(
         SUBREAD_FEATURECOUNTS.out.counts.toList(),

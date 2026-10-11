@@ -44,7 +44,7 @@ def read_count_file(path):
                 continue
             if sample is None:
                 raise ValueError(f"{path}: data row before the Geneid header")
-            rows.append((parts[0], int(parts[5]), parts[-1]))
+            rows.append((parts[0], int(parts[5]), int(parts[-1])))
     if sample is None:
         raise ValueError(f"{path}: missing Geneid header row")
     return sample, rows
@@ -105,7 +105,7 @@ def main():
         tpm_out.write(header)
         fpkm_out.write(header)
         for i, gene in enumerate(gene_order):
-            counts = [per_sample[sid][i][2] for sid in ids]
+            counts = [str(per_sample[sid][i][2]) for sid in ids]
             count_out.write(gene + "\t" + "\t".join(counts) + "\n")
             tpms = []
             fpkms = []
