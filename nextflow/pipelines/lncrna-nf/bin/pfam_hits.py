@@ -4,7 +4,9 @@ carry a domain hit at or below the E-value threshold.
 
 Legacy semantics (rna-seq lncrna.smk): keep the hit rows whose sequence
 E-value (column 13) is < the threshold; the transcript id is column 1.
-Comment lines (#) are skipped; the `-as` (align) layout is accepted as-is.
+Comment lines (#) are skipped. When the module translates upstream
+(six_frame_orfs.py), column 1 is an ORF id '<transcript>|orfN' - the
+separator is unambiguous, so strip the suffix back to the transcript id.
 
 Usage:
     pfam_hits.py --pfam pfam_scan.output --evalue 1e-5 --out pfam.hitIDs.txt
@@ -32,7 +34,7 @@ def main():
             except ValueError:
                 continue
             if evalue < args.evalue:
-                tid = parts[0]
+                tid = parts[0].split("|")[0]
                 if tid not in hits:
                     hits.add(tid)
                     out.write(tid + "\n")

@@ -205,7 +205,9 @@ workflow IDENTIFY {
     ch_diamond_hits = Channel.value([[id: 'lncrna'], []])
     if (params.diamond.enabled) {
         DIAMOND_BLASTX(
-            CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, g -> tuple(meta, g) },
+            // the query is the NONCODING FASTA (GFFREAD's second pass), not
+            // the GTF - diamond blastx reads sequences
+            GFFREAD_NONCODING.out.gffread_fasta,
             tuple([id: 'lncrna'], file(params.diamond.db, checkIfExists: true)),
             'txt',                   // outfmt 6 tabular: column 1 = query id
             'qseqid sseqid',
@@ -229,8 +231,11 @@ workflow IDENTIFY {
     )
     MERGE_LNCRNA_COUNTS(
         // .toList() emits ONE item (a list of (meta, path) tuples); reshape
-        // into the (meta, [paths]) the module input declares.
+        // into the (meta, [paths]) the module input declares - and stage the
+        // .summary files too (the helper reads Assigned reads from them).
         SUBREAD_FEATURECOUNTS.out.counts.toList()
+            .map { rows -> tuple([id: 'lncrna'], rows.collect { row -> row[1] }) },
+        SUBREAD_FEATURECOUNTS.out.summary.toList()
             .map { rows -> tuple([id: 'lncrna'], rows.collect { row -> row[1] }) },
         sample_ids.sort().join(','),
     )

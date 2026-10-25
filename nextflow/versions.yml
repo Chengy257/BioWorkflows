@@ -23,3 +23,16 @@ pipelines:
     revision: a1fcdddd3b826fe46eb46f0479f2ff8a7815af05   # tag 3.27.0; parse-validated under Nextflow 26
     note: "test-profile smoke GREEN on the HPC 2026-10-11 (throttled local executor, apptainer, lazy image pulls - nf-core download cannot render the 3.27.0 config); see nextflow/docs/rnaseq-ext-validation-notes.md"
     tested: 2026-10-11
+
+tools:
+  lncrna-nf:
+    stringtie: "3.0.3"        # per-sample assembly + --merge (wave image 3.0.3--e8043d00caecd051)
+    gffcompare: "0.12.6"
+    gffread: "0.12.7"
+    cpc2: "CPC2.py 0.1"       # container cpc2:1.0.1--hdfd78af_1
+    cpat: "3.0.5"             # fixture model built with the bundled make_logitModel.py + make_hexamer_tab.py
+    pfam_scan: "1.6"          # HMMER 3.4 in the same image; -translate binary MISSING in the image (see validation notes)
+    diamond: "2.2.1"
+    featurecounts: "2.1.1"    # subread container
+    note: "real-container fixture round 2026-10-26 (planted-novel sensitivity/specificity gate GREEN); see nextflow/docs/lncrna-nf-validation-notes.md"
+    tested: 2026-10-26

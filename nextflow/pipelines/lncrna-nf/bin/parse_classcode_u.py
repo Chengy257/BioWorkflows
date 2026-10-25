@@ -30,25 +30,29 @@ def main():
     ap.add_argument("--out-ids", required=True)
     args = ap.parse_args()
 
-    ids = []
-    with open(args.gtf) as fh, open(args.out_gtf, "w") as out:
+    rows = []
+    with open(args.gtf) as fh:
         for line in fh:
             if line.startswith("#"):
                 continue
             parts = line.rstrip("\n").split("\t")
             if len(parts) < 9:
                 continue
-            attrs = parse_attrs(parts[8])
-            if attrs.get("class_code") == "u":
-                tid = attrs.get("transcript_id", "")
-                if tid and tid not in ids:
-                    ids.append(tid)
+            tid = parse_attrs(parts[8]).get("transcript_id", "")
+            rows.append((line, tid, parts[8]))
+    # gffcompare writes class_code ONLY on transcript rows; exon rows carry
+    # the same transcript_id. Keep the classcode-u transcripts AND their
+    # exon rows (dropping exons zeroes the downstream exonic-length filter
+    # and degrades every transcript to a single-exon span).
+    keep = {tid for _line, tid, field in rows
+            if tid and parse_attrs(field).get("class_code") == "u"}
+    with open(args.out_gtf, "w") as out, open(args.out_ids, "w") as ids_out:
+        for line, tid, _field in rows:
+            if tid in keep:
                 out.write(line)
-
-    with open(args.out_ids, "w") as out:
-        for tid in ids:
-            out.write(tid + "\n")
-    print(f"kept {len(ids)} classcode-u transcripts")
+        for tid in sorted(keep):
+            ids_out.write(tid + "\n")
+    print(f"kept {len(keep)} classcode-u transcripts")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ process MERGE_LNCRNA_COUNTS {
 
     input:
     tuple val(meta), path(counts, stageAs: 'counts/*')
+    tuple val(meta2), path(summaries, stageAs: 'counts/*')
     val sample_ids
 
     output:

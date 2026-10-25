@@ -5,6 +5,94 @@ Validation record for the Stage-4 local lncRNA identification workflow
 `lncrna-scientific-decision-record.md` (ratified 2026-10-12). Dates are
 absolute; every entry states what ran and what was observed.
 
+## 2026-10-26 - REAL-CONTAINER FIXTURE ROUND: CHAIN GREEN, SCIENTIFIC GATE GREEN
+
+The deferred execution round ran to completion. Setup, execution, findings:
+
+### Execution environment (HPC, PBS)
+
+- apptainer exec is BLOCKED on the login node (user namespaces refused
+  there) but works on compute nodes - the whole run therefore ran via the
+  PBS executor (Nextflow driver itself submitted as a qsub job; task logs
+  under the shared home, NOT /tmp which is node-local).
+- All images pre-pulled on the login node into
+  `/home/chengyu/soft/apptainer-cache`: gffcompare/cpc2/diamond via depot
+  (direct, no proxy), cpat/pfam_scan via quay (HTTP mixed-port proxy
+  `http://127.0.0.1:7890`); stringtie (wave blob URL) was ALREADY cached
+  since the 2026-10-11 rnaseq smoke - the Nextflow cache filename is the
+  sanitized blob URL.
+- Resource ceilings for the round via a `-c` override (1 h walltime,
+  8 GB/4 cpus for DIAMOND/PFAM).
+
+### Fixture rework (review P1-6: the gate was not computable before)
+
+- `tests/make_fixtures.py` rewritten: read-carrying mini-BAMs (samtools
+  from deterministic SAM text; ~1050 SE reads/sample incl. 31
+  splice-anchored junction reads per locus), designed genome content
+  (noncoding loci are six-frame stop-rich via a 66-nt cassette covering
+  ALL SIX frames - forward stops AND their reverse-complement stops at
+  codons 3/22/44 and 18/26/34; the coding locus is a ~1366-codon stop-free
+  ORF), CPAT training FASTAs + toy NR proteins + a Pfam seed alignment,
+  and the `novel.expected.gtf` ground truth. Exon lengths are multiples of
+  3 so spliced frames stay aligned; loci sit in intergenic windows clear
+  of the reference genes.
+- **StringTie drops spliced reads WITHOUT an XS strand tag on unstranded
+  input** - the fixture junction reads carry `XS:A:<strand>` (exactly what
+  real aligners emit); without it StringTie assembled nothing at the
+  planted loci even at 5x coverage.
+- `tests/build_fixture_dbs.sh` builds the mini DBs in the same containers
+  the pipeline uses: diamond makedb on toy proteins, hmmbuild/hmmpress on
+  the seed alignment, CPAT model via the image's own
+  `make_hexamer_tab.py` + `make_logitModel.py` (both ship with cpat
+  3.0.5 as separate scripts), plus the minimal `Pfam-A.hmm.dat` +
+  `active_site.dat` pfam_scan.pl demands.
+- `tests/gate_planted_novel.py`: locus-based sensitivity/specificity gate.
+
+### New defects the round exposed and fixed (all pre-dated the review)
+
+- **DIAMOND queried the noncoding GTF, not the FASTA** (wiring predates
+  the 2026-10-14 review; it survived every stub/pytest check) - the query
+  now comes from GFFREAD_NONCODING.
+- **parse_classcode_u.py dropped exon rows** (gffcompare writes class_code
+  only on transcript rows), zeroing the exonic-length filter and
+  degrading every novel transcript to a single-exon span. Two-pass fix;
+  the unit-test fixture was rewritten to the REAL gffcompare layout (the
+  old test had class_code on exon rows - the wrong assumption hid the bug).
+- **pfam_scan 1.6 biocontainer lacks the standalone `translate` binary**
+  its `-translate` mode shells out to ('Command translate not found' on a
+  real run - this would break REAL projects, not just fixtures). The
+  module now translates upstream (`six_frame_orfs.py`, six-frame
+  stop-to-stop ORFs, ids `<tx>|orfN`) and pfam_scan consumes protein
+  sequences; `pfam_hits.py` strips the `|orfN` suffix.
+- **pfam_db stageAs nesting**: `stageAs: 'pfam_db/*'` on a DIRECTORY input
+  staged it as pfam_db/pfam_db; changed to `stageAs: 'pfam_data'`.
+- **MERGE_LNCRNA_COUNTS never received the .summary files** (the helper
+  reads Assigned reads from them) - second input added.
+- Fixture `single_end = true` (SE reads; the default -p doubled-fragment
+  behavior is for PE projects).
+- bin/ helpers need the executable bit for real runs (staged into PATH);
+  all pipeline bin/ scripts chmod +x.
+
+### Result
+
+- Whole chain in real containers via PBS: **20/20 tasks, exit 0**
+  (STRINGTIE x4, MERGE, GFFCOMPARE, NOVEL_TRANSCRIPTS, GFFREAD x2, CPC2,
+  CPAT, CODING_POTENTIAL_SET, PFAM_SCAN, DIAMOND_BLASTX, FINAL_LNCRNA_SET,
+  FEATURECOUNTS x4, MERGE_LNCRNA_COUNTS).
+- **Scientific gate GREEN**: SENSITIVITY novA 1.00, novB 1.00 (>= 0.8
+  exonic recall); SPECIFICITY novC: no final-set overlap. gffcompare
+  assigned classcode u to all three planted loci; CPC2 and CPAT
+  independently called novA/novB noncoding (CPAT via the no_ORF path) and
+  novC coding (CPAT Coding_prob 1.0, CPC2 0.98); featureCounts counted
+  real reads per gene (BAM-basename headers - the S1 fix verified on real
+  output); expression matrices carry the final set.
+- `versions.yml` gains the `tools.lncrna-nf` row set (stringtie 3.0.3,
+  gffcompare 0.12.6, gffread 0.12.7, CPC2.py 0.1, cpat 3.0.5, pfam_scan
+  1.6, diamond 2.2.1, featureCounts 2.1.1) per the ledger rule.
+- pytest 12 -> 13 (ORF-id-to-transcript mapping in pfam_hits). Stub
+  baselines unchanged after the wiring fixes: test 18 tasks / test_full 20
+  (re-run, exit 0).
+
 ## 2026-10-25 - review fix batch (lncrna-nf P0 1-5 + P1 3-5, plans/2026-10-14 code review)
 
 - All five P0s fixed: GFFREAD emits FASTA via a `withName:GFFREAD` `ext.args

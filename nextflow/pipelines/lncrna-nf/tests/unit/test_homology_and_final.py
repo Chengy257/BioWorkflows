@@ -29,6 +29,20 @@ def test_pfam_hits_threshold(tmp_path):
     assert out.read_text().split() == ["novA", "novC"]
 
 
+def test_pfam_hits_orf_ids_map_back(tmp_path):
+    # the module translates upstream: column 1 is '<transcript>|orfN'
+    pfam = tmp_path / "pfam_scan.output"
+    pfam.write_text(PFAM.replace("novA\t", "novA|orf3\t"), encoding="utf-8")
+    out = tmp_path / "hits.txt"
+    old = sys.argv
+    sys.argv = ["pfam_hits.py", "--pfam", str(pfam), "--evalue", "1e-5", "--out", str(out)]
+    try:
+        pfam_hits.main()
+    finally:
+        sys.argv = old
+    assert out.read_text().split() == ["novA", "novC"]
+
+
 REF_GTF = "\n".join([
     "chr1\ttest\texon\t100\t200\t.\t+\t.\tgene_id \"g1\"; transcript_id \"t1\";",
     "chr1\ttest\ttranscript\t100\t200\t.\t+\t.\tgene_id \"g1\"; transcript_id \"t1\";",
