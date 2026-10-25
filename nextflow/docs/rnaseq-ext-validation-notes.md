@@ -86,6 +86,15 @@ Dates are absolute; every entry states what ran and what was observed.
   18-task baseline encoded the 1-contrast/4-sample fixture; the change is
   fixture growth plus the per-contrast pairing fix, not new stages.
 - pytest 19 -> 20 (BAM-basename header accept/reject cases).
+- Same-day P2 sweep: the merged-matrix column order now rides the adopted
+  sheet order via a value channel (previously task-completion order
+  contradicted the helper's documented contract); a paired sheet with
+  featurecounts_quant.paired=false warns (fragment double-counting footgun);
+  the README commands drop the nonexistent `-profile apptainer` and use
+  `-stub-run` instead of `--preview` (on the HPC --preview submits REAL
+  cluster jobs via the machine-local executor config).
+- Baselines unchanged by the sweep (test 0 tasks; test_full 29 tasks over
+  7 processes, re-run after the changes).
 
 ## 2026-10-11 - rnaseq-ext dry-run baselines (Nextflow 26.04.6, fixtures)
 

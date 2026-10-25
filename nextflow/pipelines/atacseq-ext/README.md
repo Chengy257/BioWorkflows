@@ -49,9 +49,11 @@ sklearn NaN with degenerate/toy signal - re-validate on real research data.
 
 ```bash
 nextflow run <this pipeline directory> \
-    -profile apptainer \
     -params-file my-project.ext-params.yaml \
     -ansi-log false
+# apptainer is enabled by the included conf/hpc.config (there is no
+# 'apptainer' profile); executor/cache paths come from your machine-local
+# nextflow config.
 ```
 
 with a params file carrying `ext_results_dir`, `ext_sample_sheet`, and the
@@ -66,12 +68,15 @@ qc_gates:
   enabled: true
 ```
 
-Dry-run baselines (fixtures): `bash tests/make_fixtures.py` then
+Dry-run baselines (fixtures): `python3 tests/make_fixtures.py` then
 
 ```bash
-nextflow run . -profile test        # all-off: exit 0, 0 tasks
-nextflow run . -profile test_full   # all-on: 22 tasks over 9 processes
+nextflow run . -profile test -stub-run        # all-off: exit 0, 0 tasks
+nextflow run . -profile test_full -stub-run   # all-on: 22 tasks over 9 processes
 ```
+
+Use `-stub-run` (never `--preview`) for structure checks: on the HPC a
+machine-local executor config makes `--preview` submit REAL cluster jobs.
 
 ## Testing
 

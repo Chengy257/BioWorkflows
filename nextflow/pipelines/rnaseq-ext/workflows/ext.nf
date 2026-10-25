@@ -77,7 +77,9 @@ workflow EXT {
         error "sample sheet is missing the required column 'sample' (header: ${sheet_header.join(',')})"
     }
     def sample_idx = sheet_header.indexOf('sample')
+    def fastq2_idx = sheet_header.indexOf('fastq_2')
     def adopted_ids = []
+    def paired_seen = false
     sheet_lines.tail().each { line ->
         def id = line.split(',')[sample_idx]?.trim()
         if (!id) {
@@ -87,6 +89,12 @@ workflow EXT {
             error "duplicate sample in adopted sample sheet: ${id}"
         }
         adopted_ids << id
+        if (fastq2_idx >= 0) {
+            def cells = line.split(',')
+            if (fastq2_idx < cells.size() && cells[fastq2_idx].trim()) {
+                paired_seen = true
+            }
+        }
     }
 
     // ---- Analysis metadata sheet (synchronous plain-Groovy parse) -----------
@@ -150,12 +158,16 @@ workflow EXT {
         if (!params.ext_gtf) {
             error "the featureCounts stage is enabled but params.ext_gtf is empty"
         }
+        if (paired_seen && !params.featurecounts_quant.paired) {
+            log.warn "the sample sheet declares paired reads (fastq_2) but featurecounts_quant.paired=false - fragments will be counted as two single reads; set featurecounts_quant.paired=true unless that is intended"
+        }
         FEATURECOUNTS_QUANT(
             ch_meta_bams,
             Channel.value(file(params.ext_gtf, checkIfExists: true)),
             params.featurecounts_quant.strand == 'auto'
                 ? Channel.value(file(params.ext_gene_bed, checkIfExists: true))
-                : null
+                : null,
+            Channel.value(adopted_ids),
         )
         ch_quant_matrix = FEATURECOUNTS_QUANT.out.count_matrix
     }

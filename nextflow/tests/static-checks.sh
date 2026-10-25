@@ -22,6 +22,10 @@ repo_root=$(cd "$(dirname "${0}")/../.." && pwd)
 cd "$repo_root"
 
 mode=${1:-all}
+if [ "$mode" != "all" ] && [ "$mode" != "--unit-only" ]; then
+    printf '[static-checks] unknown mode %q (expected "all" or "--unit-only")\n' "$mode" >&2
+    exit 2
+fi
 fail=0
 note() { printf '[static-checks] %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -43,21 +47,27 @@ if [ "$mode" = "all" ]; then
 fi
 
 # 2. YAML validation (adopted params example, versions, module meta)
-if [ "$mode" = "all" ] && have python3 && python3 -c "import yaml" 2>/dev/null; then
-    note "YAML validation"
-    python3 -c "import yaml,glob; files=['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml','nextflow/adopted/rnaseq/params.example.yaml','nextflow/adopted/differentialabundance/params.example.yaml']+glob.glob('nextflow/pipelines/chipseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/rnaseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/atacseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/lncrna-nf/modules/local/*/meta.yml')+['nextflow/adopted/atacseq/params.example.yaml']; [yaml.safe_load(open(f)) for f in files]; print('yaml OK:', len(files), 'files')" || fail=1
+if [ "$mode" = "all" ]; then
+    if have python3 && python3 -c "import yaml" 2>/dev/null; then
+        note "YAML validation"
+        python3 -c "import yaml,glob; files=['nextflow/versions.yml','nextflow/adopted/chipseq/params.example.yaml','nextflow/adopted/rnaseq/params.example.yaml','nextflow/adopted/differentialabundance/params.example.yaml']+glob.glob('nextflow/pipelines/chipseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/rnaseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/atacseq-ext/modules/local/*/meta.yml')+glob.glob('nextflow/pipelines/lncrna-nf/modules/local/*/meta.yml')+['nextflow/adopted/atacseq/params.example.yaml']; [yaml.safe_load(open(f)) for f in files]; print('yaml OK:', len(files), 'files')" || fail=1
+    else
+        note "SKIP YAML validation (python3 with pyyaml not on PATH)"
+    fi
 fi
 
 # 3. Documentation link check (design doc Section 11 Stage 0 mandate).
-#    Cross-references in these docs are backtick-quoted paths: only
-#    repo-rooted spans (nextflow/..., plans/...) and *.md spans are
-#    resolvable targets; wildcards, placeholders and machine-local paths are
-#    skipped, as are upstream-relative references. The two whitelisted
-#    plans/ design docs are scanned as well (everything else under plans/
-#    is machine-local and untracked).
-if [ "$mode" = "all" ] && have python3; then
-    note "documentation link check"
-    python3 - <<'EOF' || fail=1
+#    Cross-references in these docs are backtick-quoted paths: repo-rooted
+#    spans (nextflow/..., plans/) with a known extension (.md/.config/...)
+#    plus *.md spans are resolvable targets; wildcards, placeholders,
+#    pipeline-relative bare names (e.g. conf/modules.config) and
+#    machine-local paths are skipped, as are upstream-relative references.
+#    The two whitelisted plans/ design docs are scanned as well (everything
+#    else under plans/ is machine-local and untracked).
+if [ "$mode" = "all" ]; then
+    if have python3; then
+        note "documentation link check"
+        python3 - <<'EOF' || fail=1
 import glob, os, re, sys
 SKIP_CHARS = set(' *{}<>~')
 bad, scanned = [], 0
@@ -77,7 +87,7 @@ for f in files:
             continue
         if any(ch in SKIP_CHARS for ch in s) or '...' in s or s.startswith('--'):
             continue
-        if not (s.endswith(('.md', '.yml', '.yaml', '.sh', '.py', '.nf', '.csv', '.txt')) or s.endswith('/')):
+        if not (s.endswith(('.md', '.config', '.yml', '.yaml', '.sh', '.py', '.nf', '.csv', '.txt')) or s.endswith('/')):
             continue
         for base in (os.path.dirname(f), '.'):
             if os.path.exists(os.path.normpath(os.path.join(base, s))):
@@ -89,6 +99,9 @@ if bad:
     sys.exit(1)
 print(f'doc link check OK ({scanned} files)')
 EOF
+    else
+        note "SKIP documentation link check (python3 not on PATH)"
+    fi
 fi
 
 # 4. Shell lint (launchers + fixture scripts)
@@ -98,6 +111,7 @@ if [ "$mode" = "all" ]; then
         shellcheck nextflow/adopted/chipseq/run-chipseq.sh \
             nextflow/adopted/rnaseq/run-rnaseq.sh \
             nextflow/adopted/differentialabundance/run-differentialabundance.sh \
+            nextflow/adopted/atacseq/run-atacseq.sh \
             nextflow/pipelines/chipseq-ext/tests/make_fixtures.sh \
             nextflow/pipelines/chipseq-ext/tests/make_real_bams.sh || fail=1
     else
@@ -107,16 +121,26 @@ fi
 
 # 5. Extension scripts compile.
 #    Helper scripts live in the pipeline-level bin/ (module-level bin/ is not
-#    auto-staged in this layout - see validation notes).
-if [ "$mode" = "all" ] && have python3; then
-    note "py_compile (pipeline bin/ helpers)"
-    ok=1
-    for d in nextflow/pipelines/chipseq-ext nextflow/pipelines/rnaseq-ext nextflow/pipelines/atacseq-ext nextflow/pipelines/lncrna-nf; do
-        for f in "$d"/bin/*.py; do
+#    auto-staged in this layout - see validation notes); the Python fixture
+#    generators compile alongside them.
+if [ "$mode" = "all" ]; then
+    if have python3; then
+        note "py_compile (pipeline bin/ helpers + fixture generators)"
+        ok=1
+        for d in nextflow/pipelines/chipseq-ext nextflow/pipelines/rnaseq-ext nextflow/pipelines/atacseq-ext nextflow/pipelines/lncrna-nf; do
+            for f in "$d"/bin/*.py; do
+                python3 -m py_compile "$f" || ok=0
+            done
+        done
+        for f in nextflow/pipelines/rnaseq-ext/tests/make_fixtures.py \
+                 nextflow/pipelines/atacseq-ext/tests/make_fixtures.py \
+                 nextflow/pipelines/lncrna-nf/tests/make_fixtures.py; do
             python3 -m py_compile "$f" || ok=0
         done
-    done
-    [ "$ok" = 1 ] || fail=1
+        [ "$ok" = 1 ] || fail=1
+    else
+        note "SKIP py_compile (python3 not on PATH)"
+    fi
 fi
 
 # 6. Helper script unit tests

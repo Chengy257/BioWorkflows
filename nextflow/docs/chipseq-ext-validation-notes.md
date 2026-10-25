@@ -3,6 +3,25 @@
 Running record of validation for the chipseq-ext local extension pipeline.
 Append-only; every entry carries an absolute date.
 
+## 2026-10-25 - review fix batch (chipseq-ext P1 + P2, plans/2026-10-14 code review)
+
+- P1: diffbind.analysis is enum-validated at parse time (DESeq2 | edgeR) and
+  run_diffbind.R stops on unrecognized values - previously any typo silently
+  ran edgeR, a statistics-backend switch on the stage's scientific
+  deliverable.
+- P2: sample ids are grammar-checked ([A-Za-z0-9][A-Za-z0-9._-]*, no '__')
+  and group ids reject '__' (idr_union.py splits the IDR pair slug
+  <group>__<repA>_vs_<repB> greedily on the first '__'); a set
+  qc_gates.organelle_fraction_max with organelle_qc disabled now warns
+  instead of gating nothing; the README PE paragraph documents the
+  flagstat/picard suffix params; run_diffbind/meta.yml no longer calls the
+  R helper a "Python helper". The README's `-profile apptainer` and
+  `-preview` commands were corrected in the same sweep (no such profile
+  exists; on the HPC --preview submits REAL cluster jobs via the
+  machine-local executor config - the recorded 41/41 qsub validation used
+  real execution, but README commands must not teach the dangerous form).
+- Config syntax green for test + test_full; 27/27 unit tests green.
+
 ## 2026-10-06 - skeleton validation (HPC head node)
 
 Environment: Nextflow 26.04.6 (conda env `nf`), apptainer 1.3.2, no proxy.

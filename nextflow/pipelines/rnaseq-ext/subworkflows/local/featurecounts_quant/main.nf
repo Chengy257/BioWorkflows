@@ -34,6 +34,7 @@ workflow FEATURECOUNTS_QUANT {
     ch_meta_bams // tuple(meta, bam, bai)
     ch_gtf       // value channel: the reference GTF
     ch_bed       // value channel: gene BED, or null when strand != 'auto'
+    ch_sample_ids // value channel: sheet-order sample ids (matrix column order)
 
     main:
     if (params.featurecounts_quant.strand == 'auto') {
@@ -58,7 +59,8 @@ workflow FEATURECOUNTS_QUANT {
     SUBREAD_FEATURECOUNTS(ch_meta_bams_stranded.combine(ch_gtf))
 
     MERGE_FEATURECOUNTS(
-        SUBREAD_FEATURECOUNTS.out.counts.map { meta, f -> meta.id }.collect(),
+        // sheet order (not task-completion order) anchors the matrix columns
+        ch_sample_ids,
         SUBREAD_FEATURECOUNTS.out.counts.map { meta, f -> f }.toList().map { files -> files.sort { it.name } },
         SUBREAD_FEATURECOUNTS.out.summary.map { meta, f -> f }.toList().map { files -> files.sort { it.name } }
     )

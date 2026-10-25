@@ -3,7 +3,7 @@ description: Summarize organelle (chloroplast/mitochondrial) read fractions from
 keywords: [qc, organelle, chloroplast, mitochondrion, idxstats]
 tools:
   - name: organelle_summary
-    description: Python helper shipped with chipseq-ext (ported from the legacy chip workflow)
+    description: Python helper shipped with atacseq-ext (ported from the legacy chip workflow)
     homepage:
     documentation:
 input:

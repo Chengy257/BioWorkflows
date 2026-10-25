@@ -21,6 +21,18 @@ absolute; every entry states what ran and what was observed.
   green for `test` and `test_full`, 13/13 unit tests green. The guard's
   skip path gets its first real exercise at the deferred execution round
   (a control-carrying fixture group would be the follow-up if wanted).
+- Same-day P2 sweep: the dead vendored `modules/nf-core/deeptools/bamcoverage`
+  (never included) is deleted; the four local module meta.yml descriptions
+  and the qc_gates_summary.py docstring no longer say "chipseq-ext"/"chip"
+  (spikein_rescale is described as the bamCoverage process it is); the
+  test_full.config comment spells TOBIAS_ATACORRECT correctly (the exact
+  include-name trap this repo documents); the SDR spike-in wording now says
+  the ext RECOMPUTES idxstats from the published BAMs; the notes' expected
+  task total is corrected to 22 (its own enumeration sums to 22); the README
+  run commands drop the nonexistent `-profile apptainer`, `bash` no longer
+  runs the Python fixture generator, and the dry-run commands use
+  `-stub-run` (never `--preview`: on the HPC a machine-local executor
+  config makes --preview submit REAL cluster jobs).
 
 ## 2026-10-12 - pin gate + publish-contract extraction
 
@@ -66,7 +78,7 @@ absolute; every entry states what ran and what was observed.
   TOBIAS_ATACORRECT, TOBIAS_SCOREBIGWIG, TOBIAS_BINDETECT). Per the
   Stage-1 lesson `-preview` prints progressive snapshots and cannot verify
   skips or task multiplicity; the expected task counts at execution are
-  24 (8 idxstats, 1 organelle summary, 1 gates, 1 spikein summary, 4
+  22 (8 idxstats, 1 organelle summary, 1 gates, 1 spikein summary, 4
   rescale, 2 merge, 2 ataccorrect, 2 scorebigwig, 1 bindetect) - to be
   confirmed by the deferred real-container fixture run.
 - pytest: `tests/unit/` 13 tests green (ms env) pinning the ported helper

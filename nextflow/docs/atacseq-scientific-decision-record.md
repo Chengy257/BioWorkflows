@@ -121,7 +121,7 @@ Tn5-specific processing.
 | 10 | Replicate IDR / consensus (atac/faire as narrow) | replaced (native MACS3_CONSENSUS support matrix) |
 | 11 | QC gate summary table (v0.6, default off) | ext port (atacseq-ext qc_gates) |
 | 12 | Organelle fraction QC (v0.6, default off) | ext port (atacseq-ext organelle_qc) |
-| 13 | Spike-in scaling via unmapped-pair realignment (v0.6, default off) | ext port, combined-reference model (atacseq-ext spike_in; identical to the chipseq-ext mechanism - the adopted run is configured with a combined host+spike reference and the ext reads spike contigs from published idxstats) |
+| 13 | Spike-in scaling via unmapped-pair realignment (v0.6, default off) | ext port, combined-reference model (atacseq-ext spike_in; identical to the chipseq-ext mechanism - the adopted run is configured with a combined host+spike reference and the ext recomputes idxstats from the published BAMs and reads spike contigs from them) |
 | 14 | TOBIAS ATACorrect/ScoreBigwig/BINDetect (v0.6, default off) | ext port via central nf-core tobias modules (atacseq-ext footprint; D2 override) |
 | 15 | SEACR alternative caller | not ported (CUT&Tag/RUN-oriented; lives on the chipseq route) |
 | 16 | DiffBind differential binding | not ported in this stage (recorded as a future default-off candidate against the native consensus-peak quantification) |

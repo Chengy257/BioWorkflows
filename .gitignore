@@ -94,6 +94,10 @@ nextflow/pipelines/rnaseq-ext/tests/fixtures/
 nextflow/pipelines/rnaseq-ext/work/
 nextflow/pipelines/atacseq-ext/tests/fixtures/
 nextflow/pipelines/atacseq-ext/work/
+nextflow/pipelines/lncrna-nf/tests/fixtures/
+nextflow/pipelines/lncrna-nf/work/
+.nextflow/
+.nextflow.log*
 desktop.ini
 *.swp
 *~

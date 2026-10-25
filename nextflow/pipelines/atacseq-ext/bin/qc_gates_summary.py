@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """QC gate summary: one PASS/WARN/FAIL row per sample aggregating the QC
-metrics available in the adopted nf-core/chipseq run's published outputs.
+metrics available in the adopted nf-core/atacseq run's published outputs.
 
 Metric sources and gates (a metric whose source file is missing or
 unparseable renders NA and does not gate):

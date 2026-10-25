@@ -55,14 +55,18 @@ species model (species neutrality, design D4).
 
 ```bash
 nextflow run <this pipeline directory> \
-    -profile apptainer \
     -params-file my-project.params.yaml \
     -ansi-log false
+# apptainer is enabled by the included conf/hpc.config (there is no
+# 'apptainer' profile); executor/cache paths come from your machine-local
+# nextflow config.
 ```
 
-Dry-run baselines (fixtures): `bash tests/make_fixtures.py` then
-`nextflow run . -profile test` / `-profile test_full` (see the validation
-notes for the recorded counts). `tests/unit/` pins every helper's
+Dry-run baselines (fixtures): `python3 tests/make_fixtures.py` then
+`nextflow run . -profile test -stub-run` / `-profile test_full -stub-run`
+(see the validation notes for the recorded counts; never `--preview` for
+structure checks - on the HPC a machine-local executor config makes it
+submit REAL cluster jobs). `tests/unit/` pins every helper's
 semantics via pytest; run everything through the repo-level
 `nextflow/tests/static-checks.sh` (no hosted CI).
 
