@@ -2,136 +2,98 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-A collection of [Snakemake](https://snakemake.github.io/)-based bioinformatics workflows for reference-genome analysis on HPC clusters (SGE / SLURM / PBS) or local execution. All workflows share one architecture: a unified launcher, an explicit software-runtime model, per-rule cluster resources in a dedicated config file, species presets, and a common `shared/` layer.
+A personal modular workflow suite built on the [nf-core](https://nf-co.re/)
+ecosystem for Nextflow, for reference-genome analysis on local Linux/WSL and
+HPC (apptainer is the single supported container profile on the HPC). The
+repository migrated off Snakemake: the legacy suite was retired on 2026-10-26
+(see [Retired legacy suite](#retired-legacy-suite)).
 
-## Workflows
+## Assay routes
 
-| Directory | Description | Version | Documentation |
-|---|---|---|---|
-| [`rna-seq/`](rna-seq/) | End-to-end bulk RNA-seq (reference-based): FastQC → Trim Galore → STAR → featureCounts, plus DESeq2 differential expression, GO/KEGG enrichment and GSEA, isoform assembly with StringTie, and de novo lncRNA identification (CPC2 / CNCI / Pfam / NR). Ships species presets (rice, human). | v0.8.0 | [README](rna-seq/README.md) · [User guide](rna-seq/docs/user-guide.md) |
-| [`chip_cuttag_atac_faire/`](chip_cuttag_atac_faire/) | Plant epigenomics pipeline with a single entry `workflow/Snakefile` supporting ChIP-seq, CUT&Tag, ATAC-seq and FAIRE-seq — including mixed-assay projects: bowtie2 alignment, assay-specific deduplication, MACS2 peak calling (narrow / broad / paired-end), ChIPseeker annotation, and FRiP / deepTools QC. | v0.4.0 | [README](chip_cuttag_atac_faire/README.md) · [User guide](chip_cuttag_atac_faire/docs/user-guide.md) |
-| [`seclip-seq/`](seclip-seq/) | Single-end enhanced CLIP (eCLIP-style) protein-RNA binding maps: UMI extraction, two-pass adapter trimming, an optional sncRNA/repeats pre-filter, unique STAR alignment, UMI-based deduplication, and PureCLIP peak calling (CLIPper optional), ending in a combined MultiQC report, plus optional replicate-consensus peak annotation (`--consensus`) and IP-vs-input-control (`--input-control`) scenarios. | v0.2.0 | [README](seclip-seq/README.md) · [User guide](seclip-seq/docs/user-guide.md) |
-| [`srna-seq/`](srna-seq/) | Small-RNA sequencing with a bowtie1 cascade filter (rRNA → snoRNA → snRNA → tRNA → miRNA → mRNA → optional exogenous classes; order configurable, empty-fasta classes skipped), per-class count and RPM matrices, and optional differential expression (`--deg`) and novel miRNA discovery (`--novel-mirna`) stages. | v0.2.0 | [README](srna-seq/README.md) · [User guide](srna-seq/docs/user-guide.md) |
-| [`bs-seq/`](bs-seq/) | Bisulfite sequencing (BS-seq) methylation calling: optional Trim Galore trimming, Bismark alignment, PCR-duplicate removal and methylation extraction with an optional merged CpG table, per-sample and run-level reports, and an optional group-design differential-methylation (`--dmr`) stage. | v0.2.0 | [README](bs-seq/README.md) · [User guide](bs-seq/docs/user-guide.md) |
+| Assay | Route | Entry points |
+|---|---|---|
+| ChIP-seq / CUT&Tag | adopted [nf-core/chipseq](https://nf-co.re/chipseq) + local extension stages | `nextflow/adopted/chipseq/` + `nextflow/pipelines/chipseq-ext/` |
+| RNA-seq | adopted [nf-core/rnaseq](https://nf-co.re/rnaseq) + local extensions | `nextflow/adopted/rnaseq/` + `nextflow/pipelines/rnaseq-ext/` |
+| Differential expression | adopted [nf-core/differentialabundance](https://nf-co.re/differentialabundance) | `nextflow/adopted/differentialabundance/` |
+| ATAC-seq / FAIRE-seq | adopted [nf-core/atacseq](https://nf-co.re/atacseq) + local extension stages | `nextflow/adopted/atacseq/` + `nextflow/pipelines/atacseq-ext/` |
+| lncRNA identification | local DSL2 pipeline (local-foundation route) | `nextflow/pipelines/lncrna-nf/` |
+| small-RNA, BS-seq/methylation, seCLIP/eCLIP | NOT yet migrated - routes not started | - |
+
+Extension stages are default-off and consume the adopted runs' published
+results (see each pipeline's README for the input contract). Assay routing:
+ChIP-seq and CUT&Tag run the chipseq route; ATAC-seq and FAIRE-seq run the
+atacseq route (same entry, decision record D4); RNA-seq runs the rnaseq route;
+de novo lncRNA identification runs lncrna-nf downstream of the rnaseq route's
+published BAMs.
 
 ## Repository structure
 
 ```
 BioWorkflows/
-├── rna-seq/                     # Bulk RNA-seq workflow
-│   ├── run.sh                   #   unified launcher / ops CLI
-│   ├── workflow/                #   Snakefile, rules, scripts, scheduler profiles, env template
-│   ├── config/                  #   config + template, resources, software env, species presets, sample sheet
-│   ├── example/  tests/  docs/  #   example project, regression tests, user guide
-├── chip_cuttag_atac_faire/      # ChIP-seq / CUT&Tag / ATAC-seq / FAIRE-seq workflow (same layout)
-├── seclip-seq/                  # Single-end eCLIP (protein-RNA binding) workflow (same layout)
-├── srna-seq/                    # Small-RNA cascade-filter workflow (same layout)
-├── bs-seq/                      # Bisulfite methylation-calling workflow (same layout)
-├── nextflow/                    # Nextflow migration (in progress; see its README below)
+├── nextflow/                    # the workflow suite
 │   ├── conf/                    #   shared execution config (container-only HPC)
 │   ├── adopted/                 #   thin adoption entries for upstream nf-core pipelines
-│   ├── pipelines/               #   local DSL2 pipelines (chipseq-ext, rnaseq-ext)
+│   ├── pipelines/               #   local DSL2 pipelines (chipseq-ext, rnaseq-ext, atacseq-ext, lncrna-nf)
 │   ├── docs/                    #   scientific decision + validation records
 │   ├── tests/                   #   static-checks.sh (local static checks, see Testing)
 │   └── versions.yml             #   tested revisions
-├── shared/                      # Cross-project layer (consumed in place, never copied)
-│   ├── python/                  #   software-runtime framework + version capture
-│   └── lib/launcher.sh          #   shared launcher helpers for every project's run.sh
+└── plans/                       # frozen migration design documents (whitelisted)
 ```
 
-## Nextflow migration (in progress)
+## Records
 
-The repository is migrating to Nextflow/nf-core under a frozen scientific-first
-mainline (design + guidance documents under `plans/`). Status:
-
-- `nextflow/adopted/chipseq/` — adopted [nf-core/chipseq](https://nf-co.re/chipseq)
-  entry (pinned dev HEAD), with an example params file and HPC launcher.
-  The Snakemake `chip_cuttag_atac_faire/` legacy capabilities are delivered by
-  `nextflow/pipelines/chipseq-ext/` as default-off extension stages
-  (DiffBind, spike-in, IDR, SEACR, HOMER motifs, QC gates, organelle QC).
-- `nextflow/adopted/rnaseq/` — adopted [nf-core/rnaseq](https://nf-co.re/rnaseq)
-  entry (pinned 3.27.0), Stage-2 route: `star_salmon` with published BAMs,
-  UMI opt-in. Local extensions (featureCounts quantification with a
-  per-project salmon/featureCounts route switch, clusterProfiler GO/KEGG/GSEA
-  enrichment) land in `nextflow/pipelines/rnaseq-ext/`; differential
-  expression runs via `nextflow/adopted/differentialabundance/` (DESeq2).
-- `nextflow/adopted/atacseq/` — adopted [nf-core/atacseq](https://nf-co.re/atacseq)
-  entry (pinned dev HEAD `6a930770`; the 2.1.2 release fails the Nextflow 26
-  parse gate), Stage-3 route for ATAC-seq AND FAIRE-seq (same entry, D4).
-  Local extensions (organelle QC, QC gates, spike-in scaling, TOBIAS
-  footprinting - the pinned pipeline ships no TOBIAS) land in
-  `nextflow/pipelines/atacseq-ext/`.
-- `nextflow/pipelines/lncrna-nf/` — the local lncRNA identification
-  workflow (Stage-4, local-foundation route; nf-core/lncpipe remains
-  unreleased): consumes the rnaseq route's published BAMs and runs
-  StringTie assembly -> classcode-u novel extraction -> CPC2 AND CPAT
-  coding potential -> Pfam + DIAMOND/NR filters -> final set + expression
-  (decision record ratified 2026-10-12).
-- Assay routing: ChIP-seq and CUT&Tag run the chipseq route
-  (`adopted/chipseq` + `pipelines/chipseq-ext`); ATAC-seq and FAIRE-seq run
-  the atacseq route (`adopted/atacseq` + `pipelines/atacseq-ext`); RNA-seq
-  runs the rnaseq route above; de novo lncRNA identification runs the
-  lncrna-nf local pipeline downstream of the rnaseq route.
-- Records: `nextflow/docs/chipseq-scientific-decision-record.md` (ratified
-  2026-10-06), `nextflow/docs/chipseq-ext-validation-notes.md`,
-  `nextflow/docs/rnaseq-scientific-decision-record.md` (ratified 2026-10-11),
-  `nextflow/docs/rnaseq-ext-validation-notes.md`, and
-  `nextflow/versions.yml` (tested revisions).
-- The Snakemake suites below remain the validated daily drivers; retirement
-  happens only when the new routes cover real analysis needs (design doc
-  Stage 4).
-
-## Shared architecture
-
-All workflows follow the same model (see each project's README for specifics):
-
-- **Output layout** — raw inputs (`1.rawdata/`) stay at the project working-directory root; every derived artifact goes under a configurable `results_dir` (default `results/`) using numbered stage directories (`2.cleandata/`, `3.align/`, `4.peak/` or `4.expression/`, `5.QC/` or `5.DEG/`, ...).
-- **Config layering** — repo defaults → project config → `config.local.yaml` in the working directory (auto-detected; later files win). Species presets (`config/species.yaml`) fill unset reference keys.
-- **Resources** — per-rule `threads / mem_mb / runtime_min` live in a dedicated `config/resources.yaml` (copy into a project to override); a legacy top-level `threads` still caps everything globally.
-- **Unified launcher (`run.sh`)** — scheduler auto-detection, preflight software and R-package checks (`--check-software` / `--check-r`), parse-time config validation with aggregated errors, per-rule or global resource overrides, `--dry-run` DAG preview, `--unlock`.
-- **Explicit software runtime** — Snakemake never auto-creates environments. A single main environment is resolved from `config/software.yaml` (Conda prefix/name or system PATH, including Rscript and R library paths); the resolved versions are recorded into the results directory on every run (`software_versions.yaml`).
+- Scientific decision records + validation notes live under
+  `nextflow/docs/` (one pair per route); the retired legacy suite's
+  capabilities and recovery are recorded in
+  `nextflow/docs/legacy-retirement-record.md`.
+- Tested revisions: `nextflow/versions.yml` (rows are added only after a
+  validated run - the ledger rule).
+- The frozen migration mainline and implementation guidance:
+  `plans/2026-10-05-nextflow-migration-design.md` and
+  `plans/2026-10-05-nextflow-migration-implementation-guidance.md`.
 
 ## Requirements
 
-- **Linux** — local execution or an HPC cluster (SGE / SLURM; a PBS profile is also provided by the epigenomics workflow).
-- **Snakemake 7.x** — reference version 7.32.4. Snakemake 8.x passes parsing/lint but its cluster-executor semantics are not yet validated for the cluster profiles.
-- **Conda / Mamba (recommended)** — each workflow ships a pinned all-in-one environment template (`workflow/environment.yaml`). Existing conda environments or system PATH tools can be reused instead via `config/software.yaml`.
-
-## Quick start
-
-```bash
-# RNA-seq — run the "deg" pipeline on a project directory (10 threads)
-bash rna-seq/run.sh deg /path/to/myproject myproject/config.yaml 10
-
-# ChIP / CUT&Tag / ATAC / FAIRE — preflight-check the software environment first
-bash chip_cuttag_atac_faire/run.sh -P /path/to/myproject --check-software
-```
+- Nextflow 26.x (validated on 26.04.6; parse gates for the pinned upstream
+  revisions are recorded in the validation notes).
+- Apptainer on the HPC (the only supported execution profile there);
+  container images follow the pinned upstream definitions, with per-process
+  overrides for locally patched images.
+- Machine-specific paths (executor, cache directories) live in machine-local,
+  git-ignored Nextflow configuration - never in this repository.
 
 ## Testing
 
 ```bash
-# rna-seq: runtime resolver tests + lint; full regression needs the analysis environment
-cd rna-seq && make check && make lint
-bash tests/run_test.sh --pipeline deg        # synthetic data, end-to-end
-
-# chip: 62 unit tests + lint + synthetic-data dry-run (no analysis tools needed)
-cd chip_cuttag_atac_faire && make test
-bash tests/run_test.sh                       # dry-run DAG regression
-
-# seclip-seq / srna-seq / bs-seq: check + lint + synthetic-data regression (no analysis tools needed)
-cd seclip-seq && make test && bash tests/run_test.sh --reads 2000
-cd ../srna-seq && make test && bash tests/run_test.sh --reads 2000
-cd ../bs-seq && make test && bash tests/run_test.sh --reads 2000
+# One command for all Nextflow entries (former nextflow-static CI job, kept local):
+bash nextflow/tests/static-checks.sh
+# Unit suites only (no nextflow needed):
+bash nextflow/tests/static-checks.sh --unit-only
 ```
 
 There is no hosted CI: GitHub Actions was retired from the repository on
-2026-10-12 (owner decision — it was unnecessary during development). All checks
-run locally through the commands above, and the Nextflow migration entries are
-checked with a single command:
+2026-10-12 (owner decision). Dry-run baselines for every pipeline are recorded
+in the validation notes under `nextflow/docs/` and are re-derived with
+`-stub-run` after wiring changes.
 
-```bash
-bash nextflow/tests/static-checks.sh   # former nextflow-static CI job, kept local
-```
+## Retired legacy suite
+
+The five Snakemake workflows (`rna-seq/`, `chip_cuttag_atac_faire/`,
+`seclip-seq/`, `srna-seq/`, `bs-seq/`) and their `shared/` layer were retired
+on 2026-10-26 (owner decision; design doc D10). The final state is preserved
+twice:
+
+- annotated git tag `legacy-snakemake-suite` (recover with
+  `git checkout legacy-snakemake-suite -- <dir>`);
+- a local archive copy at
+  `/home/chengyu/BioWorkflows_archive/2026-10-26_legacy_snakemake_suite/`
+  (HPC machine-local, not in git).
+
+Dropped capabilities and the replacement status of every workflow are
+documented in `nextflow/docs/legacy-retirement-record.md`. Note that
+small-RNA, BS-seq and seCLIP currently have NO Nextflow replacement - the
+archived workflows remain the only implementation for those assays until
+their migration routes are started.
 
 ## License
 

@@ -1,6 +1,0 @@
-# Local / standalone-server execution profile.
-cores: 8
-keep-going: true
-rerun-incomplete: true
-latency-wait: 90
-printshellcmds: true
