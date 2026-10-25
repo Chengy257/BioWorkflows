@@ -30,6 +30,9 @@ def require_params() {
         if (!params.diffbind.contrasts) {
             error "diffbind is enabled but params.diffbind.contrasts is empty"
         }
+        if (!['DESeq2', 'edgeR'].contains(params.diffbind.analysis)) {
+            error "params.diffbind.analysis must be 'DESeq2' or 'edgeR', got '${params.diffbind.analysis}'"
+        }
         params.diffbind.contrasts.each { c ->
             if (!(c =~ /.+_vs_.+/)) {
                 error "invalid diffbind contrast '${c}': expected '<conditionA>_vs_<conditionB>'"
@@ -94,6 +97,16 @@ workflow EXT {
         }
         if (id.contains('_vs_')) {
             error "sample id '${id}' contains '_vs_' (reserved for the IDR pair slug); rename it"
+        }
+        // The IDR pair slug grammar is <group>__<repA>_vs_<repB> and
+        // idr_union.py's regex splits it greedily on the FIRST '__': a '__'
+        // inside an id silently mis-attributes replicates (the legacy sheet
+        // parser rejects it for the same reason).
+        if (!(id =~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) || id.contains('__')) {
+            error "invalid sample id '${id}': expected [A-Za-z0-9][A-Za-z0-9._-]* with no '__'"
+        }
+        if (group.contains('__')) {
+            error "group id '${group}' contains '__' (reserved for the IDR pair slug); rename it"
         }
         if (metaById.containsKey(id)) {
             error "duplicate sample_id in sample sheet: ${id}"
@@ -164,6 +177,9 @@ workflow EXT {
 
     // ---- Stage: QC gate table ------------------------------------------------
     if (params.qc_gates.enabled) {
+        if (!params.organelle_qc.enabled && params.qc_gates.organelle_fraction_max != null) {
+            log.warn "qc_gates.organelle_fraction_max is set but organelle_qc is disabled - the organelle gate is a no-op (enable organelle_qc or drop the threshold)"
+        }
         def flagstat_dir_path = file(flagstat_dir)
         if (!flagstat_dir_path.exists()) {
             error "qc_gates is enabled but the flagstat directory does not exist: ${flagstat_dir}"

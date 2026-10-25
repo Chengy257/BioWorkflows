@@ -42,14 +42,22 @@ paths; every directory/suffix is overridable via `ext_*` params):
 was launched with `--save_align_intermeds` (single-end runs publish
 unconditionally). PE projects must therefore (a) run the adopted pipeline
 with `--save_align_intermeds` and (b) set
-`ext_bam_suffix = '.mLb.flT.sorted.bam'` for chipseq-ext.
+`ext_bam_suffix = '.mLb.flT.sorted.bam'` for chipseq-ext. The QC inputs
+stay on the markdup artifacts either way: flagstats are consumed via
+`ext_flagstat_suffix` (default `.mLb.clN.sorted.bam.flagstat`, correct for
+PE too) and picard metrics via `ext_dup_suffix`; both have loud
+missing-file guards, so a nonstandard adopted layout fails at resolution
+time rather than silently - repoint them only if your run really published
+different names.
 
 The sample sheet (`ext_sample_sheet`) is a CSV with header
 `sample_id,group,condition,control,batch`: one row per sample, `control`
 naming the group's control sample (empty when none; the control may live in
 its own group), `condition` used by DiffBind contrasts, `batch` optional
-blocking factor. Sample ids and condition names must not contain `_vs_`
-(used by the IDR pair slug and the DiffBind contrast slugs).
+blocking factor. Sample ids must match `[A-Za-z0-9][A-Za-z0-9._-]*` with
+no `__`, and neither sample ids nor group names may contain `_vs_` or `__`
+(the IDR pair slug grammar `<group>__<repA>_vs_<repB>` and the DiffBind
+contrast slugs reserve both).
 
 ## Usage
 

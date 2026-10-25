@@ -38,8 +38,12 @@ sheet$Replicate <- as.integer(sheet$Replicate)
 sheet$Condition <- as.factor(sheet$Condition)
 if (analysis == "DESEQ2") {
   method <- DBA_DESEQ2
-} else {
+} else if (analysis == "EDGER") {
   method <- DBA_EDGER
+} else {
+  stop(paste0("[diffbind] unknown analysis method '", analysis,
+              "': expected DESeq2 or edgeR (a typo must fail loudly, not",
+              " silently fall back to a different statistics backend)"))
 }
 # The optional Batch column stays in the sheet (DiffBind turns extra factor
 # columns into attributes); it becomes a blocking factor only when the user
