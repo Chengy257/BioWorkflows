@@ -5,6 +5,23 @@ Validation record for the Stage-3 ATAC/FAIRE route (adopted nf-core/atacseq +
 `atacseq-scientific-decision-record.md` (ratified 2026-10-12). Dates are
 absolute; every entry states what ran and what was observed.
 
+## 2026-10-25 - review fix batch (atacseq-ext P1-1, plans/2026-10-14 code review)
+
+- Footprint group pooling no longer admits control-only groups: groups whose
+  treats are ALL declared controls (the union of every group's declared
+  control - the shared-IgG-across-treat-groups case) are skipped behind
+  `footprint.skip_control_groups` (default true), porting the proven
+  chipseq-ext `seacr.skip_control_groups` guard. Previously such a group was
+  pooled, footprinted and handed to BINDetect as a "condition", and could
+  satisfy the >= 2 groups gate on its own (misleading output, silent
+  scientific corruption). Controls inside a genuine treat group stay
+  excluded by the own-group check.
+- The fixture sheet has no controls (two 2-replicate treat groups), so the
+  guard is inert on the recorded baselines by construction; config syntax
+  green for `test` and `test_full`, 13/13 unit tests green. The guard's
+  skip path gets its first real exercise at the deferred execution round
+  (a control-carrying fixture group would be the follow-up if wanted).
+
 ## 2026-10-12 - pin gate + publish-contract extraction
 
 - nf-core/atacseq tag **2.1.2** FAILS the Nextflow 26.04.6 parse gate:

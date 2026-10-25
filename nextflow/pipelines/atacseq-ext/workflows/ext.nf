@@ -173,10 +173,23 @@ workflow EXT {
 
     // ---- Stage: per-group TOBIAS footprinting --------------------------------
     if (params.footprint.enabled) {
+        // A control sample carrying its own group (a shared IgG group across
+        // several treat groups) must not be pooled, footprinted and handed
+        // to BINDetect as a "condition" - and must not satisfy the >= 2
+        // groups gate. Same guard as chipseq-ext's seacr.skip_control_groups:
+        // skip groups whose treats are ALL declared controls (the union
+        // across groups); controls inside a genuine treat group stay
+        // excluded by the own-group check.
+        def declared_control_ids = groupControl.values().findAll { it }.toSet()
         def footprint_group_list = []
         groups.each { group, ids ->
             def treats = ids.findAll { it != groupControl[group] }.sort()
             if (!treats) return // continue
+            if (params.footprint.skip_control_groups
+                    && treats.every { it in declared_control_ids }) {
+                log.warn "footprint: skipping control-only group '${group}' (treats: ${treats.join(', ')})"
+                return // continue
+            }
             footprint_group_list << tuple(
                 [id: group, group: group],
                 treats.collect { id -> file("${bam_dir}/${id}${bam_suffix}", checkIfExists: true) },
