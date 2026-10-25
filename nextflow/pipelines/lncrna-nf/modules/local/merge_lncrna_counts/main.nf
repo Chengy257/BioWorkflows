@@ -17,6 +17,8 @@ process MERGE_LNCRNA_COUNTS {
     """
     echo '${sample_ids}' | tr ',' '\\n' > ids.txt
     merge_lncrna_counts.py counts ids.txt 'lncrna.'
+    mv counts/lncrna.count.matrix.tsv counts/lncrna.tpm.matrix.tsv \\
+       counts/lncrna.fpkm.matrix.tsv counts/lncrna.count_stats.tsv .
     """
 
     stub:

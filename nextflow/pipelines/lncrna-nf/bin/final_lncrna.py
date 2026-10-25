@@ -27,12 +27,18 @@ def transcript_id(field):
 
 
 def read_hit_ids(pattern):
+    """Collect hit transcript ids from the staged hit files. Both layouts
+    occur: one id per line (pfam.hitIDs.txt) or a tabular BLAST table whose
+    column 1 is the query id (DIAMOND outfmt 6 'qseqid sseqid')."""
     ids = set()
     for path in sorted(glob.glob(pattern)):
         for line in open(path):
-            line = line.strip()
-            if line:
-                ids.add(line)
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            tid = line.split("\t")[0].strip()
+            if tid:
+                ids.add(tid)
     return ids
 
 

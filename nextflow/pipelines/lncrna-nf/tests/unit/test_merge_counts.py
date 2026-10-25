@@ -1,16 +1,21 @@
 """Unit tests for merge_lncrna_counts.py: the raw featureCounts merge
-(gene order anchored to the first sample, header sample-column check),
-and the TPM/FPKM arithmetic from the Length column + Assigned reads."""
+(gene order anchored to the first sample, header sample-column check
+against the BAM-basename labels featureCounts really emits), and the
+TPM/FPKM arithmetic from the Length column + Assigned reads."""
 import sys
 
 import merge_lncrna_counts as mlc
 
 
-def write_sample(d, sid, genes):
-    # genes: list of (gene_id, length, count)
+def write_sample(d, sid, genes, header=None):
+    # genes: list of (gene_id, length, count); featureCounts labels the
+    # count column with the input BAM basename, not the bare sample id
+    # (the S1 ground truth; the bare form stays accepted for hand-made runs)
+    if header is None:
+        header = f"{sid}.markdup.sorted.bam"
     with open(d / f"{sid}.featureCounts.tsv", "w") as fh:
         fh.write("# Program: featureCounts (fixture)\n")
-        fh.write("Geneid\tChr\tStart\tEnd\tStrand\tLength\t" + sid + "\n")
+        fh.write("Geneid\tChr\tStart\tEnd\tStrand\tLength\t" + header + "\n")
         for g, length, c in genes:
             fh.write(f"{g}\tchr1\t100\t{99 + length}\t+\t{length}\t{c}\n")
     assigned = sum(c for (_g, _l, c) in genes) + 10
@@ -20,18 +25,21 @@ def write_sample(d, sid, genes):
         fh.write("Unassigned_Unmapped\t0\n")
 
 
-def test_merge_and_matrices(tmp_path):
-    write_sample(tmp_path, "w1", [("g1", 100, 10), ("g2", 300, 20)])
-    write_sample(tmp_path, "w2", [("g1", 100, 5), ("g2", 300, 0)])
+def run(tmp_path, ids_text):
     ids = tmp_path / "ids.txt"
-    ids.write_text("w1\nw2\n", encoding="utf-8")
-
+    ids.write_text(ids_text, encoding="utf-8")
     old = sys.argv
     sys.argv = ["merge_lncrna_counts.py", str(tmp_path), str(ids), "lncrna."]
     try:
         mlc.main()
     finally:
         sys.argv = old
+
+
+def test_merge_and_matrices(tmp_path):
+    write_sample(tmp_path, "w1", [("g1", 100, 10), ("g2", 300, 20)])
+    write_sample(tmp_path, "w2", [("g1", 100, 5), ("g2", 300, 0)])
+    run(tmp_path, "w1\nw2\n")
 
     count = (tmp_path / "lncrna.count.matrix.tsv").read_text().splitlines()
     assert count[0].split("\t") == ["gene_id", "w1", "w2"]
@@ -54,11 +62,20 @@ def test_merge_and_matrices(tmp_path):
     assert stats[1].split("\t")[1] == "40"
 
 
+def test_bare_id_header_still_accepted(tmp_path):
+    write_sample(tmp_path, "w1", [("g1", 100, 10)], header="w1")
+    run(tmp_path, "w1\n")
+    assert (tmp_path / "lncrna.count.matrix.tsv").read_text().splitlines()[1] \
+        .split("\t") == ["g1", "10"]
+
+
 def test_header_mismatch_fails(tmp_path):
     write_sample(tmp_path, "w1", [("g1", 100, 10)])
-    # tamper: sample column says something else
+    # tamper: count column carries ANOTHER sample's BAM name
     p = tmp_path / "w1.featureCounts.tsv"
-    p.write_text(p.read_text().replace("\tw1\n", "\tother\n"), encoding="utf-8")
+    p.write_text(p.read_text().replace(
+        "\tw1.markdup.sorted.bam\n", "\tw2.markdup.sorted.bam\n"),
+        encoding="utf-8")
     ids = tmp_path / "ids.txt"
     ids.write_text("w1\n", encoding="utf-8")
     old = sys.argv

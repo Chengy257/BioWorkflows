@@ -10,17 +10,19 @@ a novel transcript is noncoding iff
 Input formats:
   - CPC2 tabular: header line then rows; the transcript id is column 1 and
     the verdict column 8 ("coding"/"noncoding") - the legacy awk `$8=="noncoding"`.
-  - CPAT tabular (with -g <run id>): a header line containing sequence
-    columns then rows; column 1 = sequence id, the last column = the
-    coding probability ("coding_prob"/"ORF" layout varies) - we accept the
-    documented CPAT 3.x layout where column 7 is 'coding_prob' and treat a
-    probability < 0.5 as noncoding (the tool's own recommended cutoff).
+  - CPAT 3.x <prefix>.ORF_prob.best.tsv: one row per sequence (its best
+    ORF); header with a Coding_Probability column, which we treat as
+    noncoding below 0.5 (the tool's own recommended cutoff). Sequences in
+    <prefix>.no_ORF.txt (no ORF at all) are noncoding per CPAT itself.
 
 Usage:
-    coding_potential_intersect.py --cpc2 cpc2.txt --cpat cpat.out.tsv \
+    coding_potential_intersect.py --cpc2 cpc2.txt --cpat cpat.ORF_prob.best.tsv \
+        [--cpat-no-orf cpat.no_ORF.txt] \
         --gtf novel.gtf --min-length 200 --out-ids ids.txt --out-gtf gtf
 """
 import argparse
+import os
+import sys
 
 
 def read_cpc2(path):
@@ -40,27 +42,45 @@ def read_cpc2(path):
     return noncoding
 
 
-def read_cpat(path):
+def read_cpat(path, no_orf_path=""):
+    """CPAT 3.x best-ORF table: exactly one row per sequence, so a sequence
+    is noncoding iff its best-ORF coding probability is < 0.5. A malformed
+    table (no coding-probability header) is a hard error, not an empty set."""
     noncoding = set()
+    prob_col = None
     with open(path) as fh:
-        prob_col = None
         for line in fh:
             line = line.rstrip("\n")
-            if not line or line.startswith("#"):
+            if not line.strip():
                 continue
-            parts = line.split("\t")
+            parts = line.lstrip("#").split("\t")
             if prob_col is None:
                 for i, name in enumerate(parts):
-                    if name.lower().startswith("coding_prob"):
+                    if name.strip().lower().startswith("coding_prob"):
                         prob_col = i
                         break
+                if prob_col is None:
+                    sys.exit(f"{path}: no coding-probability column in the "
+                             f"CPAT header: {parts}")
                 continue
-            if prob_col is not None and len(parts) > prob_col:
-                try:
-                    if float(parts[prob_col]) < 0.5:
-                        noncoding.add(parts[0].strip())
-                except ValueError:
-                    continue
+            if len(parts) <= prob_col:
+                sys.exit(f"{path}: short row, expected >= {prob_col + 1} "
+                         f"columns: {parts}")
+            tid = parts[0].strip()
+            try:
+                prob = float(parts[prob_col])
+            except ValueError:
+                sys.exit(f"{path}: non-numeric coding probability for "
+                         f"{tid}: {parts[prob_col]}")
+            if prob < 0.5:
+                noncoding.add(tid)
+    # sequences with no ORF at all: CPAT's own verdict is non-coding
+    if no_orf_path and os.path.exists(no_orf_path):
+        with open(no_orf_path) as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    noncoding.add(line)
     return noncoding
 
 
@@ -107,6 +127,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--cpc2", required=True)
     ap.add_argument("--cpat", required=True)
+    ap.add_argument("--cpat-no-orf", default="")
     ap.add_argument("--gtf", required=True, help="the classcode-u novel GTF")
     ap.add_argument("--min-length", type=int, default=200)
     ap.add_argument("--out-ids", required=True)
@@ -114,7 +135,7 @@ def main():
     args = ap.parse_args()
 
     cpc2 = read_cpc2(args.cpc2)
-    cpat = read_cpat(args.cpat)
+    cpat = read_cpat(args.cpat, args.cpat_no_orf)
     lengths = exonic_lengths(args.gtf)
 
     noncoding = cpc2 & cpat

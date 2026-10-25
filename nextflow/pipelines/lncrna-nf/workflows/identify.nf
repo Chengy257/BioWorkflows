@@ -53,6 +53,9 @@ def require_params() {
     if (!params.gtf_pcg) {
         error "params.gtf_pcg is required: protein-coding CDS GTF (rice: the MSU+RAP combined CDS GTF - see README for the build recipe)"
     }
+    if (params.strand && !(params.strand in ['rf', 'fr'])) {
+        error "params.strand must be 'rf', 'fr' or '' (got '${params.strand}')"
+    }
     if (params.pfam.enabled && !params.pfam.db_dir) {
         error "pfam is enabled but params.pfam.db_dir is empty (Pfam database directory for pfam_scan.pl)"
     }
@@ -69,7 +72,8 @@ workflow IDENTIFY {
     main:
     require_params()
 
-    // ---- Sample sheet: single sample_id column (legacy single-column rule) --
+    // ---- Sample sheet: sample_id column (legacy single-column rule; the
+    // Stage-2 samplesheet's fastq_2 column, when present, derives PE/SE) ----
     def sheet_lines = file(params.sample_sheet, checkIfExists: true)
         .readLines()
         .findAll { it.trim() }
@@ -81,7 +85,9 @@ workflow IDENTIFY {
         error "sample sheet is missing the required column 'sample_id' (header: ${header})"
     }
     def id_col = header.indexOf('sample_id')
+    def fastq2_col = header.indexOf('fastq_2')
     def sample_ids = []
+    def paired_seen = false
     sheet_lines.tail().each { line ->
         def cells = line.split(',')
         def id = (id_col < cells.size() ? cells[id_col] : '').trim()
@@ -92,7 +98,20 @@ workflow IDENTIFY {
             error "duplicate sample_id in sample sheet: ${id}"
         }
         sample_ids << id
+        if (fastq2_col >= 0 && fastq2_col < cells.size() && cells[fastq2_col].trim()) {
+            paired_seen = true
+        }
     }
+
+    // PE/SE layout is project-wide (the Stage-2 sheet is homogeneous): a
+    // fastq_2 column decides it; sheets without one fall back to the param.
+    def single_end = fastq2_col >= 0 ? !paired_seen : params.single_end
+
+    // Strandedness: params.strand carries the StringTie spelling (rf/fr);
+    // the featureCounts module consumes the Salmon/legacy spelling.
+    // rf = fr-firststrand -> -s 2 (reverse); fr = fr-secondstrand -> -s 1.
+    def strandedness = params.strand == 'rf' ? 'reverse'
+        : (params.strand == 'fr' ? 'forward' : 'unstranded')
 
     // ---- BAM resolution (strict: one BAM per sheet sample, no strays) -------
     def bam_dir_path = file(params.bam_dir)
@@ -119,9 +138,9 @@ workflow IDENTIFY {
     def gtf_pcg = file(params.gtf_pcg, checkIfExists: true)
 
     ch_meta_bams = Channel.fromList(bam_ids.collect { id ->
-        tuple([id: id], file("${params.bam_dir}/${id}${bam_suffix}", checkIfExists: true))
+        tuple([id: id, single_end: single_end, strandedness: strandedness],
+              file("${params.bam_dir}/${id}${bam_suffix}", checkIfExists: true))
     })
-    ch_meta_empty = Channel.value([id: 'lncrna'])
 
     // ---- Assembly + merge + novel extraction (core chain) -------------------
     STRINGTIE_STRINGTIE(
@@ -130,8 +149,11 @@ workflow IDENTIFY {
         gtf,
     )
     STRINGTIE_MERGE(
+        // .toList() emits ONE item (a list of (meta, path) tuples); reshape
+        // into the (meta, [paths]) the module input declares - handing the
+        // raw list of tuples to a path input fails task binding.
         STRINGTIE_STRINGTIE.out.transcript_gtf.toList()
-            .map { gtfs -> tuple([id: 'lncrna'], gtfs) },
+            .map { rows -> tuple([id: 'lncrna'], rows.collect { row -> row[1] }) },
         tuple([id: 'lncrna'], gtf_pcg),
     )
     GFFCOMPARE(
@@ -156,7 +178,8 @@ workflow IDENTIFY {
     )
     CODING_POTENTIAL_SET(
         CPC2.out.txt,
-        CPAT_PREDICT.out.tsv,
+        CPAT_PREDICT.out.prob_best,
+        CPAT_PREDICT.out.no_orf,
         NOVEL_TRANSCRIPTS.out.novel_gtf,
         params.min_length,
     )
@@ -166,7 +189,10 @@ workflow IDENTIFY {
     )
 
     // ---- Homology filters (default ON, per-project OFF switches) ------------
-    ch_pfam_hits = channel.empty()
+    // An OFF switch must not starve FINAL_LNCRNA_SET: the placeholder is an
+    // empty-list VALUE channel (the documented replacement for the removed
+    // input optional:true), not Channel.empty().
+    ch_pfam_hits = Channel.value([[id: 'lncrna'], []])
     if (params.pfam.enabled) {
         PFAM_SCAN(
             CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, g -> tuple(meta, g) },
@@ -176,17 +202,15 @@ workflow IDENTIFY {
         )
         ch_pfam_hits = PFAM_SCAN.out.hit_ids
     }
-    ch_diamond_hits = channel.empty()
+    ch_diamond_hits = Channel.value([[id: 'lncrna'], []])
     if (params.diamond.enabled) {
         DIAMOND_BLASTX(
             CODING_POTENTIAL_SET.out.noncoding_gtf.map { meta, g -> tuple(meta, g) },
             tuple([id: 'lncrna'], file(params.diamond.db, checkIfExists: true)),
-            'blast',
-            '6 qseqid sseqid',
+            'txt',                   // outfmt 6 tabular: column 1 = query id
+            'qseqid sseqid',
         )
-        ch_diamond_hits = DIAMOND_BLASTX.out.blast.map { meta, blast ->
-            tuple(meta, blast)
-        }
+        ch_diamond_hits = DIAMOND_BLASTX.out.txt
     }
 
     // ---- Final set + expression ---------------------------------------------
@@ -197,13 +221,17 @@ workflow IDENTIFY {
         gtf,
         genome,
     )
+    // The annotation is one value channel for every per-sample task (reading
+    // a channel inside a map closure does not compile in Nextflow).
+    ch_ref_gtf = FINAL_LNCRNA_SET.out.ref_with_lncrna_gtf.first().map { _meta, g -> g }
     SUBREAD_FEATURECOUNTS(
-        ch_meta_bams.map { meta, bam ->
-            tuple(meta, [bam], FINAL_LNCRNA_SET.out.ref_with_lncrna_gtf.first())
-        },
+        ch_meta_bams.combine(ch_ref_gtf).map { meta, bam, ref -> tuple(meta, [bam], ref) },
     )
     MERGE_LNCRNA_COUNTS(
-        SUBREAD_FEATURECOUNTS.out.counts.toList(),
+        // .toList() emits ONE item (a list of (meta, path) tuples); reshape
+        // into the (meta, [paths]) the module input declares.
+        SUBREAD_FEATURECOUNTS.out.counts.toList()
+            .map { rows -> tuple([id: 'lncrna'], rows.collect { row -> row[1] }) },
         sample_ids.sort().join(','),
     )
 

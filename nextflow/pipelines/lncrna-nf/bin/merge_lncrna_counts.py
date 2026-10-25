@@ -50,6 +50,13 @@ def read_count_file(path):
     return sample, rows
 
 
+def header_ok(sample, sid):
+    """featureCounts labels the count column with the input BAM basename
+    (<id>.markdup.sorted.bam), not the bare sample id; accept both forms but
+    nothing that belongs to a different sample."""
+    return sample == sid or (sample.startswith(sid + ".") and sample.endswith(".bam"))
+
+
 def read_summary(path):
     stats = {}
     with open(path) as fh:
@@ -79,8 +86,10 @@ def main():
         if not os.path.exists(cpath) or not os.path.exists(spath):
             sys.exit(f"missing featureCounts outputs for sample {sid} in {counts_dir}")
         sample, rows = read_count_file(cpath)
-        if sample != sid:
-            sys.exit(f"{cpath}: header sample column '{sample}' != expected '{sid}'")
+        if not header_ok(sample, sid):
+            sys.exit(f"{cpath}: header sample column '{sample}' does not match "
+                     f"expected '{sid}' or '<{sid}>....bam' (featureCounts "
+                     f"labels the column with the input BAM basename)")
         if gene_order is None:
             gene_order = [r[0] for r in rows]
         elif [r[0] for r in rows] != gene_order:

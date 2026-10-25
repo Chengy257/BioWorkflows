@@ -5,6 +5,47 @@ Validation record for the Stage-4 local lncRNA identification workflow
 `lncrna-scientific-decision-record.md` (ratified 2026-10-12). Dates are
 absolute; every entry states what ran and what was observed.
 
+## 2026-10-25 - review fix batch (lncrna-nf P0 1-5 + P1 3-5, plans/2026-10-14 code review)
+
+- All five P0s fixed: GFFREAD emits FASTA via a `withName:GFFREAD` `ext.args
+  = '-w'` entry (both alias invocations match the process name); DIAMOND runs
+  tabular outfmt 6 (`'txt', 'qseqid sseqid'`) and `read_hit_ids` keys on
+  column 1 of tabular hit files; the pfam/diamond OFF switches feed empty-list
+  VALUE channels into FINAL_LNCRNA_SET instead of `Channel.empty()`; CPAT_PREDICT
+  uses the real CPAT 3.0.5 CLI (`cpat -g/-d/-x -o <prefix>`; outputs
+  `cpat.ORF_prob.best.tsv` and `cpat.no_ORF.txt`, the latter force-created when
+  CPAT omits it); MERGE_LNCRNA_COUNTS re-shaped into the module's
+  (meta, [paths]) contract, matrices moved to task root, and the header check
+  accepts the BAM-basename column labels featureCounts really emits.
+- P1s: strandedness + PE/SE now flow into meta (`params.strand` rf -> reverse
+  (-s 2), fr -> forward (-s 1); a fastq_2 column or `params.single_end`
+  derives single_end); CPAT semantics re-based on the best-ORF table (no_ORF
+  ids are noncoding, a malformed CPAT header is a hard error); the annotation
+  `.first()` hoisted out of the per-sample map closure.
+- NEW P0 found while re-deriving baselines (missed by the 2026-10-14 review,
+  which had called STRINGTIE_MERGE the "correct" reshape): STRINGTIE_MERGE
+  carried the same `.toList()` tuple-list arity bug - task binding failed with
+  "Not a valid path value type: java.util.ArrayList". Fixed identically.
+- Baselines re-derived by FULL LOCAL STUB EXECUTION (`-stub-run` + a `-c`
+  override forcing `executor = 'local'` with container engines off and
+  version-probe shims on PATH): `test` = 18 tasks / 12 processes, `test_full`
+  = 20 tasks / 14 processes, both exit 0. The counts match the 2026-10-12
+  record, but that record was never task-resolved (the chain could not bind
+  past STRINGTIE_MERGE on a real run); these are execution-verified now.
+- Trap recorded for every future round on the HPC: `nextflow run --preview`
+  DOES submit real cluster jobs here (the machine-local `~/.nextflow/config`
+  selects the PBS executor, and the first probe round accidentally ran four
+  real STRINGTIE jobs, exit 0 on the empty fixture BAMs). Treat `--preview`
+  as executing; the stub-run route above is the safe baseline method.
+- pytest: 12 tests (was 8; additions: no_ORF-as-noncoding, malformed CPAT
+  header hard error, DIAMOND TSV hit parsing, BAM-basename header
+  accept/reject). The vacuous revcomp assertion was replaced with the
+  hand-derived fixture-genome expectation.
+- Static checks after the batch: config syntax (test + test_full), YAML 33
+  files, doc links 18 files, py_compile green under `nf`; 71 unit tests
+  (27 chipseq + 19 rnaseq + 13 atacseq + 12 lncrna) under `ms`; shellcheck
+  not on PATH on this machine (skipped, as designed).
+
 ## 2026-10-12 - ecosystem evidence + module availability
 
 - nf-core/lncpipe: still "UNDER DEVELOPMENT" (dockstore v0.2.4; no stable

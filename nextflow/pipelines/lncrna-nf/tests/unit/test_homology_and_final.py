@@ -72,11 +72,43 @@ def test_final_lncrna_union_and_sort(tmp_path):
     # coordinate-sorted: ref exon (100), ref transcript (100), novelY (5000)
     assert int(merged[0].split("\t")[3]) == 100
     assert "novY" in merged[-1]
-    # FASTA: 200-nt minus-strand spliced sequence for novY
+    # FASTA: 200-nt minus-strand spliced sequence for novY - the revcomp of
+    # the known fixture genome slice (hand-derived, not read back from out)
     fa = (tmp_path / "final.fa").read_text()
     assert fa.startswith(">novY\n")
     seq = "".join(fa.split()[1:])
     assert len(seq) == 200
-    # minus strand: revcomp of 'ACGT'*50 = 'ACGT' rotated - check the revcomp marker
-    comp = seq.translate(str.maketrans("ACGT", "TGCA"))
-    assert seq == comp[::-1][:200] or set(seq) <= set("ACGT")
+    chrom = "ACGT" * 2000
+    expect = chrom[4999:5199].translate(str.maketrans("ACGT", "TGCA"))[::-1]
+    assert seq == expect
+
+
+def test_diamond_tsv_hits_parse(tmp_path):
+    # DIAMOND outfmt 6 'qseqid sseqid' tables: hit removal keys on column 1
+    nc = tmp_path / "noncoding.gtf"
+    nc.write_text(NCGTF, encoding="utf-8")
+    ref = tmp_path / "genes.gtf"
+    ref.write_text(REF_GTF, encoding="utf-8")
+    genome = tmp_path / "genome.fa"
+    genome.write_text(">chr1\n" + "ACGT" * 2000 + "\n", encoding="utf-8")
+    dmnd = tmp_path / "diamond"
+    dmnd.mkdir()
+    (dmnd / "lncrna.txt").write_text(
+        "novX\tsp|Q12345|some_protein\nnovX\tsp|P67890|other_protein\n",
+        encoding="utf-8")
+
+    old = sys.argv
+    sys.argv = ["final_lncrna.py", "--gtf", str(nc), "--reference", str(ref),
+                "--genome", str(genome), "--diamond", str(dmnd / "*"),
+                "--out-gtf", str(tmp_path / "final.gtf"),
+                "--out-fa", str(tmp_path / "final.fa"),
+                "--out-ref", str(tmp_path / "ref_with.gtf"),
+                "--out-hits", str(tmp_path / "hits_union.txt")]
+    try:
+        final_lncrna.main()
+    finally:
+        sys.argv = old
+    # novX (two HSPs, still one id) removed; novY kept
+    assert (tmp_path / "hits_union.txt").read_text().split() == ["novX"]
+    final = (tmp_path / "final.gtf").read_text().splitlines()
+    assert len(final) == 2 and all("novY" in l for l in final)
