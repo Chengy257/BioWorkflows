@@ -61,6 +61,13 @@ def read_summary(path):
     return stats
 
 
+def header_ok(sample, sid):
+    """featureCounts labels the count column with the input BAM basename
+    (<id>.markdup.sorted.bam), not the bare sample id; accept both forms but
+    nothing that belongs to a different sample."""
+    return sample == sid or (sample.startswith(sid + ".") and sample.endswith(".bam"))
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
@@ -75,8 +82,10 @@ def main():
     for s in samples:
         path = os.path.join(out_dir, f"{s}.featureCounts.tsv")
         file_samples, rows = read_count_file(path)
-        if file_samples != s:
-            sys.exit(f"[ERROR] {path}: sample column '{file_samples}' does not match expected id '{s}'")
+        if not header_ok(file_samples, s):
+            sys.exit(f"[ERROR] {path}: sample column '{file_samples}' does not match "
+                     f"expected id '{s}' or '<{s}>....bam' (featureCounts labels "
+                     f"the column with the input BAM basename)")
         for gid, counts in rows:
             if gid not in values:
                 values[gid] = {}

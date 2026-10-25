@@ -183,24 +183,29 @@ workflow EXT {
         def orgdb_file = params.enrichment.orgdb_file
             ? file(params.enrichment.orgdb_file, checkIfExists: true)
             : null
-        def de_meta = de_tables.collect { t ->
-            [
-                contrast  : t.name.substring(0, t.name.length() - params.enrichment.de_suffix.length()),
-                group     : '',
-                batch     : '',
-                orgdb     : params.enrichment.orgdb,
-                keytype   : params.enrichment.keytype,
-                kegg_org  : params.enrichment.kegg_organism,
-                padj_max  : params.enrichment.padj_max,
-                log2fc_min: params.enrichment.log2fc_min,
-                id_col    : params.enrichment.id_col,
-                log2fc_col: params.enrichment.log2fc_col,
-                padj_col  : params.enrichment.padj_col,
-                stat_col  : params.enrichment.stat_col,
-                orgdb_file: orgdb_file,
-            ]
-        }
-        ENRICHMENT_EXT(Channel.fromList(de_meta), de_tables)
+        // ONE (meta, table) tuple per contrast: staging every table in every
+        // task (a raw list would) breaks argparse for >= 2 contrasts.
+        ENRICHMENT_EXT(
+            Channel.fromList(de_tables).map { t ->
+                tuple(
+                    [
+                        contrast  : t.name.substring(0, t.name.length() - params.enrichment.de_suffix.length()),
+                        group     : '',
+                        batch     : '',
+                        orgdb     : params.enrichment.orgdb,
+                        keytype   : params.enrichment.keytype,
+                        kegg_org  : params.enrichment.kegg_organism,
+                        padj_max  : params.enrichment.padj_max,
+                        log2fc_min: params.enrichment.log2fc_min,
+                        id_col    : params.enrichment.id_col,
+                        log2fc_col: params.enrichment.log2fc_col,
+                        padj_col  : params.enrichment.padj_col,
+                        stat_col  : params.enrichment.stat_col,
+                        orgdb_file: orgdb_file,
+                    ],
+                    t)
+            }
+        )
     }
 
     emit:

@@ -11,11 +11,10 @@ include { RUN_GSEA } from '../../../modules/local/run_gsea'
 
 workflow ENRICHMENT_EXT {
     take:
-    ch_de_meta // one meta map per contrast table (see workflows/ext.nf)
-    ch_de_tables // the matching DA *.deseq2.results.tsv files
+    ch_de_tables // one tuple(meta, de_table) per contrast (see workflows/ext.nf)
 
     main:
-    PREPARE_ENRICHMENT_INPUTS(ch_de_meta, ch_de_tables)
+    PREPARE_ENRICHMENT_INPUTS(ch_de_tables)
 
     // One enrichment task per (contrast, direction) gene list. The optional
     // OrgDb tarball rides as a possibly-empty path list on a separate,

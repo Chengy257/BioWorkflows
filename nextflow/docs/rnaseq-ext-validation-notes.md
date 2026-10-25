@@ -57,6 +57,36 @@ Dates are absolute; every entry states what ran and what was observed.
   `gene_tpm.tsv` - note the underscore variant), `salmon/deseq2_qc/`.
   The consumed contract above matches the real output tree.
 
+## 2026-10-25 - review fix batch (rnaseq-ext P0 6-8, plans/2026-10-14 code review)
+
+- **P0-6 (silent strand corruption) fixed via the S2 convention**: the
+  duplicated `-s` injection is gone - the workflow layer now sets
+  `meta.strandedness` (forward/reverse/unstranded, mapped from the RSeQC
+  legacy codes 1/2/0 or the explicit param) and the vendored
+  subread/featurecounts module derives `-s` from it as the single source of
+  truth (identical to the lncrna-nf copy; both consumers now share the
+  convention). Previously getopt last-wins made every project count
+  unstranded while `*.strand.txt` claimed otherwise.
+- **P0-7 (>= 2 contrasts broke enrichment) fixed**: `ENRICHMENT_EXT` now
+  consumes ONE channel of `(meta, de_table)` tuples (PREPARE_ENRICHMENT
+  _INPUTS input reshaped to the nf-core tuple form) - previously a raw Java
+  list staged ALL tables in every task and argparse failed on the extras.
+  The fixture grew a second contrast (drugB group, 6 samples) to pin the
+  pairing permanently.
+- **P0-8 / S1 fixed**: `merge_featurecounts.py` accepts the BAM-basename
+  count-column labels featureCounts really emits (`<id>.markdup.sorted.bam`)
+  while still rejecting other samples' columns; unit fixtures emit the real
+  headers (plus a bare-id acceptance case). Previously every real
+  featurecounts_quant run aborted on the header check.
+- Baselines re-derived by REAL local stub execution (the safe method from
+  the lncrna-nf 2026-10-25 entry): `test` (all-off) exit 0, **0 tasks**;
+  `test_full` exit 0, **29 tasks over 7 processes** (RSEQC_INFEREXPERIMENT 6,
+  PARSE_STRANDEDNESS 6, SUBREAD_FEATURECOUNTS 6, MERGE_FEATURECOUNTS 1,
+  PREPARE_ENRICHMENT_INPUTS 2, RUN_ENRICHMENT 6, RUN_GSEA 2). The previous
+  18-task baseline encoded the 1-contrast/4-sample fixture; the change is
+  fixture growth plus the per-contrast pairing fix, not new stages.
+- pytest 19 -> 20 (BAM-basename header accept/reject cases).
+
 ## 2026-10-11 - rnaseq-ext dry-run baselines (Nextflow 26.04.6, fixtures)
 
 - Fixtures: `tests/make_fixtures.py` (fixed seed) mirrors the pinned

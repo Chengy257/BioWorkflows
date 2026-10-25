@@ -4,8 +4,7 @@ process PREPARE_ENRICHMENT_INPUTS {
     container 'quay.io/biocontainers/python:3.12.12'
 
     input:
-    val meta
-    path de_table
+    tuple val(meta), path(de_table)
 
     output:
     tuple val(meta), path("${meta.contrast}_UP.DEGs.txt"), path("${meta.contrast}_DOWN.DEGs.txt"), \
